@@ -7,9 +7,16 @@ import (
 )
 
 func TestParseResponse(t *testing.T) {
-	specs := []FieldSpec{{Tag: "10."}, {Tag: "12."}}
-	text := `[{"10.":"Road closure","12.":"Main St is closed near 5th."},{"10.":"Other","12.":"Body two.","bogus":"dropped"}]`
-	out, err := parseResponse(text, specs)
+	// Two pending messages of different types with different field sets,
+	// as would happen in a mixed-type batch (e.g. ICS-213 then plain
+	// text).
+	specsPerMsg := [][]FieldSpec{
+		{{Tag: "10."}, {Tag: "12."}},
+		{{Tag: "body"}},
+	}
+	pending := []int{0, 1}
+	text := `[{"10.":"Road closure","12.":"Main St is closed near 5th."},{"body":"Body two.","bogus":"dropped"}]`
+	out, err := parseResponse(text, specsPerMsg, pending)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -17,15 +24,18 @@ func TestParseResponse(t *testing.T) {
 		t.Fatalf("got %d messages, want 2", len(out))
 	}
 	if out[1]["bogus"] != "" {
-		t.Errorf("field not in specs should have been dropped, got %q", out[1]["bogus"])
+		t.Errorf("field not in message 2's specs should have been dropped, got %q", out[1]["bogus"])
 	}
 	if out[0]["12."] != "Main St is closed near 5th." {
 		t.Errorf("unexpected value: %q", out[0]["12."])
 	}
+	if out[1]["body"] != "Body two." {
+		t.Errorf("unexpected value: %q", out[1]["body"])
+	}
 }
 
 func TestParseResponseInvalidJSON(t *testing.T) {
-	if _, err := parseResponse("not json", nil); err == nil {
+	if _, err := parseResponse("not json", nil, nil); err == nil {
 		t.Error("expected error for invalid JSON, got nil")
 	}
 }

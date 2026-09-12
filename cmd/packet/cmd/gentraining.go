@@ -3,7 +3,6 @@ package cmd
 import (
 	"context"
 	"fmt"
-	"strconv"
 	"strings"
 
 	"github.com/rothskeller/packet/v4/cmd/packet/cio"
@@ -17,11 +16,13 @@ import (
 const (
 	gentrainingSlug = `Generate realistic training messages for a credential evaluation`
 	gentrainingHelp = `
-usage: packet gentrain ⇥[-flags] «msg-type» «count»
+usage: packet gentrain ⇥[-flags] «msg-type» [«msg-type» ...]
   -l, --level «level»      ⇥Proword profile: "f3" or "full" (default "full")
   -s, --scenario «text»    ⇥Scenario to steer the generated content
 
-The "packet gentrain" (or "gentraining") command asks Claude to draft «count» realistic 3rd-party messages of the given «msg-type» (see "packet forms list" for the supported tags/keys, or "plain" for a plain text message), suitable for handing to a candidate during an SCCo RACES credential evaluation.
+The "packet gentrain" (or "gentraining") command asks Claude to draft one realistic 3rd-party message for each «msg-type» given on the command line (see "packet forms list" for the supported tags/keys, or "plain" for a plain text message), suitable for handing to a candidate during an SCCo RACES credential evaluation.
+
+A training session doesn't need to use the same form for every message: for example, "packet gentrain ICS213 plain RoadCl" generates three messages -- one ICS-213, one plain text message, and one Road Closure form -- as a single batch with a shared scenario. Repeat a «msg-type» to get more than one message of that type, e.g. "packet gentrain ICS213 ICS213 plain" for two ICS-213s and a plain text message.
 
 The messages are generated to exercise the message-passing prowords required for the given --level: "f3" is the reduced proword list evaluated only for the Field Communicator Type III credential; "full" (the default) is the complete proword list required for every other credential (F2, F1, and all Net Control, Packet Operator, and Shadow Communicator tiers). The set of required prowords is spread across the generated messages rather than crammed into every one.
 
@@ -37,8 +38,6 @@ func cmdGentraining(args []string) (err error) {
 	var (
 		level    string
 		scenario string
-		msgtype  message.EditableMType
-		count    int
 		c        = cio.Open()
 	)
 	flags := pflag.NewFlagSet("gentraining", pflag.ContinueOnError)
@@ -51,7 +50,7 @@ func cmdGentraining(args []string) (err error) {
 		c.Error(err)
 		return usage(gentrainingHelp)
 	}
-	if flags.NArg() != 2 {
+	if flags.NArg() < 1 {
 		return usage(gentrainingHelp)
 	}
 	level = strings.ToLower(level)
@@ -59,23 +58,24 @@ func cmdGentraining(args []string) (err error) {
 		c.ErrorF(`--level must be %q or %q, not %q.`, prowords.LevelF3, prowords.LevelFull, level)
 		return usage(gentrainingHelp)
 	}
-	if count, err = strconv.Atoi(flags.Arg(1)); err != nil || count < 1 {
-		c.ErrorF(`%q is not a valid message count; it must be a positive integer.`, flags.Arg(1))
-		return usage(gentrainingHelp)
-	}
-	registerForms() // needed to recognize a message type
-	mtarg := flags.Arg(0)
-	for mt := range message.AllTypes() {
-		if emt, ok := mt.(message.EditableMType); ok {
-			if strings.EqualFold(mtarg, emt.CreateTag()) || strings.EqualFold(mtarg, emt.CreateKey()) {
-				msgtype = emt
-				break
+	registerForms() // needed to recognize message types
+	msgtypes := make([]message.EditableMType, flags.NArg())
+	for argidx := range flags.NArg() {
+		mtarg := flags.Arg(argidx)
+		var found message.EditableMType
+		for mt := range message.AllTypes() {
+			if emt, ok := mt.(message.EditableMType); ok {
+				if strings.EqualFold(mtarg, emt.CreateTag()) || strings.EqualFold(mtarg, emt.CreateKey()) {
+					found = emt
+					break
+				}
 			}
 		}
-	}
-	if msgtype == nil {
-		c.ErrorF(`There is no editable message type %q.  Use "packet forms list" to get a list of message types.`, mtarg)
-		return usage(gentrainingHelp)
+		if found == nil {
+			c.ErrorF(`There is no editable message type %q (message #%d).  Use "packet forms list" to get a list of message types.`, mtarg, argidx+1)
+			return usage(gentrainingHelp)
+		}
+		msgtypes[argidx] = found
 	}
 	client := &genmsg.ClaudeClient{}
 	if !client.HasAPIKey() {
@@ -91,15 +91,14 @@ func cmdGentraining(args []string) (err error) {
 			return err
 		}
 		results, err := genmsg.Generate(context.Background(), client, genmsg.Request{
-			MsgType:  msgtype,
-			Count:    count,
+			MsgTypes: msgtypes,
 			Level:    level,
 			Scenario: scenario,
 		})
 		if err != nil {
 			return err
 		}
-		ids, incomplete, err = genmsg.Apply(i, msgtype, results)
+		ids, incomplete, err = genmsg.Apply(i, msgtypes, results)
 		return err
 	}); err != nil {
 		return err
