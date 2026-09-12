@@ -82,7 +82,7 @@ var catalog = map[Category]info{
 	MixedGroupSymbols: {
 		Proword: "MIXED GROUP SYMBOL(S)",
 		Prompt:  `Include at least one alphanumeric group that STARTS WITH A SYMBOL (e.g. a negative temperature like "-10 degrees" or a dollar amount like "$32"), so the sender must use the MIXED GROUP SYMBOL(S) proword.`,
-		re:      regexp.MustCompile(`[-$%][0-9]`),
+		re:      regexp.MustCompile(`[-$%][0-9]+(\.[0-9]+)?`),
 	},
 	Initials: {
 		Proword: "INITIAL(S)",
@@ -117,7 +117,7 @@ var catalog = map[Category]info{
 	GPSCoordinates: {
 		Proword: "GPS COORDINATES",
 		Prompt:  `Include a set of GPS coordinates with degree/minute/second or N/S/E/W markers (e.g. "37.336 N, 121.890 W" or "37 20.16', 121 53.40'"), so the sender must use the GPS COORDINATES proword.`,
-		re:      regexp.MustCompile(`\d+(\.\d+)?\s*(°|deg)|\b\d{1,3}\.\d+\s*[NSEW]\b|\b\d{1,3}\s+\d{1,2}\.\d+['’]`),
+		re:      regexp.MustCompile(`\d+(\.\d+)?\s*(°|deg\b)|\b\d{1,3}\.\d+\s*[NSEW]\b|\b\d{1,3}\s+\d{1,2}\.\d+['’]`),
 	},
 	PacketAddress: {
 		Proword: "PACKET ADDRESS",
