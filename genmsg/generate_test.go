@@ -54,11 +54,12 @@ func TestExtractJSON(t *testing.T) {
 	}
 }
 
-func TestValidateCategories(t *testing.T) {
+func TestMissingCategories(t *testing.T) {
 	values := map[string]string{
-		"12.": "Please call 408-555-1212 about the outage on 5th Street.",
+		"12.": "Please call 408-555-1212 about 5 units at the shelter.",
 	}
-	missing := validateCategories([]prowords.Category{prowords.TelephoneFigures, prowords.EmailAddress}, values)
+	counts := prowords.CountFields(values)
+	missing := missingCategories([]prowords.Category{prowords.TelephoneFigures, prowords.EmailAddress}, counts)
 	if len(missing) != 1 || missing[0] != prowords.EmailAddress {
 		t.Errorf("got missing=%v, want just EmailAddress", missing)
 	}

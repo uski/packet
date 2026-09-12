@@ -7,24 +7,34 @@ import (
 	"github.com/rothskeller/packet/v4/message"
 )
 
+// Applied is one message that was successfully created in an incident by
+// Apply: its assigned local message ID, its message type, and the
+// generation Result (including the proword counts an evaluator can show in
+// a summary table).
+type Applied struct {
+	ID      string
+	MsgType message.EditableMType
+	Result  Result
+}
+
 // Apply creates a new draft message in inc for each Result, using the
 // corresponding entry of msgTypes (which must be the same slice, or an
 // equivalent one, passed as Request.MsgTypes to Generate) and setting its
 // fields from Values exactly as "packet new" plus "packet set" would for a
-// hand-created message. It returns the local message IDs of the created
-// drafts, in the same order as results, along with any results whose
-// assigned categories were not fully satisfied (for the caller to warn the
-// evaluator about, e.g. "message 3 is missing GPS COORDINATES content").
-func Apply(inc *incident.Incident, msgTypes []message.EditableMType, results []Result) (ids []string, incomplete []Result, err error) {
+// hand-created message. It returns one Applied per result, in the same
+// order, for the caller to report to the evaluator (e.g. a table of
+// message ID, type, and proword counts, and a warning for any message
+// whose assigned categories were not fully satisfied).
+func Apply(inc *incident.Incident, msgTypes []message.EditableMType, results []Result) ([]Applied, error) {
 	if len(msgTypes) != len(results) {
-		return nil, nil, fmt.Errorf("genmsg.Apply: %d message types but %d results", len(msgTypes), len(results))
+		return nil, fmt.Errorf("genmsg.Apply: %d message types but %d results", len(msgTypes), len(results))
 	}
-	ids = make([]string, 0, len(results))
+	applied := make([]Applied, 0, len(results))
 	for i, res := range results {
 		msgtype := msgTypes[i]
 		newmsg, ok := msgtype.NewDraft().(*message.DraftMessage)
 		if !ok {
-			return ids, incomplete, fmt.Errorf("message type %q does not support draft creation", msgtype.Tag())
+			return applied, fmt.Errorf("message type %q does not support draft creation", msgtype.Tag())
 		}
 		inc.ApplyDefaults(newmsg)
 		for f := range newmsg.Fields() {
@@ -38,12 +48,9 @@ func Apply(inc *incident.Incident, msgTypes []message.EditableMType, results []R
 		}
 		le, addErr := inc.AddDraftMessage(newmsg)
 		if addErr != nil {
-			return ids, incomplete, fmt.Errorf("adding generated draft message: %w", addErr)
+			return applied, fmt.Errorf("adding generated draft message: %w", addErr)
 		}
-		ids = append(ids, le.LocalMsgID)
-		if len(res.Missing) > 0 {
-			incomplete = append(incomplete, res)
-		}
+		applied = append(applied, Applied{ID: le.LocalMsgID, MsgType: msgtype, Result: res})
 	}
-	return ids, incomplete, nil
+	return applied, nil
 }

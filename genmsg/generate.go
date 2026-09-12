@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/rothskeller/packet/v4/incident"
 	"github.com/rothskeller/packet/v4/message"
 	"github.com/rothskeller/packet/v4/prowords"
 )
@@ -16,17 +17,21 @@ import (
 // MsgTypes has one entry per message to generate, in order; its length is
 // the message count.
 type Request struct {
+	Incident *incident.Incident // used to apply the incident's own defaults before deciding what the LLM needs to fill in
 	MsgTypes []message.EditableMType
 	Level    string // prowords.LevelF3 or prowords.LevelFull
 	Scenario string // optional user-supplied scenario; if empty, a generic one is invented
 }
 
 // Result is one generated message: field tag -> human-readable value, plus
-// bookkeeping about which proword categories it was asked to exercise and
-// which of those (if any) could not be confirmed after generation.
+// bookkeeping about which proword categories it was asked to exercise, how
+// many times each proword category was actually detected in the final
+// values (see the prowords engine, prowords.CountFields), and which
+// assigned categories (if any) could not be confirmed after generation.
 type Result struct {
 	Values   map[string]string
 	Assigned []prowords.Category
+	Counts   map[prowords.Category]int
 	Missing  []prowords.Category
 }
 
@@ -46,6 +51,9 @@ func Generate(ctx context.Context, client *ClaudeClient, req Request) ([]Result,
 	if count == 0 {
 		return nil, fmt.Errorf("at least one message type must be given")
 	}
+	if req.Incident == nil {
+		return nil, fmt.Errorf("an incident is required")
+	}
 	if !client.HasAPIKey() {
 		return nil, ErrNoAPIKey
 	}
@@ -57,7 +65,12 @@ func Generate(ctx context.Context, client *ClaudeClient, req Request) ([]Result,
 
 	specsPerMsg := make([][]FieldSpec, count)
 	for i, mt := range req.MsgTypes {
-		specs := Generatable(Describe(mt.NewDraft()))
+		draft, ok := mt.NewDraft().(*message.DraftMessage)
+		if !ok {
+			return nil, fmt.Errorf("message type %q does not support draft creation", mt.Tag())
+		}
+		req.Incident.ApplyDefaults(draft)
+		specs := Generatable(Describe(draft))
 		if len(specs) == 0 {
 			return nil, fmt.Errorf("message type %q has no editable fields to generate", mt.Tag())
 		}
@@ -109,7 +122,8 @@ func Generate(ctx context.Context, client *ClaudeClient, req Request) ([]Result,
 			for tag, val := range parsed[j] {
 				results[idx].Values[tag] = val
 			}
-			results[idx].Missing = validateCategories(results[idx].Assigned, results[idx].Values)
+			results[idx].Counts = prowords.CountFields(results[idx].Values)
+			results[idx].Missing = missingCategories(results[idx].Assigned, results[idx].Counts)
 			if len(results[idx].Missing) > 0 {
 				nextPending = append(nextPending, idx)
 				nextPlans = append(nextPlans, MessagePlan{Categories: results[idx].Missing})
@@ -157,7 +171,7 @@ func buildPrompt(req Request, specsPerMsg [][]FieldSpec, pending []int, plans []
 	if isRepair {
 		b.WriteString("The previous attempt did not clearly satisfy all of the requirements above for these messages. Revise them so every requirement is unambiguously satisfied, and return the complete field values again (not just the changed ones).\n\n")
 	}
-	b.WriteString("Respond with ONLY a JSON array of exactly that many objects, in the same order as listed above, each mapping THAT message's own field tags to their string values. Keep each message concise (a few sentences for any free-text field) and realistic. Do not invent fields beyond the ones listed for each message.\n")
+	b.WriteString("Respond with ONLY a JSON array of exactly that many objects, in the same order as listed above, each mapping THAT message's own field tags to their string values. Keep every message SHORT: real emergency radio traffic is deliberately terse to save airtime, so free-text fields should be one to three short sentences, not a full paragraph -- include only what's needed to satisfy the listed requirements, don't pad it out. Only set the fields listed for each message; every field listed is one you should fill in, but never add fields beyond that list.\n")
 	return b.String()
 }
 
@@ -194,18 +208,12 @@ func parseResponse(text string, specsPerMsg [][]FieldSpec, pending []int) ([]map
 	return out, nil
 }
 
-// validateCategories returns the subset of cats that do not appear to be
-// satisfied by the concatenation of all field values.
-func validateCategories(cats []prowords.Category, values map[string]string) []prowords.Category {
-	var all strings.Builder
-	for _, v := range values {
-		all.WriteString(v)
-		all.WriteString("\n")
-	}
-	text := all.String()
+// missingCategories returns the subset of cats that counts shows zero
+// occurrences of.
+func missingCategories(cats []prowords.Category, counts map[prowords.Category]int) []prowords.Category {
 	var missing []prowords.Category
 	for _, c := range cats {
-		if !prowords.Validate(c, text) {
+		if counts[c] == 0 {
 			missing = append(missing, c)
 		}
 	}
