@@ -20,6 +20,46 @@
       })
       document.getElementById('gtrows').appendChild(row)
     }
+    function gtShowResults(data) {
+      const div = document.getElementById('gtresults')
+      div.innerHTML = ''
+      data.messages.forEach(msg => {
+        const h = document.createElement('h2')
+        h.textContent = `${msg.id} — ${msg.type}`
+        div.appendChild(h)
+        if (msg.missing && msg.missing.length) {
+          const warn = document.createElement('p')
+          warn.className = 'gtwarn'
+          warn.textContent = `May be missing: ${msg.missing.join(', ')}. Review before use.`
+          div.appendChild(warn)
+        }
+        if (!msg.prowords || !msg.prowords.length) {
+          const none = document.createElement('p')
+          none.textContent = '(no prowords detected)'
+          div.appendChild(none)
+          return
+        }
+        const table = document.createElement('table')
+        table.className = 'gtptable'
+        const thead = table.createTHead().insertRow()
+        for (const label of ['Proword', 'Count']) {
+          const th = document.createElement('th')
+          th.textContent = label
+          thead.appendChild(th)
+        }
+        const tbody = table.createTBody()
+        msg.prowords.forEach(pw => {
+          const row = tbody.insertRow()
+          row.insertCell().textContent = pw.name
+          row.insertCell().textContent = pw.count
+        })
+        div.appendChild(table)
+      })
+      document.getElementById('gtform').hidden = true
+      div.hidden = false
+      document.getElementById('gtsubrow').hidden = true
+      document.getElementById('gtdonerow').hidden = false
+    }
     function setupGenTrainingDialog() {
       gtMessageTypeData.split(';').forEach(triplet => {
         const [tag, key, name] = triplet.split(':', 3)
@@ -27,6 +67,9 @@
       })
       document.getElementById('gtadd').addEventListener('click', () => gtAddRow())
       document.getElementById('gtcan').addEventListener('click', () => {
+        document.getElementById('gtdlg').close()
+      })
+      document.getElementById('gtdone').addEventListener('click', () => {
         document.getElementById('gtdlg').close()
       })
       document.getElementById('gtform').addEventListener('submit', async evt => {
@@ -40,9 +83,7 @@
         try {
           const resp = await fetch2('/gentrain-messages', { method: 'POST', body: data })
           if (resp.ok) {
-            const warn = resp.headers.get('X-Packet-Warning')
-            document.getElementById('gtdlg').close()
-            if (warn) alert(warn)
+            gtShowResults(await resp.json())
             return
           }
           err.textContent = (await resp.text()) || resp.statusText
@@ -57,6 +98,10 @@
       document.getElementById('gtscenario').value = ''
       document.getElementById('gtrows').innerHTML = ''
       gtAddRow()
+      document.getElementById('gtform').hidden = false
+      document.getElementById('gtresults').hidden = true
+      document.getElementById('gtsubrow').hidden = false
+      document.getElementById('gtdonerow').hidden = true
       document.getElementById('gtdlg').showModal()
     }
   </script>
@@ -68,16 +113,16 @@
       z-index: 2;
     }
 
-    #gtform {
-      display: flex;
-      flex-direction: column;
-    }
-
-    #gtform h1 {
+    #gtdlg h1 {
       background-color: #a8e8a8;
       margin: 0 -0.75rem;
       padding: 0.5rem 0.75rem;
       font-size: 1.5rem;
+    }
+
+    #gtform {
+      display: flex;
+      flex-direction: column;
     }
 
     .gtrow {
@@ -113,7 +158,36 @@
       color: red;
     }
 
-    #gtsubrow {
+    #gtresults h2 {
+      font-size: 1rem;
+      margin: 1rem 0 0.25rem;
+    }
+
+    .gtwarn {
+      color: #a15c00;
+      margin: 0 0 0.25rem;
+    }
+
+    .gtptable {
+      border-collapse: collapse;
+      width: 100%;
+      margin-bottom: 0.5rem;
+    }
+
+    .gtptable th,
+    .gtptable td {
+      border: 1px solid #ccc;
+      padding: 0.15rem 0.5rem;
+      text-align: left;
+    }
+
+    .gtptable td:last-child,
+    .gtptable th:last-child {
+      text-align: right;
+    }
+
+    #gtsubrow,
+    #gtdonerow {
       margin-top: 1.5rem;
       display: flex;
       justify-content: end;
@@ -121,11 +195,13 @@
     }
 
     #gtcan,
-    #gtsub {
+    #gtsub,
+    #gtdone {
       border-radius: 0.25rem;
     }
 
-    #gtsub {
+    #gtsub,
+    #gtdone {
       background-color: #a8e8a8;
     }
   </style>
@@ -133,9 +209,9 @@
 
 <body>
   <dialog id=gtdlg>
+    <h1>Generate Training Messages</h1>
     <form id=gtform>
       <input type=hidden name=dir value="{{DIR}}">
-      <h1>Generate Training Messages</h1>
       <p>Add one row per message to generate. A training session can mix message types.</p>
       <div id=gtrows></div>
       <template id=gttypetmpl>
@@ -158,6 +234,10 @@
         <input id=gtsub type=submit value="Generate Messages">
       </div>
     </form>
+    <div id=gtresults hidden></div>
+    <div id=gtdonerow hidden>
+      <button id=gtdone type=button>Done</button>
+    </div>
   </dialog>
 </body>
 

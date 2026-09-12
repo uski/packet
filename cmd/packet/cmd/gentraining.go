@@ -1,8 +1,11 @@
 package cmd
 
 import (
+	"cmp"
 	"context"
 	"fmt"
+	"maps"
+	"slices"
 	"strings"
 
 	"github.com/rothskeller/packet/v4/cmd/packet/cio"
@@ -30,7 +33,7 @@ If --scenario is given, its text is used to steer the emergency-response scenari
 
 Generating messages requires the ANTHROPIC_API_KEY environment variable to be set to a valid Anthropic API key.
 
-The new messages are created as unsent draft messages in the current incident, exactly as "packet new" would create them, and their local message IDs are printed. Review and edit them (see "packet help edit") before handing them to a candidate.
+The new messages are created as unsent draft messages in the current incident, exactly as "packet new" would create them. For each one, its local message ID and a table of which prowords its final content exercises (and how many times) are printed, so you can spot-check coverage before handing it to a candidate. Review and edit the messages themselves (see "packet help edit") as needed.
 `
 )
 
@@ -82,15 +85,13 @@ func cmdGentraining(args []string) (err error) {
 		c.Error(genmsg.ErrNoAPIKey)
 		return genmsg.ErrNoAPIKey
 	}
-	var (
-		ids        []string
-		incomplete []genmsg.Result
-	)
+	var applied []genmsg.Applied
 	if err = incWrite(true, func(i *incident.Incident) error {
 		if err := requiredConfig(i, "OpCall", "OpName", "TxMessageID"); err != nil {
 			return err
 		}
 		results, err := genmsg.Generate(context.Background(), client, genmsg.Request{
+			Incident: i,
 			MsgTypes: msgtypes,
 			Level:    level,
 			Scenario: scenario,
@@ -98,20 +99,41 @@ func cmdGentraining(args []string) (err error) {
 		if err != nil {
 			return err
 		}
-		ids, incomplete, err = genmsg.Apply(i, msgtypes, results)
+		applied, err = genmsg.Apply(i, msgtypes, results)
 		return err
 	}); err != nil {
 		return err
 	}
-	for _, id := range ids {
-		fmt.Println(id)
-	}
-	for _, res := range incomplete {
+	printProwordTable(applied)
+	for _, a := range applied {
+		if len(a.Result.Missing) == 0 {
+			continue
+		}
 		var names []string
-		for _, cat := range res.Missing {
+		for _, cat := range a.Result.Missing {
 			names = append(names, prowords.ProwordName(cat))
 		}
-		c.ErrorF("Warning: a generated message may be missing content for: %s.  Review it before use.", strings.Join(names, ", "))
+		c.ErrorF("Warning: message %s may be missing content for: %s.  Review it before use.", a.ID, strings.Join(names, ", "))
 	}
 	return nil
+}
+
+// printProwordTable prints, for each generated message, which prowords the
+// proword engine (see the prowords package) detected in its final content
+// and how many times each appears.
+func printProwordTable(applied []genmsg.Applied) {
+	for _, a := range applied {
+		fmt.Printf("%s (%s)\n", a.ID, a.MsgType.Name())
+		if len(a.Result.Counts) == 0 {
+			fmt.Println("  (no prowords detected)")
+			continue
+		}
+		cats := slices.Collect(maps.Keys(a.Result.Counts))
+		slices.SortFunc(cats, func(x, y prowords.Category) int {
+			return cmp.Compare(prowords.ProwordName(x), prowords.ProwordName(y))
+		})
+		for _, cat := range cats {
+			fmt.Printf("  %-24s %d\n", prowords.ProwordName(cat), a.Result.Counts[cat])
+		}
+	}
 }
