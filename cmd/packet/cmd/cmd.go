@@ -51,6 +51,8 @@ func run(args []string) (err error) {
 		return cmdEdit(args[1:])
 	case "forms":
 		return cmdForms(args[1:])
+	case "gentrain", "gentraining":
+		return cmdGentraining(args[1:])
 	case "gui", "web":
 		return cmdGUI(args[1:])
 	case "help", "h", "--help", "-?":

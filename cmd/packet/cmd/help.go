@@ -19,6 +19,7 @@ Available commands include:
   dump     ⇥` + dumpSlug + `
   edit     ⇥` + editSlug + `
   forms    ⇥` + formsSlug + `
+  gentrain ⇥` + gentrainingSlug + `
   gui      ⇥` + guiSlug + `
   help     ⇥` + helpSlug + `
   ics309   ⇥` + ics309Slug + `
@@ -75,6 +76,8 @@ func cmdHelp(args []string) (err error) {
 				return cmdFormsHelp(args[1:])
 			}
 			helpText = formsHelp
+		case "gentrain", "gentraining":
+			helpText = gentrainingHelp
 		case "gui", "web":
 			helpText = guiHelp
 		case "ics309", "309":
