@@ -19,10 +19,12 @@ type FieldSpec struct {
 	Help      string   // help text describing the field's purpose
 	Multiline bool     // whether the field expects multi-line text
 	Choices   []string // allowed/recommended values, if the field is restricted
+	Required  bool     // true if the field currently has no value and fails validation without one
 }
 
 // Describe returns the settable fields of msg (which should be a freshly
-// created, default-populated draft) that have a PackItForms tag, in field
+// created draft with the incident's defaults already applied -- see
+// incident.Incident.ApplyDefaults) that have a PackItForms tag, in field
 // order, for use in building an LLM prompt.
 func Describe(msg message.Message) []FieldSpec {
 	var specs []FieldSpec
@@ -43,6 +45,7 @@ func Describe(msg message.Message) []FieldSpec {
 			Label:     f.Label(),
 			Help:      f.EditHelp(),
 			Multiline: f.Multiline(),
+			Required:  f.Value(msg) == "" && f.Validate(msg, f, 0) != nil,
 		}
 		if f.Restricted() {
 			for _, c := range f.Choices(msg) {
@@ -80,16 +83,31 @@ var skipCommon = map[string]bool{
 	"headerReceived":       true,
 }
 
-// Generatable filters specs down to the ones the LLM should actually be
-// asked to produce a value for, excluding fields that are already handled
-// automatically by the incident's default-filling machinery.
+// alwaysInclude lists common fields worth asking the LLM to fill even when
+// they aren't strictly required, because a message without them would look
+// obviously unfinished.
+var alwaysInclude = map[string]bool{
+	"messageSummary": true, // Subject
+}
+
+// Generatable filters specs down to the small set the LLM should actually
+// be asked to produce a value for: fields already handled by the
+// incident's default-filling machinery are excluded outright, and of what
+// remains, only fields that are actually required (or the message body, or
+// a field in alwaysInclude) are kept. This keeps generated messages short
+// and avoids padding out optional, rarely-used fields (contact info,
+// reply/take-action toggles, references, and the like) purely because they
+// exist -- exactly the fields most forms mark optional because they're
+// "rarely provided" in practice.
 func Generatable(specs []FieldSpec) []FieldSpec {
 	var out []FieldSpec
 	for _, s := range specs {
 		if skipCommon[s.Common] {
 			continue
 		}
-		out = append(out, s)
+		if s.Required || s.Multiline || alwaysInclude[s.Common] {
+			out = append(out, s)
+		}
 	}
 	return out
 }
