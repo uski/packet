@@ -1,0 +1,47 @@
+package genmsg
+
+import "github.com/rothskeller/packet/v4/prowords"
+
+// MessagePlan is the assignment of proword categories to a single message
+// in a generation batch.
+type MessagePlan struct {
+	Categories []prowords.Category
+}
+
+// alwaysEvery lists categories common enough that every generated message
+// should include them, matching how real message traffic actually reads
+// (nearly every message has a number and a punctuated sentence in it).
+var alwaysEvery = map[prowords.Category]bool{
+	prowords.ISpell:      true,
+	prowords.Figures:     true,
+	prowords.Punctuation: true,
+}
+
+// Plan distributes the categories in profile across count messages:
+// categories in alwaysEvery are assigned to every message; the rest are
+// round-robined across the messages so that each appears in at least one
+// message. If count is less than the number of "rare" categories, some
+// messages simply end up with more than one rare category assigned to them
+// -- nothing is dropped. Plan only fails to place every category when count
+// is zero, in which case the entire profile is returned as unfit.
+func Plan(profile []prowords.Category, count int) (plans []MessagePlan, unfit []prowords.Category) {
+	if count <= 0 {
+		return nil, append([]prowords.Category{}, profile...)
+	}
+	plans = make([]MessagePlan, count)
+	var rare []prowords.Category
+	for _, c := range profile {
+		if alwaysEvery[c] {
+			for i := range plans {
+				plans[i].Categories = append(plans[i].Categories, c)
+			}
+		} else {
+			rare = append(rare, c)
+		}
+	}
+	for i, c := range rare {
+		idx := i % count
+		plans[idx].Categories = append(plans[idx].Categories, c)
+	}
+	return plans, nil
+}
