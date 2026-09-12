@@ -21,9 +21,21 @@ type Config struct {
 	ActivationNum string `json:"actNum,omitempty"`
 	// OpStart is the start time of the operational period on the ICS-309
 	// log.
-	OpStart time.Time `json:"opStart,omitzero,format:'2006-01-02T15:04'"`
+	//
+	// This is persisted as a plain RFC 3339 timestamp (encoding/json/v2's
+	// default for time.Time) rather than via a `format` struct tag: some
+	// GOEXPERIMENT=jsonv2 toolchain builds don't yet expose a public way
+	// to opt in to `format` tag support (the opt-in,
+	// ExperimentalSupportFormatTag, currently lives in an internal
+	// package), so a `format` tag on a plain field trips
+	// "unsupported `format` tag option" at marshal time. Display
+	// formatting is unaffected: every use site calls
+	// time.Time.Format(...) explicitly rather than relying on the JSON
+	// encoding.
+	OpStart time.Time `json:"opStart,omitzero"`
 	// OpEnd is the end time of the operational period on the ICS-309 log.
-	OpEnd time.Time `json:"opEnd,omitzero,format:'2006-01-02T15:04'"`
+	// See OpStart for why this doesn't use a `format` tag.
+	OpEnd time.Time `json:"opEnd,omitzero"`
 	// OpCall is the FCC call sign of the operator.
 	OpCall string `json:"opCall,omitempty"`
 	// OpName is the name of the operator.
@@ -156,7 +168,29 @@ func ParseViewFlags(s string) (f ViewFlag, err error) {
 }
 
 type CheckFrequency struct {
-	time.Duration `json:"d,format:sec"`
+	time.Duration
+}
+
+// MarshalJSONTo and UnmarshalJSONFrom give CheckFrequency a custom encoding
+// as a plain JSON number of seconds, in place of the `format:sec` struct
+// tag this field used to carry. See the comment on Config.OpStart for why:
+// some GOEXPERIMENT=jsonv2 toolchain builds don't yet expose a public way
+// to opt in to `format` tag support.
+func (f CheckFrequency) MarshalJSONTo(enc *jsontext.Encoder) error {
+	return enc.WriteToken(jsontext.Int(int64(f.Duration / time.Second)))
+}
+
+func (f *CheckFrequency) UnmarshalJSONFrom(dec *jsontext.Decoder) error {
+	tok, err := dec.ReadToken()
+	if err != nil {
+		return err
+	}
+	secs, err := tok.Int()
+	if err != nil {
+		return err
+	}
+	f.Duration = time.Duration(secs) * time.Second
+	return nil
 }
 
 // Methods for connecting to a BBS (i.e., values for Config.ConnectType).
