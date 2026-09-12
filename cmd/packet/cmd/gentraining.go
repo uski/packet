@@ -95,7 +95,9 @@ func cmdGentraining(args []string) (err error) {
 			MsgTypes: msgtypes,
 			Level:    level,
 			Scenario: scenario,
+			Progress: func(s string) { c.Status("%s", s) },
 		})
+		c.Status("")
 		if err != nil {
 			return err
 		}

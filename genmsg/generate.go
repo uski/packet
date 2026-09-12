@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/rothskeller/packet/v4/incident"
 	"github.com/rothskeller/packet/v4/message"
@@ -21,7 +22,20 @@ type Request struct {
 	MsgTypes []message.EditableMType
 	Level    string // prowords.LevelF3 or prowords.LevelFull
 	Scenario string // optional user-supplied scenario; if empty, a generic one is invented
+
+	// Progress, if non-nil, is called with human-readable status updates
+	// as Generate works. Claude calls in particular can take tens of
+	// seconds, so Progress is also called periodically (heartbeatInterval)
+	// while one is in flight, not just between calls, so a caller showing
+	// these to a user (a CLI status line, a GUI progress panel) always has
+	// something recent to display.
+	Progress func(string)
 }
+
+// heartbeatInterval is how often Progress is called with a "still working"
+// update while waiting for a single Claude API call to complete. It's a var
+// (not a const) so tests can shrink it.
+var heartbeatInterval = 4 * time.Second
 
 // Result is one generated message: field tag -> human-readable value, plus
 // bookkeeping about which proword categories it was asked to exercise, how
@@ -47,6 +61,10 @@ const systemPrompt = `You are helping a Santa Clara County ARES/RACES credential
 // batch), calling client to draft the content. It does not create the
 // messages in any incident; see Apply for that.
 func Generate(ctx context.Context, client *ClaudeClient, req Request) ([]Result, error) {
+	progress := req.Progress
+	if progress == nil {
+		progress = func(string) {}
+	}
 	count := len(req.MsgTypes)
 	if count == 0 {
 		return nil, fmt.Errorf("at least one message type must be given")
@@ -63,6 +81,7 @@ func Generate(ctx context.Context, client *ClaudeClient, req Request) ([]Result,
 	}
 	plans, _ := Plan(profile, count)
 
+	progress(fmt.Sprintf("Preparing %d message(s)...", count))
 	specsPerMsg := make([][]FieldSpec, count)
 	for i, mt := range req.MsgTypes {
 		draft, ok := mt.NewDraft().(*message.DraftMessage)
@@ -93,11 +112,19 @@ func Generate(ctx context.Context, client *ClaudeClient, req Request) ([]Result,
 	pendingPlans := plans
 
 	for round := 0; round < maxRounds && len(pending) > 0; round++ {
+		var label string
+		if round == 0 {
+			label = fmt.Sprintf("Asking Claude to draft %d message(s)", len(pending))
+		} else {
+			label = fmt.Sprintf("Asking Claude to revise %d message(s) still missing required content (attempt %d of %d)", len(pending), round+1, maxRounds)
+		}
+		progress(label + "...")
 		prompt := buildPrompt(req, specsPerMsg, pending, pendingPlans, round > 0)
-		text, err := client.Complete(ctx, systemPrompt, prompt)
+		text, err := completeWithHeartbeat(ctx, client, systemPrompt, prompt, progress, label)
 		if err != nil {
 			return nil, err
 		}
+		progress("Received a response; checking proword coverage...")
 		parsed, err := parseResponse(extractJSON(text), specsPerMsg, pending)
 		if err != nil {
 			return nil, err
@@ -131,7 +158,32 @@ func Generate(ctx context.Context, client *ClaudeClient, req Request) ([]Result,
 		}
 		pending, pendingPlans = nextPending, nextPlans
 	}
+	progress("Done generating messages.")
 	return results, nil
+}
+
+// completeWithHeartbeat calls client.Complete, calling progress with a
+// "still working" update derived from label every heartbeatInterval while
+// the call is in flight, so a caller displaying progress to a user always
+// has something recent to show during a slow API call.
+func completeWithHeartbeat(ctx context.Context, client *ClaudeClient, system, prompt string, progress func(string), label string) (string, error) {
+	done := make(chan struct{})
+	defer close(done)
+	go func() {
+		ticker := time.NewTicker(heartbeatInterval)
+		defer ticker.Stop()
+		elapsed := heartbeatInterval
+		for {
+			select {
+			case <-done:
+				return
+			case <-ticker.C:
+				progress(fmt.Sprintf("%s... (%s elapsed)", label, elapsed))
+				elapsed += heartbeatInterval
+			}
+		}
+	}()
+	return client.Complete(ctx, system, prompt)
 }
 
 // buildPrompt describes each pending message (its type, its own fields, and
