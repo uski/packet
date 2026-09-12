@@ -56,9 +56,58 @@
         div.appendChild(table)
       })
       document.getElementById('gtform').hidden = true
+      document.getElementById('gtprogress').hidden = true
       div.hidden = false
       document.getElementById('gtsubrow').hidden = true
       document.getElementById('gtdonerow').hidden = false
+    }
+    function gtShowProgress(msg) {
+      document.getElementById('gtform').hidden = true
+      document.getElementById('gtresults').hidden = true
+      document.getElementById('gtsubrow').hidden = true
+      document.getElementById('gtdonerow').hidden = true
+      const prog = document.getElementById('gtprogress')
+      prog.hidden = false
+      document.getElementById('gtprogmsg').textContent = msg
+    }
+    function gtShowError(msg) {
+      document.getElementById('gtprogress').hidden = true
+      document.getElementById('gtform').hidden = false
+      document.getElementById('gtsubrow').hidden = false
+      document.getElementById('gterr').textContent = msg
+    }
+    // gtPoll long-polls GET /gentrain-progress for dir, updating the
+    // progress display as updates arrive, until the job is done (showing
+    // the results or the error) or the poll itself fails (e.g. the server
+    // restarted).
+    async function gtPoll(dir, seq) {
+      const params = new URLSearchParams({ dir, seq })
+      let resp
+      try {
+        resp = await fetch2('/gentrain-progress?' + params.toString())
+      } catch (e) {
+        gtShowError('Lost contact with the server while generating: ' + e)
+        return
+      }
+      if (resp.status === 410) {
+        gtShowError('The generation job ended unexpectedly. Please try again.')
+        return
+      }
+      if (!resp.ok) {
+        gtShowError((await resp.text()) || resp.statusText)
+        return
+      }
+      const update = await resp.json()
+      if (update.done) {
+        if (update.error) {
+          gtShowError(update.error)
+        } else {
+          gtShowResults(update.result)
+        }
+        return
+      }
+      gtShowProgress(update.progress || 'Working…')
+      gtPoll(dir, update.seq)
     }
     function setupGenTrainingDialog() {
       gtMessageTypeData.split(';').forEach(triplet => {
@@ -74,22 +123,22 @@
       })
       document.getElementById('gtform').addEventListener('submit', async evt => {
         evt.preventDefault()
-        const err = document.getElementById('gterr')
-        err.textContent = ''
+        const dir = document.body.dataset.dir
+        const data = new FormData(evt.target)
         const sub = document.getElementById('gtsub')
         sub.disabled = true
-        sub.value = 'Generating…'
-        const data = new FormData(evt.target)
         try {
           const resp = await fetch2('/gentrain-messages', { method: 'POST', body: data })
-          if (resp.ok) {
-            gtShowResults(await resp.json())
+          if (resp.status === 204) {
+            gtShowProgress('Starting…')
+            gtPoll(dir, 0)
             return
           }
-          err.textContent = (await resp.text()) || resp.statusText
+          document.getElementById('gterr').textContent = (await resp.text()) || resp.statusText
+        } catch (e) {
+          document.getElementById('gterr').textContent = 'Request failed: ' + e
         } finally {
           sub.disabled = false
-          sub.value = 'Generate Messages'
         }
       })
     }
@@ -99,6 +148,7 @@
       document.getElementById('gtrows').innerHTML = ''
       gtAddRow()
       document.getElementById('gtform').hidden = false
+      document.getElementById('gtprogress').hidden = true
       document.getElementById('gtresults').hidden = true
       document.getElementById('gtsubrow').hidden = false
       document.getElementById('gtdonerow').hidden = true
@@ -156,6 +206,29 @@
     #gterr:not(:empty) {
       margin-top: 1.5rem;
       color: red;
+    }
+
+    #gtprogress {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      padding: 2rem 0;
+    }
+
+    #gtspinner {
+      width: 1.25rem;
+      height: 1.25rem;
+      flex: none;
+      border: 0.2rem solid #ccc;
+      border-top-color: #2a8;
+      border-radius: 50%;
+      animation: gtspin 0.8s linear infinite;
+    }
+
+    @keyframes gtspin {
+      to {
+        transform: rotate(360deg);
+      }
     }
 
     #gtresults h2 {
@@ -234,6 +307,10 @@
         <input id=gtsub type=submit value="Generate Messages">
       </div>
     </form>
+    <div id=gtprogress hidden>
+      <div id=gtspinner></div>
+      <p id=gtprogmsg></p>
+    </div>
     <div id=gtresults hidden></div>
     <div id=gtdonerow hidden>
       <button id=gtdone type=button>Done</button>
