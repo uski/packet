@@ -337,6 +337,7 @@ func (s *Server) registerHandlers() {
 	s.mux.HandleFunc("GET /incident", s.serveGetIncident)
 	s.mux.HandleFunc("GET /incident/log", s.serveGetIncidentLog)
 	s.mux.HandleFunc("POST /manual-receive", s.servePostManualReceive)
+	s.mux.HandleFunc("POST /gentrain-messages", s.servePostGenTraining)
 	s.mux.HandleFunc("GET /new-message", s.serveGetNewMessage)
 	s.mux.HandleFunc("GET /edit-message", s.serveGetEditMessage)
 	s.mux.HandleFunc("GET /assets/{tag}/{asset...}", s.serveGetAsset)

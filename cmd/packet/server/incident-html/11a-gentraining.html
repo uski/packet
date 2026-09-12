@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <script> // Generate Training Messages Dialog
+    const gtMessageTypeData = '{{MTYPES}}'
+    let gtMessageTypes = []
+    function gtAddRow() {
+      const tmpl = document.getElementById('gttypetmpl')
+      const row = document.importNode(tmpl.content, true).firstElementChild
+      const sel = row.querySelector('select')
+      gtMessageTypes.forEach(mt => {
+        const opt = document.createElement('option')
+        opt.value = mt.tag
+        opt.textContent = mt.name
+        sel.appendChild(opt)
+      })
+      row.querySelector('.gtremove').addEventListener('click', () => {
+        if (document.querySelectorAll('#gtrows .gtrow').length > 1) row.remove()
+      })
+      document.getElementById('gtrows').appendChild(row)
+    }
+    function setupGenTrainingDialog() {
+      gtMessageTypeData.split(';').forEach(triplet => {
+        const [tag, key, name] = triplet.split(':', 3)
+        if (tag) gtMessageTypes.push({ tag, key, name })
+      })
+      document.getElementById('gtadd').addEventListener('click', () => gtAddRow())
+      document.getElementById('gtcan').addEventListener('click', () => {
+        document.getElementById('gtdlg').close()
+      })
+      document.getElementById('gtform').addEventListener('submit', async evt => {
+        evt.preventDefault()
+        const err = document.getElementById('gterr')
+        err.textContent = ''
+        const sub = document.getElementById('gtsub')
+        sub.disabled = true
+        sub.value = 'Generating…'
+        const data = new FormData(evt.target)
+        try {
+          const resp = await fetch2('/gentrain-messages', { method: 'POST', body: data })
+          if (resp.ok) {
+            const warn = resp.headers.get('X-Packet-Warning')
+            document.getElementById('gtdlg').close()
+            if (warn) alert(warn)
+            return
+          }
+          err.textContent = (await resp.text()) || resp.statusText
+        } finally {
+          sub.disabled = false
+          sub.value = 'Generate Messages'
+        }
+      })
+    }
+    function openGenTrainingDialog() {
+      document.getElementById('gterr').textContent = ''
+      document.getElementById('gtscenario').value = ''
+      document.getElementById('gtrows').innerHTML = ''
+      gtAddRow()
+      document.getElementById('gtdlg').showModal()
+    }
+  </script>
+  <style>
+    #gtdlg {
+      max-width: 34rem;
+      margin: 4rem auto;
+      padding: 0 0.75rem 0.75rem;
+      z-index: 2;
+    }
+
+    #gtform {
+      display: flex;
+      flex-direction: column;
+    }
+
+    #gtform h1 {
+      background-color: #a8e8a8;
+      margin: 0 -0.75rem;
+      padding: 0.5rem 0.75rem;
+      font-size: 1.5rem;
+    }
+
+    .gtrow {
+      display: flex;
+      gap: 0.5rem;
+      margin-top: 0.35rem;
+      align-items: center;
+    }
+
+    .gtrow select {
+      flex: 1;
+    }
+
+    #gtadd {
+      margin-top: 0.5rem;
+      align-self: start;
+    }
+
+    #gtlevels {
+      display: flex;
+      gap: 1.5rem;
+      margin-top: 1rem;
+    }
+
+    #gtscenario {
+      margin-top: 0.5rem;
+      width: 100%;
+      box-sizing: border-box;
+    }
+
+    #gterr:not(:empty) {
+      margin-top: 1.5rem;
+      color: red;
+    }
+
+    #gtsubrow {
+      margin-top: 1.5rem;
+      display: flex;
+      justify-content: end;
+      gap: 0.75rem;
+    }
+
+    #gtcan,
+    #gtsub {
+      border-radius: 0.25rem;
+    }
+
+    #gtsub {
+      background-color: #a8e8a8;
+    }
+  </style>
+</head>
+
+<body>
+  <dialog id=gtdlg>
+    <form id=gtform>
+      <input type=hidden name=dir value="{{DIR}}">
+      <h1>Generate Training Messages</h1>
+      <p>Add one row per message to generate. A training session can mix message types.</p>
+      <div id=gtrows></div>
+      <template id=gttypetmpl>
+        <div class=gtrow>
+          <select name=msgtype required></select>
+          <button type=button class=gtremove title="Remove this message">&times;</button>
+        </div>
+      </template>
+      <button type=button id=gtadd>+ Add another message</button>
+      <p>Proword level:</p>
+      <div id=gtlevels>
+        <label><input type=radio name=level value=full checked> Full list (F2/F1, all Net Control/Packet/Shadow tiers)</label>
+        <label><input type=radio name=level value=f3> F3 reduced list</label>
+      </div>
+      <p>Scenario (optional):</p>
+      <textarea id=gtscenario name=scenario rows=2 placeholder="e.g. a downed power line on Almaden Expressway (leave blank for a generic scenario)"></textarea>
+      <div id=gterr></div>
+      <div id=gtsubrow>
+        <button id=gtcan type=button>Cancel</button>
+        <input id=gtsub type=submit value="Generate Messages">
+      </div>
+    </form>
+  </dialog>
+</body>
+
+</html>
