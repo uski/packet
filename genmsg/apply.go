@@ -37,12 +37,11 @@ func Apply(inc *incident.Incident, msgTypes []message.EditableMType, results []R
 			return applied, fmt.Errorf("message type %q does not support draft creation", msgtype.Tag())
 		}
 		inc.ApplyDefaults(newmsg)
-		for f := range newmsg.Fields() {
-			tag := f.Tag()
-			if tag == "" {
+		for key, v := range res.Values {
+			if v == "" {
 				continue
 			}
-			if v, ok := res.Values[tag]; ok && v != "" {
+			if f := FindField(newmsg, key); f != nil {
 				f.SetValue(newmsg, f.FromHuman(newmsg, v))
 			}
 		}

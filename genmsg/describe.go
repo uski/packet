@@ -8,12 +8,15 @@
 // knowledge of any particular form (ICS-213, Road Closure, Shelter, etc.).
 package genmsg
 
-import "github.com/rothskeller/packet/v4/message"
+import (
+	"github.com/rothskeller/packet/v4/message"
+	"github.com/rothskeller/packet/v4/message/field"
+)
 
 // FieldSpec describes one editable field of a message type, for building an
 // LLM prompt and for later looking up the field to set its value.
 type FieldSpec struct {
-	Tag       string   // the PackItForms tag identifying the field
+	Tag       string   // the field's PackItForms tag, or its Common name if it has no tag (see Describe)
 	Common    string   // the well-known common-field name, if any
 	Label     string   // the human-readable field label
 	Help      string   // help text describing the field's purpose
@@ -22,25 +25,32 @@ type FieldSpec struct {
 	Required  bool     // true if the field currently has no value and fails validation without one
 }
 
-// Describe returns the settable fields of msg (which should be a freshly
-// created draft with the incident's defaults already applied -- see
-// incident.Incident.ApplyDefaults) that have a PackItForms tag, in field
-// order, for use in building an LLM prompt.
+// Describe returns the settable, addressable fields of msg (which should be
+// a freshly created draft with the incident's defaults already applied --
+// see incident.Incident.ApplyDefaults), in field order, for use in building
+// an LLM prompt. Not every message type is PackItForms-based (e.g. a plain
+// text message has no PIFO tags at all), so a field's Common name is used
+// as its Tag/key when it has no PIFO tag of its own; see FindField for the
+// matching lookup used when applying values back.
 func Describe(msg message.Message) []FieldSpec {
 	var specs []FieldSpec
 	for f := range msg.Fields() {
 		if !f.Editable(msg, false) || !f.Settable() {
 			continue
 		}
-		tag := f.Tag()
-		if tag == "" {
-			// Fields without a PIFO tag (e.g. read-only computed
-			// fields, or virtual date/time combinations) aren't
-			// independently addressable; skip them.
+		key := f.Tag()
+		if key == "" {
+			key = f.Common()
+		}
+		if key == "" {
+			// Fields with neither a PIFO tag nor a common name
+			// (e.g. read-only computed fields, or virtual
+			// date/time combinations) aren't independently
+			// addressable; skip them.
 			continue
 		}
 		spec := FieldSpec{
-			Tag:       tag,
+			Tag:       key,
 			Common:    f.Common(),
 			Label:     f.Label(),
 			Help:      f.EditHelp(),
@@ -83,11 +93,31 @@ var skipCommon = map[string]bool{
 	"headerReceived":       true,
 }
 
+// FindField returns the field of msg whose key (as computed by Describe:
+// its PIFO tag, or its Common name if it has none) equals key, or nil if
+// there is no such field.
+func FindField(msg message.Message, key string) field.Field {
+	for f := range msg.Fields() {
+		fkey := f.Tag()
+		if fkey == "" {
+			fkey = f.Common()
+		}
+		if fkey == key {
+			return f
+		}
+	}
+	return nil
+}
+
 // alwaysInclude lists common fields worth asking the LLM to fill even when
 // they aren't strictly required, because a message without them would look
-// obviously unfinished.
+// obviously unfinished. Different message types use different common names
+// for what is conceptually the same "subject line" field (form types use
+// messageSummary; plain text messages use subjectSummary, which packs
+// message ID/handling/summary into one SCCo-standard subject line).
 var alwaysInclude = map[string]bool{
-	"messageSummary": true, // Subject
+	"messageSummary": true,
+	"subjectSummary": true,
 }
 
 // Generatable filters specs down to the small set the LLM should actually
