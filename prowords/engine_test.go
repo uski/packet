@@ -86,6 +86,28 @@ func TestCountMixedGroupsInRealisticText(t *testing.T) {
 	}
 }
 
+func TestFindReturnsSpansInOrder(t *testing.T) {
+	text := "Gen 5kW, call 408-555-1212 now."
+	matches := Find(text)
+	want := []struct {
+		text string
+		cat  Category
+	}{
+		{"5kW", MixedGroupFigures},
+		{",", Punctuation},
+		{"408-555-1212", TelephoneFigures},
+		{".", Punctuation},
+	}
+	if len(matches) != len(want) {
+		t.Fatalf("Find(%q) = %+v, want %d matches", text, matches, len(want))
+	}
+	for i, m := range matches {
+		if got := text[m.Start:m.End]; got != want[i].text || m.Category != want[i].cat {
+			t.Errorf("match %d = %q (%s), want %q (%s)", i, got, m.Category, want[i].text, want[i].cat)
+		}
+	}
+}
+
 func TestCountFieldsNoMatchAcrossFields(t *testing.T) {
 	// Each word alone is not an I SPELL name; only joined across the two
 	// fields would they look like one.

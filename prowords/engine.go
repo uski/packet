@@ -1,5 +1,10 @@
 package prowords
 
+import (
+	"cmp"
+	"slices"
+)
+
 // This file implements the "proword engine": given arbitrary message text,
 // it reports which prowords a sending station would need to use to voice
 // it correctly, and how many times each would be used. It is a best-effort
@@ -38,29 +43,31 @@ var wordCategories = []Category{
 	Newline,
 }
 
-// Count analyzes text and returns, for each proword category found, how
-// many times it appears. Categories with zero occurrences are omitted from
-// the result.
-func Count(text string) map[Category]int {
-	type span struct{ start, end int }
-	var claimed []span
+// Match is one proword usage found in text: the byte span of text it covers
+// and the proword category it calls for.
+type Match struct {
+	Start, End int
+	Category   Category
+}
+
+// Find analyzes text and returns every proword usage in it, in text order.
+// No two matches overlap.
+func Find(text string) []Match {
+	var matches []Match
 	overlaps := func(s, e int) bool {
-		for _, c := range claimed {
-			if s < c.end && e > c.start {
+		for _, m := range matches {
+			if s < m.End && e > m.Start {
 				return true
 			}
 		}
 		return false
 	}
-	counts := map[Category]int{}
 	claimPatterns := func(cats []Category) {
 		for _, cat := range cats {
 			for _, loc := range catalog[cat].re.FindAllStringIndex(text, -1) {
-				if overlaps(loc[0], loc[1]) {
-					continue
+				if !overlaps(loc[0], loc[1]) {
+					matches = append(matches, Match{loc[0], loc[1], cat})
 				}
-				claimed = append(claimed, span{loc[0], loc[1]})
-				counts[cat]++
 			}
 		}
 	}
@@ -70,11 +77,22 @@ func Count(text string) map[Category]int {
 			continue
 		}
 		if cat, s, e, ok := classifyGroup(text[loc[0]:loc[1]]); ok {
-			claimed = append(claimed, span{loc[0] + s, loc[0] + e})
-			counts[cat]++
+			matches = append(matches, Match{loc[0] + s, loc[0] + e, cat})
 		}
 	}
 	claimPatterns(wordCategories)
+	slices.SortFunc(matches, func(a, b Match) int { return cmp.Compare(a.Start, b.Start) })
+	return matches
+}
+
+// Count analyzes text and returns, for each proword category found, how
+// many times it appears. Categories with zero occurrences are omitted from
+// the result.
+func Count(text string) map[Category]int {
+	counts := map[Category]int{}
+	for _, m := range Find(text) {
+		counts[m.Category]++
+	}
 	return counts
 }
 
