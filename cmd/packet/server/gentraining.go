@@ -31,6 +31,7 @@ type genTrainingMessage struct {
 	Type     string                    `json:"type"`
 	Prowords []genTrainingProwordCount `json:"prowords"`
 	Missing  []string                  `json:"missing,omitempty"`
+	Invalid  []string                  `json:"invalid,omitempty"`
 }
 
 // genTrainingResult is the final payload of a finished job: the generated
@@ -181,6 +182,7 @@ func runGenTraining(job *genTrainingJob, dir string, client *genmsg.ClaudeClient
 			for _, cat := range a.Result.Missing {
 				gm.Missing = append(gm.Missing, prowords.ProwordName(cat))
 			}
+			gm.Invalid = a.Result.InvalidFields
 			result.Messages[j] = gm
 		}
 		return nil

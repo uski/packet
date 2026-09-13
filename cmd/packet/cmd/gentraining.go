@@ -108,14 +108,16 @@ func cmdGentraining(args []string) (err error) {
 	}
 	printProwordTable(applied)
 	for _, a := range applied {
-		if len(a.Result.Missing) == 0 {
-			continue
+		if len(a.Result.Missing) > 0 {
+			var names []string
+			for _, cat := range a.Result.Missing {
+				names = append(names, prowords.ProwordName(cat))
+			}
+			c.ErrorF("Warning: message %s may be missing content for: %s.  Review it before use.", a.ID, strings.Join(names, ", "))
 		}
-		var names []string
-		for _, cat := range a.Result.Missing {
-			names = append(names, prowords.ProwordName(cat))
+		if len(a.Result.InvalidFields) > 0 {
+			c.ErrorF("Warning: message %s had an unrecognized value for: %s; left at its default.  Review it before use.", a.ID, strings.Join(a.Result.InvalidFields, ", "))
 		}
-		c.ErrorF("Warning: message %s may be missing content for: %s.  Review it before use.", a.ID, strings.Join(names, ", "))
 	}
 	return nil
 }
