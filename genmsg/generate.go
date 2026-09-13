@@ -265,6 +265,9 @@ func (g *generation) generateMessage(idx, n int, plan MessagePlan) error {
 		if err == nil && len(parsed) == 0 {
 			err = errors.New("the response held no message object")
 		}
+		if err == nil {
+			parsed[0] = fictionalizeCallSigns(parsed[0])
+		}
 		if err != nil {
 			lastErr, reason = err, "the previous response was unusable"
 			retryNote = fmt.Sprintf("\nYour previous response could not be used (%s). Respond with ONLY a JSON array holding one object that maps field tags to string values.\n", err)
@@ -405,7 +408,7 @@ func buildBriefPrompt(req Request) string {
 	}
 	b.WriteString("\nWrite a concise exercise brief of at most 250 words, in plain text:\n" +
 		"1. The incident: what happened, where, and when.\n" +
-		"2. Shared facts every message must agree on: names of people, places and addresses, quantities, times, amateur call signs. Use only the xanadu-city.org domain for any email or web address.\n" +
+		"2. Shared facts every message must agree on: names of people, places and addresses, quantities, times, amateur call signs. Use only the xanadu-city.org domain for any email or web address, and only fictitious call signs ending with a digit, like W6XRL4, never a real call sign.\n" +
 		"3. One line per message saying specifically what it reports, requests, or answers, so each reply answers what was actually asked.\n" +
 		"Do not write the messages themselves. Each message will be at most about 50 words.\n")
 	return b.String()
@@ -665,7 +668,7 @@ func buildPrompt(req Request, brief string, specsPerMsg [][]FieldSpec, results [
 		b.WriteString("Revise your previous version rather than starting over: fix what is flagged above, keep everything that already works, and return the complete field values again (not just the changed ones). Every field under \"Fields you MUST fill in\" needs a non-empty value in your response -- do not omit any of them.\n\n")
 	}
 	fmt.Fprintf(&b, "Every message must also include the exact phrase %q somewhere in its content, to clearly mark it as training/exercise traffic rather than a real report.\n\n", DrillTrafficPhrase)
-	b.WriteString("Respond with ONLY a JSON array of exactly that many objects, in the same order as listed above, each mapping THAT message's own field tags to their string values. Keep every message SHORT: real emergency radio traffic is deliberately terse, and each message's word budget above covers ALL of its fields together, so a free-text field should be one or two short sentences at most -- include only what's needed to satisfy the listed requirements. Only use the field tags listed for each message: give every MUST field a non-empty value, fill an optional field only when the message's information belongs there, and never add other keys. For any field marked as a dropdown above, its value must be one of the listed choices, verbatim -- do not invent your own wording for it. Everywhere else, use normal sentence capitalization: capitalize only the first word of a sentence or phrase, proper names, and acronyms, and never Title Case ordinary words (write \"Generator runtime is 8 hours\", not \"Generator Runtime is 8 hours\"), because capitalized ordinary words read as names that call for I SPELL. Before answering, check your values against every requirement and the word budget.\n")
+	b.WriteString("Respond with ONLY a JSON array of exactly that many objects, in the same order as listed above, each mapping THAT message's own field tags to their string values. Keep every message SHORT: real emergency radio traffic is deliberately terse, and each message's word budget above covers ALL of its fields together, so a free-text field should be one or two short sentences at most -- include only what's needed to satisfy the listed requirements. Only use the field tags listed for each message: give every MUST field a non-empty value, fill an optional field only when the message's information belongs there, and never add other keys. For any field marked as a dropdown above, its value must be one of the listed choices, verbatim -- do not invent your own wording for it. Everywhere else, use normal sentence capitalization: capitalize only the first word of a sentence or phrase, proper names, and acronyms, and never Title Case ordinary words (write \"Generator runtime is 8 hours\", not \"Generator Runtime is 8 hours\"), because capitalized ordinary words read as names that call for I SPELL. Every amateur radio call sign, anywhere in a message (including inside email and packet addresses), must be fictitious so it can't belong to a real station: write it in the format of a real call sign followed by one extra digit, like \"W6XRL4\" or \"K6ABC2\", never a real-format call sign like \"KJ6ABC\". Before answering, check your values against every requirement and the word budget.\n")
 	return b.String()
 }
 

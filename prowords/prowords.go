@@ -97,8 +97,9 @@ var catalog = map[Category]info{
 	},
 	AmateurCall: {
 		Proword: "AMATEUR CALL",
-		Prompt:  `Include a plausible amateur radio call sign (e.g. "W6XSC", "KJ6ABC"), so the sender must use the AMATEUR CALL proword.`,
-		re:      regexp.MustCompile(`\b[AKNW][A-Z]?\d[A-Z]{1,3}\b`),
+		Prompt:  `Include a fictitious amateur radio call sign that ends with a digit, so it can't be anyone's real call sign (e.g. "W6XRL4", "K6ABC2"), so the sender must use the AMATEUR CALL proword.`,
+		// A real call sign, or a fictitious one with a trailing digit.
+		re: regexp.MustCompile(`\b[AKNW][A-Z]?\d[A-Z]{1,3}\d?\b`),
 	},
 	EmailAddress: {
 		Proword: "EMAIL ADDRESS",
@@ -117,7 +118,7 @@ var catalog = map[Category]info{
 	},
 	PacketAddress: {
 		Proword: "PACKET ADDRESS",
-		Prompt:  `Include a packet BBS address of the form callsign@bbscall.#region.state.country (e.g. "w6xrl4@w4xsc.#nca.ca.usa"), so the sender must use the PACKET ADDRESS proword.`,
+		Prompt:  `Include a packet BBS address of the form callsign@bbscall.#region.state.country (e.g. "w6xrl4@w6bbs4.#nca.ca.usa"), using fictitious call signs that end with a digit, so the sender must use the PACKET ADDRESS proword.`,
 		re:      regexp.MustCompile(`\S+@\S+\.#\S+`),
 	},
 	InternetAddress: {

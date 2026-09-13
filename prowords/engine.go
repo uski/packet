@@ -3,6 +3,7 @@ package prowords
 import (
 	"cmp"
 	"slices"
+	"strings"
 )
 
 // This file implements the "proword engine": given arbitrary message text,
@@ -65,6 +66,10 @@ func Find(text string) []Match {
 	claimPatterns := func(cats []Category) {
 		for _, cat := range cats {
 			for _, loc := range catalog[cat].re.FindAllStringIndex(text, -1) {
+				// A call sign with "/..." is a MIXED GROUP, per the Procedures.
+				if cat == AmateurCall && strings.HasPrefix(text[loc[1]:], "/") {
+					continue
+				}
 				if !overlaps(loc[0], loc[1]) {
 					matches = append(matches, Match{loc[0], loc[1], cat})
 				}

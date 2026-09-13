@@ -86,6 +86,18 @@ func TestCountMixedGroupsInRealisticText(t *testing.T) {
 	}
 }
 
+func TestCountCallSigns(t *testing.T) {
+	for text, want := range map[string]Category{
+		"call W6XRL4 now": AmateurCall,
+		"call KJ6ABC now": AmateurCall,
+		"W6XRL4/VA":       MixedGroup,
+	} {
+		if counts := Count(text); counts[want] != 1 {
+			t.Errorf("Count(%q) = %v, want one %s", text, counts, want)
+		}
+	}
+}
+
 func TestFindReturnsSpansInOrder(t *testing.T) {
 	text := "Gen 5kW, call 408-555-1212 now."
 	matches := Find(text)

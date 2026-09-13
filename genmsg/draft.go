@@ -82,7 +82,7 @@ func problemSpecs(msg message.Message) []FieldSpec {
 		if key == "" || skipCommon[f.Common()] || !f.Settable() || !f.Editable(msg, true) {
 			continue
 		}
-		if err := f.Validate(msg, f, 0); err != nil {
+		if err := f.Validate(msg, f, 0); err != nil && !isFictitiousCallSignError(f.Value(msg), err) {
 			s := newFieldSpec(msg, f, key)
 			s.Required = true
 			s.Problem = err.Error()
