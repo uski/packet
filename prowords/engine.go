@@ -75,7 +75,10 @@ func CountFields(values map[string]string) map[Category]int {
 	var b strings.Builder
 	for _, v := range values {
 		b.WriteString(v)
-		b.WriteString("\n")
+		// A bare newline would let a pattern match across two fields
+		// (e.g. "Shelter" ending one field and "Manager" starting the
+		// next reading as an I SPELL name); "|" matches no category.
+		b.WriteString("\n|\n")
 	}
 	return Count(b.String())
 }

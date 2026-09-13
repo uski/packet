@@ -42,6 +42,15 @@ func TestCountEmpty(t *testing.T) {
 	}
 }
 
+func TestCountFieldsNoMatchAcrossFields(t *testing.T) {
+	// Each word alone is not an I SPELL name; only joined across the two
+	// fields would they look like one.
+	counts := CountFields(map[string]string{"a": "Kaczmarek", "b": "Street"})
+	if counts[ISpell] != 0 {
+		t.Errorf("ISpell = %d, want 0 (must not match across field boundaries)", counts[ISpell])
+	}
+}
+
 func TestCountFieldsAndTotal(t *testing.T) {
 	values := map[string]string{
 		"subject": "Road closure on 5th Street",
