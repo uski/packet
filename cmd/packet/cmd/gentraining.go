@@ -3,15 +3,16 @@ package cmd
 import (
 	"cmp"
 	"context"
+	"encoding/json"
 	"fmt"
 	"maps"
+	"os"
 	"slices"
 	"strings"
 
 	"github.com/rothskeller/packet/v4/cmd/packet/cio"
 	"github.com/rothskeller/packet/v4/genmsg"
 	"github.com/rothskeller/packet/v4/incident"
-	"github.com/rothskeller/packet/v4/message"
 	"github.com/rothskeller/packet/v4/prowords"
 	"github.com/spf13/pflag"
 )
@@ -20,12 +21,31 @@ const (
 	gentrainingSlug = `Generate realistic training messages for a credential evaluation`
 	gentrainingHelp = `
 usage: packet gentrain ⇥[-flags] «msg-type» [«msg-type» ...]
+       packet gentrain ⇥--flow «file.json» [-flags]
   -l, --level «level»      ⇥Proword profile: "f3" or "full" (default "full")
   -s, --scenario «text»    ⇥Scenario to steer the generated content
+  -f, --flow «file.json»   ⇥Generate a multi-party message flow from a JSON file
 
 The "packet gentrain" (or "gentraining") command asks Claude to draft one realistic 3rd-party message for each «msg-type» given on the command line (see "packet forms list" for the supported tags/keys, or "plain" for a plain text message), suitable for handing to a candidate during an SCCo RACES credential evaluation.
 
 A training session doesn't need to use the same form for every message: for example, "packet gentrain ICS213 plain RoadCl" generates three messages -- one ICS-213, one plain text message, and one Road Closure form -- as a single batch with a shared scenario. Repeat a «msg-type» to get more than one message of that type, e.g. "packet gentrain ICS213 ICS213 plain" for two ICS-213s and a plain text message.
+
+For a coherent multi-party exchange -- e.g. one message asking all stations for a status update, answered by several reply messages that are actually consistent with the question and with each other -- use --flow with a JSON file shaped like:
+
+  {
+    "parties": [
+      {"role": "Net Control", "location": "County EOC"},
+      {"role": "Shelter Manager", "location": "Roosevelt MS"}
+    ],
+    "messages": [
+      {"msgType": "ICS213", "from": 0, "to": -1, "toLabel": "All Stations",
+       "purpose": "request shelter capacity status"},
+      {"msgType": "ICS213", "from": 1, "to": 0, "replyTo": 1,
+       "purpose": "report current shelter status"}
+    ]
+  }
+
+"parties" are referenced by 0-based index from each message's "from"/"to". Use "to": -1 with "toLabel" for a broadcast recipient that isn't one of the defined parties (e.g. "All Stations"). "replyTo" is the 1-based index of another message in the same file that this one replies to; Claude is given that message's content so the reply is directly consistent with it, not just generated independently. The From/To ICS Position and Location on each message are set directly from the parties (never left for Claude to invent), so they stay perfectly consistent across the whole flow.
 
 The messages are generated to exercise the message-passing prowords required for the given --level: "f3" is the reduced proword list evaluated only for the Field Communicator Type III credential; "full" (the default) is the complete proword list required for every other credential (F2, F1, and all Net Control, Packet Operator, and Shadow Communicator tiers). The set of required prowords is spread across the generated messages rather than crammed into every one.
 
@@ -41,11 +61,14 @@ func cmdGentraining(args []string) (err error) {
 	var (
 		level    string
 		scenario string
+		flowFile string
+		specs    []genmsg.MessageSpec
 		c        = cio.Open()
 	)
 	flags := pflag.NewFlagSet("gentraining", pflag.ContinueOnError)
 	flags.StringVarP(&level, "level", "l", prowords.LevelFull, `Proword profile: "f3" or "full"`)
 	flags.StringVarP(&scenario, "scenario", "s", "", "Scenario to steer the generated content")
+	flags.StringVarP(&flowFile, "flow", "f", "", "Generate a multi-party message flow from a JSON file")
 	flags.Usage = func() {} // we do our own
 	if err = flags.Parse(args); err == pflag.ErrHelp {
 		return cmdHelp([]string{"gentraining"})
@@ -53,7 +76,10 @@ func cmdGentraining(args []string) (err error) {
 		c.Error(err)
 		return usage(gentrainingHelp)
 	}
-	if flags.NArg() < 1 {
+	if (flowFile == "") == (flags.NArg() == 0) {
+		if flowFile != "" {
+			c.ErrorF(`Do not give «msg-type» arguments together with --flow.`)
+		}
 		return usage(gentrainingHelp)
 	}
 	level = strings.ToLower(level)
@@ -62,23 +88,32 @@ func cmdGentraining(args []string) (err error) {
 		return usage(gentrainingHelp)
 	}
 	registerForms() // needed to recognize message types
-	msgtypes := make([]message.EditableMType, flags.NArg())
-	for argidx := range flags.NArg() {
-		mtarg := flags.Arg(argidx)
-		var found message.EditableMType
-		for mt := range message.AllTypes() {
-			if emt, ok := mt.(message.EditableMType); ok {
-				if strings.EqualFold(mtarg, emt.CreateTag()) || strings.EqualFold(mtarg, emt.CreateKey()) {
-					found = emt
-					break
-				}
-			}
-		}
-		if found == nil {
-			c.ErrorF(`There is no editable message type %q (message #%d).  Use "packet forms list" to get a list of message types.`, mtarg, argidx+1)
+	if flowFile != "" {
+		data, err := os.ReadFile(flowFile)
+		if err != nil {
+			c.ErrorF(`Can't read flow file: %s.`, err)
 			return usage(gentrainingHelp)
 		}
-		msgtypes[argidx] = found
+		var fl genmsg.Flow
+		if err := json.Unmarshal(data, &fl); err != nil {
+			c.ErrorF(`%s does not contain valid JSON: %s.`, flowFile, err)
+			return usage(gentrainingHelp)
+		}
+		if specs, err = genmsg.ResolveFlow(fl); err != nil {
+			c.ErrorF(`%s: %s.`, flowFile, err)
+			return usage(gentrainingHelp)
+		}
+	} else {
+		specs = make([]genmsg.MessageSpec, flags.NArg())
+		for argidx := range flags.NArg() {
+			mtarg := flags.Arg(argidx)
+			mt, ok := genmsg.FindMsgType(mtarg)
+			if !ok {
+				c.ErrorF(`There is no editable message type %q (message #%d).  Use "packet forms list" to get a list of message types.`, mtarg, argidx+1)
+				return usage(gentrainingHelp)
+			}
+			specs[argidx] = genmsg.MessageSpec{MsgType: mt}
+		}
 	}
 	client := &genmsg.ClaudeClient{}
 	if !client.HasAPIKey() {
@@ -92,7 +127,7 @@ func cmdGentraining(args []string) (err error) {
 		}
 		results, err := genmsg.Generate(context.Background(), client, genmsg.Request{
 			Incident: i,
-			MsgTypes: msgtypes,
+			Messages: specs,
 			Level:    level,
 			Scenario: scenario,
 			Progress: func(s string) { c.Status("%s", s) },
@@ -101,7 +136,7 @@ func cmdGentraining(args []string) (err error) {
 		if err != nil {
 			return err
 		}
-		applied, err = genmsg.Apply(i, msgtypes, results)
+		applied, err = genmsg.Apply(i, specs, results)
 		return err
 	}); err != nil {
 		return err
