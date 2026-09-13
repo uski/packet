@@ -295,6 +295,8 @@ func (g *generation) generateMessage(idx, n int, plan MessagePlan) error {
 		if needCheck {
 			score++
 		}
+		long := longSummaries(draft)
+		score += len(long)
 		if bestScore >= 0 && score >= bestScore {
 			break // the revision didn't improve on the best version so far
 		}
@@ -304,11 +306,11 @@ func (g *generation) generateMessage(idx, n int, plan MessagePlan) error {
 		}
 		// The revision sees every requirement, with the unmet ones
 		// flagged, so fixing one doesn't lose another.
-		plan = MessagePlan{Categories: wanted, Unmet: res.Missing, MissingFields: problems, CheckOne: checkOne, CheckOneUnmet: needCheck}
+		plan = MessagePlan{Categories: wanted, Unmet: res.Missing, MissingFields: problems, CheckOne: checkOne, CheckOneUnmet: needCheck, LongFields: long}
 		if over {
 			plan.Words = res.Words
 		}
-		reason = revisionReason(res, problems, over, needCheck)
+		reason = revisionReason(res, problems, over, needCheck, len(long) > 0)
 		slog.Info("revising generated training message", "message", idx+1, "reason", reason, "values", res.Values)
 	}
 	if bestScore < 0 {
@@ -320,8 +322,11 @@ func (g *generation) generateMessage(idx, n int, plan MessagePlan) error {
 
 // revisionReason describes, for the progress display, why a message is
 // being sent back to Claude.
-func revisionReason(res *Result, problems []FieldSpec, over, needCheck bool) string {
+func revisionReason(res *Result, problems []FieldSpec, over, needCheck, longSummary bool) string {
 	var parts []string
+	if longSummary {
+		parts = append(parts, "shortening the subject")
+	}
 	if needCheck {
 		parts = append(parts, "checking a checkbox")
 	}
@@ -499,7 +504,7 @@ func buildPrompt(req Request, brief string, specsPerMsg [][]FieldSpec, results [
 	} else {
 		b.WriteString("No specific scenario was given. Invent a plausible Santa Clara County emergency-response scenario (e.g. a downed power line, a fallen tree blocking a road, traffic congestion near a shelter, storm damage assessment, a utility outage) and use it consistently across all the messages in this batch.\n\n")
 	}
-	fmt.Fprintf(&b, "Generate exactly %d message(s), described below in order. They may be different form types with different fields (a training session can mix, for example, an ICS-213, a plain text message, and a Road Closure form). Weave each message's listed requirements naturally into that message's own field values -- they must fit the scenario and read like real, professional emergency radio traffic, not like a checklist. Proword content in ANY field counts, so each requirement only needs to be met ONCE, in the single field that suits it best (a person's name in a name field, an email address or phone number in a contact field) -- never repeat it in another field, and never add a sentence to the free-text body just to carry it (e.g. not \"Contact Jane Doe at jane@xanadu-city.org for logistics.\" when there are name and contact fields to hold them). Requirements already satisfied by pre-filled fields have been left out. Fill each form the way a trained operator fills out the real form: put every piece of information in the field made for it -- for example each requested item in its own item row (Item 1's name and quantity, then Item 2's), a person in a name field, a phone number in a phone field -- and use a free-text field such as Comments or Special Instructions only for information no other field holds, never to restate other fields (e.g. not \"Need 50 blankets, generator\" in Comments when the form has item fields).\n\n", len(pending))
+	fmt.Fprintf(&b, "Generate exactly %d message(s), described below in order. They may be different form types with different fields (a training session can mix, for example, an ICS-213, a plain text message, and a Road Closure form). Weave each message's listed requirements naturally into that message's own field values -- they must fit the scenario and read like real, professional emergency radio traffic, not like a checklist. Proword content in ANY field counts, so each requirement only needs to be met ONCE, in the single field that suits it best (a person's name in a name field, an email address or phone number in a contact field) -- never repeat it in another field, and never add a sentence to the free-text body just to carry it (e.g. not \"Contact Jane Doe at jane@xanadu-city.org for logistics.\" when there are name and contact fields to hold them). Requirements already satisfied by pre-filled fields have been left out. Fill each form the way a trained operator fills out the real form: put every piece of information in the field made for it -- for example each requested item in its own item row (Item 1's name and quantity, then Item 2's), a person in a name field, a phone number in a phone field -- and use a free-text field such as Comments or Special Instructions only for information no other field holds, never to restate other fields (e.g. not \"Need 50 blankets, generator\" in Comments when the form has item fields). A subject, title, or summary field is only a short headline of a few words: the message's details go in its message body or the form's other fields, never in the subject.\n\n", len(pending))
 	pendingSet := make(map[int]bool, len(pending))
 	for _, idx := range pending {
 		pendingSet[idx] = true
@@ -568,6 +573,9 @@ func buildPrompt(req Request, brief string, specsPerMsg [][]FieldSpec, results [
 			if shortNameField[s.Common] {
 				b.WriteString(" [keep this SHORT: at most 3 words, ideally 2, e.g. \"EOC Net Control\" or \"Command Post\", not a full sentence]")
 			}
+			if alwaysInclude[s.Common] {
+				fmt.Fprintf(&b, " [a short title of at most %d words; the message's details go in its message fields, never here]", maxSummaryWords)
+			}
 			if names := routedForTag(routed, s.Tag); len(names) > 0 {
 				fmt.Fprintf(&b, " [put the %s content here -- do NOT also add it to the free-text body]", strings.Join(names, "/"))
 			}
@@ -580,7 +588,7 @@ func buildPrompt(req Request, brief string, specsPerMsg [][]FieldSpec, results [
 			}
 		}
 		if len(optional) > 0 {
-			b.WriteString("Other fields on this form, in form order. Fill one ONLY when this message has information that belongs in it, and leave the rest out:\n")
+			b.WriteString("Other fields on this form, in form order. Put the message's details in the fields they belong in, and leave the fields that don't apply empty:\n")
 			for _, s := range optional {
 				fmt.Fprintf(&b, "  - %q: %s", s.Tag, s.Label)
 				if isCheckbox(s) {
@@ -614,6 +622,9 @@ func buildPrompt(req Request, brief string, specsPerMsg [][]FieldSpec, results [
 		fmt.Fprintf(&b, "Word budget: this whole message must total about %d words or fewer across ALL of its fields. Its pre-filled fields already use %d, so the values you give for it must total at most %d words (a phone number, email address, call sign, or other group without spaces counts as one word). Optional fields may stay empty; leave them out rather than go over.\n", MaxWords, baseWords[idx], budget)
 		if plans[pos].Words > 0 {
 			fmt.Fprintf(&b, "Your previous response made this message %d words in total: cut it to at most %d by shortening text and leaving optional fields empty (never leave a required field empty).\n", plans[pos].Words, MaxWords)
+		}
+		for _, s := range plans[pos].LongFields {
+			fmt.Fprintf(&b, "Your previous version's %q (%s) was %s: make it a short title of at most %d words and move the details into the message fields.\n", s.Tag, s.Label, s.Problem, maxSummaryWords)
 		}
 		if prev := results[idx].Values; isRepair && prev != nil {
 			if data, err := json.Marshal(prev); err == nil {

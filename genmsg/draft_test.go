@@ -155,6 +155,70 @@ func TestLongFormMustCheckOneCheckbox(t *testing.T) {
 	}
 }
 
+func TestBuildDraftClearsIncidentDefaultBody(t *testing.T) {
+	mt := formType(t, "ICS213")
+	var inc *incident.Incident
+	if err := incident.Create(t.TempDir(), func(i *incident.Incident) error {
+		i.Config.DefaultBody = "Template body for hand-written messages"
+		inc = i
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	draft, err := buildDraft(inc, MessageSpec{MsgType: mt}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := FindField(draft, "12.").Value(draft); got != "" {
+		t.Errorf("message body = %q, want the incident's default body cleared", got)
+	}
+	specs, _ := PromptFields(draft, nil)
+	if s, ok := specsByTag(specs)["12."]; !ok || s.Optional {
+		t.Error("the required message body should be a MUST field for Claude, not hidden as already filled")
+	}
+}
+
+// TestGenerateShortensLongSubject covers Claude putting the message's
+// details in its subject line.
+func TestGenerateShortensLongSubject(t *testing.T) {
+	const longSubject = "Shelter one is operational with forty five guests and twelve spare cots"
+	var calls atomic.Int32
+	var prompts []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var req claudeRequest
+		json.NewDecoder(r.Body).Decode(&req)
+		prompts = append(prompts, req.Messages[0].Content)
+		if calls.Add(1) == 1 {
+			writeClaudeText(w, `[{"subjectHandling":"ROUTINE","subjectSummary":"`+longSubject+`","defaultBody":"`+f3Body+`"}]`)
+			return
+		}
+		writeClaudeText(w, f3PlainJSON)
+	}))
+	defer srv.Close()
+
+	client := &ClaudeClient{APIKey: "test-key", URL: srv.URL}
+	results, err := Generate(context.Background(), client, Request{
+		Incident: draftTestIncident(t),
+		Messages: []MessageSpec{{MsgType: message.PlainMessage}},
+		Level:    "f3",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if calls.Load() != 2 {
+		t.Fatalf("expected 2 calls (draft, then shorten the subject), got %d", calls.Load())
+	}
+	if !strings.Contains(prompts[0], "a short title of at most 8 words") {
+		t.Errorf("the subject field should be described as a short title:\n%s", prompts[0])
+	}
+	if !strings.Contains(prompts[1], "make it a short title") {
+		t.Errorf("revision prompt should ask for a shorter subject:\n%s", prompts[1])
+	}
+	if got := results[0].Values["subjectSummary"]; got != "Road closure" {
+		t.Errorf("subject = %q, want the shortened one", got)
+	}
+}
+
 func TestSetFieldValuesKeepsLaterItemRows(t *testing.T) {
 	mt := formType(t, "ResReq")
 	inc := draftTestIncident(t)

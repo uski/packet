@@ -9,9 +9,10 @@ type MessagePlan struct {
 	Categories    []prowords.Category
 	Unmet         []prowords.Category // on a repair round, the Categories the previous version didn't satisfy
 	MissingFields []FieldSpec
-	Words         int  // on a repair round, the message's total words if it went over budget, else 0
-	CheckOne      bool // the form has many checkboxes, so the message must check at least one
-	CheckOneUnmet bool // on a repair round, the previous version checked none
+	Words         int         // on a repair round, the message's total words if it went over budget, else 0
+	CheckOne      bool        // the form has many checkboxes, so the message must check at least one
+	CheckOneUnmet bool        // on a repair round, the previous version checked none
+	LongFields    []FieldSpec // on a repair round, subject-like fields the previous version made too long
 }
 
 // alwaysEvery lists categories common enough that every generated message

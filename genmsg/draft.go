@@ -31,6 +31,12 @@ func buildDraft(inc *incident.Incident, m MessageSpec, values map[string]string)
 		return nil, fmt.Errorf("message type %q does not support draft creation", m.MsgType.Tag())
 	}
 	inc.ApplyDefaults(draft)
+	// The incident's default body is a template for hand-written messages.
+	// Left in, it would hide the body from Claude as already filled, and the
+	// message's details would end up in its subject.
+	if f := FindFieldByCommon(draft, "defaultBody"); f != nil {
+		f.SetValue(draft, "")
+	}
 	applyPartyFields(draft, m)
 	setFieldValues(draft, values)
 	// After the values, since they can make further dates/times required.
@@ -93,6 +99,27 @@ func problemSpecs(msg message.Message) []FieldSpec {
 		}
 	}
 	return specs
+}
+
+// maxSummaryWords caps a subject, title, or summary field, which Claude
+// otherwise tends to fill with the message's details.
+const maxSummaryWords = 8
+
+// longSummaries returns the subject-like fields of msg (see alwaysInclude)
+// longer than maxSummaryWords, with Problem giving their word count.
+func longSummaries(msg message.Message) []FieldSpec {
+	var long []FieldSpec
+	for f := range msg.Fields() {
+		if !alwaysInclude[f.Common()] {
+			continue
+		}
+		if n := len(strings.Fields(f.Value(msg))); n > maxSummaryWords {
+			s := newFieldSpec(msg, f, fieldKey(f))
+			s.Problem = fmt.Sprintf("%d words", n)
+			long = append(long, s)
+		}
+	}
+	return long
 }
 
 // manyCheckboxes is how many checkboxes make a form long enough that a
