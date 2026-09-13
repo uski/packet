@@ -147,7 +147,7 @@
       div.innerHTML = ''
       data.messages.forEach(msg => {
         const h = document.createElement('h2')
-        h.textContent = `${msg.id} — ${msg.type}`
+        h.textContent = `${msg.id} — ${msg.type} — ${msg.words} words`
         div.appendChild(h)
         if (msg.missing && msg.missing.length) {
           const warn = document.createElement('p')
@@ -165,6 +165,12 @@
           const warn = document.createElement('p')
           warn.className = 'mpwarn'
           warn.textContent = `Missing required field(s): ${msg.missingFields.join(', ')}. Review before use.`
+          div.appendChild(warn)
+        }
+        if (msg.overLimit) {
+          const warn = document.createElement('p')
+          warn.className = 'mpwarn'
+          warn.textContent = `Over the ~50-word target (${msg.words} words). Review before use.`
           div.appendChild(warn)
         }
         if (!msg.prowords || !msg.prowords.length) {

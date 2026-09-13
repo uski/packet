@@ -32,6 +32,8 @@ type genTrainingMessage struct {
 	Missing       []string                  `json:"missing,omitempty"`
 	Invalid       []string                  `json:"invalid,omitempty"`
 	MissingFields []string                  `json:"missingFields,omitempty"`
+	Words         int                       `json:"words"`
+	OverLimit     bool                      `json:"overLimit,omitempty"`
 }
 
 // genTrainingResult is the final payload of a finished job: the generated
@@ -249,6 +251,8 @@ func buildGenTrainingResult(applied []genmsg.Applied) genTrainingResult {
 		}
 		gm.Invalid = a.Result.InvalidFields
 		gm.MissingFields = a.Result.MissingFields
+		gm.Words = a.Result.Words
+		gm.OverLimit = a.Result.Words > genmsg.MaxWords+genmsg.WordTolerance
 		result.Messages[j] = gm
 	}
 	return result

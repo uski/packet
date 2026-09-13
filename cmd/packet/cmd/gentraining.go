@@ -158,6 +158,9 @@ func cmdGentraining(args []string) (err error) {
 		if len(a.Result.MissingFields) > 0 {
 			c.ErrorF("Warning: message %s is missing a required value for: %s.  Review it before use.", a.ID, strings.Join(a.Result.MissingFields, ", "))
 		}
+		if a.Result.Words > genmsg.MaxWords+genmsg.WordTolerance {
+			c.ErrorF("Warning: message %s is %d words, over the target of about %d.  Review it before use.", a.ID, a.Result.Words, genmsg.MaxWords)
+		}
 	}
 	return nil
 }
@@ -167,7 +170,7 @@ func cmdGentraining(args []string) (err error) {
 // and how many times each appears.
 func printProwordTable(applied []genmsg.Applied) {
 	for _, a := range applied {
-		fmt.Printf("%s (%s)\n", a.ID, a.MsgType.Name())
+		fmt.Printf("%s (%s, %d words)\n", a.ID, a.MsgType.Name(), a.Result.Words)
 		if len(a.Result.Counts) == 0 {
 			fmt.Println("  (no prowords detected)")
 			continue
