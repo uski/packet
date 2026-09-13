@@ -39,6 +39,55 @@ func TestServePostGenTrainingNoAPIKey(t *testing.T) {
 	}
 }
 
+func TestServePostGenTrainingFlowNoAPIKey(t *testing.T) {
+	dir := t.TempDir()
+	if err := incident.Create(dir, func(*incident.Incident) error { return nil }); err != nil {
+		t.Fatal(err)
+	}
+	os.Unsetenv("ANTHROPIC_API_KEY")
+
+	s := &Server{stop: make(chan struct{})}
+	body := `{"dir":"` + dir + `","level":"f3","parties":[{"role":"Net Control"}],` +
+		`"messages":[{"msgType":"plain","from":0,"to":-1,"toLabel":"All Stations"}]}`
+	req := httptest.NewRequest(http.MethodPost, "/gentrain-flow", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rr := httptest.NewRecorder()
+	s.servePostGenTrainingFlow(rr, req)
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 with no API key, got %d: %s", rr.Code, rr.Body)
+	}
+	if !strings.Contains(rr.Body.String(), "ANTHROPIC_API_KEY") {
+		t.Errorf("expected error to mention ANTHROPIC_API_KEY, got %q", rr.Body.String())
+	}
+}
+
+func TestServePostGenTrainingFlowInvalidJSON(t *testing.T) {
+	s := &Server{stop: make(chan struct{})}
+	req := httptest.NewRequest(http.MethodPost, "/gentrain-flow", strings.NewReader("not json"))
+	req.Header.Set("Content-Type", "application/json")
+	rr := httptest.NewRecorder()
+	s.servePostGenTrainingFlow(rr, req)
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 for invalid JSON, got %d: %s", rr.Code, rr.Body)
+	}
+}
+
+func TestServePostGenTrainingFlowInvalidFlow(t *testing.T) {
+	s := &Server{stop: make(chan struct{})}
+	body := `{"dir":"x","parties":[{"role":"Net Control"}],` +
+		`"messages":[{"msgType":"plain","from":5,"to":-1,"toLabel":"All Stations"}]}`
+	req := httptest.NewRequest(http.MethodPost, "/gentrain-flow", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rr := httptest.NewRecorder()
+	s.servePostGenTrainingFlow(rr, req)
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 for invalid flow, got %d: %s", rr.Code, rr.Body)
+	}
+	if !strings.Contains(rr.Body.String(), `"from"`) {
+		t.Errorf("expected error to mention the invalid \"from\" index, got %q", rr.Body.String())
+	}
+}
+
 func TestServeGetGenTrainingProgressNoJob(t *testing.T) {
 	s := &Server{stop: make(chan struct{})}
 	req := httptest.NewRequest(http.MethodGet, "/gentrain-progress?dir=no-such-dir&seq=0", nil)
