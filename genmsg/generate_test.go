@@ -3,6 +3,7 @@ package genmsg
 import (
 	"testing"
 
+	"github.com/rothskeller/packet/v4/message"
 	"github.com/rothskeller/packet/v4/prowords"
 )
 
@@ -129,6 +130,69 @@ func TestMissingRequiredFields(t *testing.T) {
 	values = map[string]string{"5.": "ROUTINE", "10.": "Road closure"}
 	if missing := missingRequiredFields(specs, values); len(missing) != 0 {
 		t.Errorf("expected no missing fields once all required ones are filled, got %+v", missing)
+	}
+}
+
+func TestPlanByLevelGroupsMessagesByTheirOwnLevel(t *testing.T) {
+	// A batch mixing an F3 party's message with two full-level messages
+	// must plan each group independently: the F3 message may only ever
+	// draw from the reduced list, and the full-level messages should
+	// still get full-list-only categories (e.g. GPSCoordinates) spread
+	// across just the two of them, not diluted by the F3 message.
+	req := Request{
+		Messages: []MessageSpec{
+			{MsgType: message.PlainMessage, Level: prowords.LevelF3},
+			{MsgType: message.PlainMessage, Level: prowords.LevelFull},
+			{MsgType: message.PlainMessage, Level: prowords.LevelFull},
+		},
+	}
+	plans, err := planByLevel(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(plans) != 3 {
+		t.Fatalf("got %d plans, want 3", len(plans))
+	}
+	fullOnly := map[prowords.Category]bool{
+		prowords.GPSCoordinates: true, prowords.PacketAddress: true, prowords.InternetAddress: true,
+		prowords.CaseSensitive: true, prowords.SubscriptSuperscript: true, prowords.Newline: true,
+	}
+	for _, cat := range plans[0].Categories {
+		if fullOnly[cat] {
+			t.Errorf("F3 message was assigned a full-list-only category: %v", cat)
+		}
+	}
+	var sawFullOnly bool
+	for _, p := range plans[1:] {
+		for _, cat := range p.Categories {
+			if fullOnly[cat] {
+				sawFullOnly = true
+			}
+		}
+	}
+	if !sawFullOnly {
+		t.Error("expected the full-level messages to collectively cover at least one full-list-only category")
+	}
+}
+
+func TestPlanByLevelFallsBackToRequestLevel(t *testing.T) {
+	req := Request{
+		Level:    prowords.LevelF3,
+		Messages: []MessageSpec{{MsgType: message.PlainMessage}},
+	}
+	plans, err := planByLevel(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(plans) != 1 || len(plans[0].Categories) == 0 {
+		t.Fatalf("expected message with no per-message Level to fall back to Request.Level, got %+v", plans)
+	}
+}
+
+func TestPlanByLevelInvalidLevel(t *testing.T) {
+	req := Request{Messages: []MessageSpec{{MsgType: message.PlainMessage, Level: "bogus"}}}
+	if _, err := planByLevel(req); err == nil {
+		t.Error("expected an error for an unknown level")
 	}
 }
 

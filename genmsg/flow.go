@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/rothskeller/packet/v4/message"
+	"github.com/rothskeller/packet/v4/prowords"
 )
 
 // FlowParty is one participant in a multi-party message flow: a short
@@ -12,11 +13,20 @@ import (
 // EOC"} or {"Shelter Manager", "Roosevelt Middle School"}. Messages in the
 // flow reference parties by index rather than repeating this information,
 // so the same party's identity stays exactly consistent everywhere it's
-// used as a sender or recipient.
+// used as a sender or recipient. F3 marks this party as being evaluated on
+// the reduced (Field Communicator Type III) proword list rather than the
+// full list -- see MessageSpec.Level -- so a single flow can mix parties at
+// different credential levels.
 type FlowParty struct {
 	Role     string `json:"role"`
 	Location string `json:"location,omitempty"`
+	F3       bool   `json:"f3,omitempty"`
 }
+
+// fromEachStation is the sentinel value of FlowMessage.From that fans a
+// single message entry out into one message per party (see ResolveFlow),
+// for the common case of a broadcast request answered by every station.
+const fromEachStation = -1
 
 // FlowMessage is one message within a multi-party flow, referencing
 // parties and other messages by index. This is the wire format (from a
@@ -24,7 +34,7 @@ type FlowParty struct {
 // []MessageSpec for Generate/Apply.
 type FlowMessage struct {
 	MsgType string `json:"msgType"` // create tag or key, e.g. "ICS213" or "plain"
-	From    int    `json:"from"`    // index into Flow.Parties
+	From    int    `json:"from"`    // index into Flow.Parties, or -1 for "one message from each party" (fan-out)
 	To      int    `json:"to"`      // index into Flow.Parties, or -1 to use ToLabel instead
 	ToLabel string `json:"toLabel"` // used when To is -1, e.g. "All Stations"; ignored otherwise
 	Purpose string `json:"purpose"` // optional hint of what this specific message is about
@@ -52,43 +62,134 @@ func FindMsgType(tag string) (message.EditableMType, bool) {
 	return nil, false
 }
 
+// partyLevel returns the proword level a party's messages should be
+// evaluated at: the reduced F3 list if the party is marked F3, else the
+// full list.
+func partyLevel(p FlowParty) string {
+	if p.F3 {
+		return prowords.LevelF3
+	}
+	return prowords.LevelFull
+}
+
+// resolveTo resolves a FlowMessage's To/ToLabel against parties into a
+// MessageSpec's To/ToLocation.
+func resolveTo(fm FlowMessage, parties []FlowParty) (to, toLocation string, err error) {
+	switch {
+	case fm.To < 0:
+		return strings.TrimSpace(fm.ToLabel), "", nil
+	case fm.To < len(parties):
+		return parties[fm.To].Role, parties[fm.To].Location, nil
+	default:
+		return "", "", fmt.Errorf("invalid \"to\" party index %d", fm.To)
+	}
+}
+
 // ResolveFlow validates fl and resolves it into a []MessageSpec suitable
 // for Request.Messages and Apply, looking up each message's type by tag or
 // key among the registered editable message types (see FindMsgType) and
 // each From/To party reference among fl.Parties.
+//
+// A FlowMessage with From == -1 ("one message from each party") fans out
+// into one MessageSpec per party, each with that party as its sender --
+// the common case of a broadcast request that every station answers. If
+// the fanned-out message replies to another (ReplyTo > 0) and that other
+// message has a single, ordinary sender, that sender is excluded from the
+// fan-out (a station doesn't reply to its own broadcast). Another message
+// may not reply to a fanned-out one (ReplyTo pointing at a From == -1
+// entry), since there would be no single message to reply to.
 func ResolveFlow(fl Flow) ([]MessageSpec, error) {
 	if len(fl.Messages) == 0 {
 		return nil, fmt.Errorf("at least one message is required")
 	}
-	specs := make([]MessageSpec, len(fl.Messages))
+	// First pass: structural validation against the *original* message
+	// list, and figuring out which parties each entry expands to.
+	partyIndices := make([][]int, len(fl.Messages)) // per original message, the party indices it produces a spec for
 	for i, fm := range fl.Messages {
-		mt, ok := FindMsgType(fm.MsgType)
-		if !ok {
+		if _, ok := FindMsgType(fm.MsgType); !ok {
 			return nil, fmt.Errorf("message %d: no such message type %q", i+1, fm.MsgType)
-		}
-		if fm.From < 0 || fm.From >= len(fl.Parties) {
-			return nil, fmt.Errorf("message %d: invalid \"from\" party index %d", i+1, fm.From)
-		}
-		spec := MessageSpec{
-			MsgType:      mt,
-			From:         fl.Parties[fm.From].Role,
-			FromLocation: fl.Parties[fm.From].Location,
-			Purpose:      strings.TrimSpace(fm.Purpose),
-			ReplyTo:      fm.ReplyTo,
-		}
-		switch {
-		case fm.To < 0:
-			spec.To = strings.TrimSpace(fm.ToLabel)
-		case fm.To < len(fl.Parties):
-			spec.To = fl.Parties[fm.To].Role
-			spec.ToLocation = fl.Parties[fm.To].Location
-		default:
-			return nil, fmt.Errorf("message %d: invalid \"to\" party index %d", i+1, fm.To)
 		}
 		if fm.ReplyTo < 0 || fm.ReplyTo > len(fl.Messages) || fm.ReplyTo == i+1 {
 			return nil, fmt.Errorf("message %d: invalid \"replyTo\" %d", i+1, fm.ReplyTo)
 		}
-		specs[i] = spec
+		if fm.From == fromEachStation {
+			excluded := -1
+			if fm.ReplyTo > 0 {
+				if ref := fl.Messages[fm.ReplyTo-1]; ref.From >= 0 && ref.From < len(fl.Parties) {
+					excluded = ref.From
+				}
+			}
+			var idxs []int
+			for p := range fl.Parties {
+				if p != excluded {
+					idxs = append(idxs, p)
+				}
+			}
+			if len(idxs) == 0 {
+				return nil, fmt.Errorf("message %d: \"from each station\" has no parties left once the message it replies to is excluded", i+1)
+			}
+			partyIndices[i] = idxs
+		} else if fm.From < 0 || fm.From >= len(fl.Parties) {
+			return nil, fmt.Errorf("message %d: invalid \"from\" party index %d", i+1, fm.From)
+		} else {
+			partyIndices[i] = []int{fm.From}
+		}
+	}
+
+	// Second pass: build the expanded spec list, and record where each
+	// original message's spec(s) landed so ReplyTo can be remapped.
+	var specs []MessageSpec
+	origToNew := make([][]int, len(fl.Messages)) // 0-based original index -> 0-based new indices
+	type pending struct {
+		specIdx int
+		replyTo int // original 1-based ReplyTo, to be remapped once all messages are placed
+	}
+	var pendingReplies []pending
+	for i, fm := range fl.Messages {
+		to, toLocation, err := resolveTo(fm, fl.Parties)
+		if err != nil {
+			return nil, fmt.Errorf("message %d: %s", i+1, err)
+		}
+		for _, p := range partyIndices[i] {
+			spec := MessageSpec{
+				From:         fl.Parties[p].Role,
+				FromLocation: fl.Parties[p].Location,
+				To:           to,
+				ToLocation:   toLocation,
+				Purpose:      strings.TrimSpace(fm.Purpose),
+				Level:        partyLevel(fl.Parties[p]),
+			}
+			spec.MsgType, _ = FindMsgType(fm.MsgType) // already validated above
+			origToNew[i] = append(origToNew[i], len(specs))
+			pendingReplies = append(pendingReplies, pending{specIdx: len(specs), replyTo: fm.ReplyTo})
+			specs = append(specs, spec)
+		}
+	}
+
+	// Third pass: remap each spec's ReplyTo from the original 1-based
+	// message numbering to the expanded 1-based spec numbering.
+	for _, pr := range pendingReplies {
+		if pr.replyTo == 0 {
+			continue
+		}
+		targets := origToNew[pr.replyTo-1]
+		if len(targets) != 1 {
+			return nil, fmt.Errorf("message %d: cannot reply to message %d, which is \"from each station\" and so has no single message to reply to", replyingOrigMessage(origToNew, pr.specIdx)+1, pr.replyTo)
+		}
+		specs[pr.specIdx].ReplyTo = targets[0] + 1
 	}
 	return specs, nil
+}
+
+// replyingOrigMessage returns the 0-based original message index that
+// produced the spec at newIdx, for error messages after expansion.
+func replyingOrigMessage(origToNew [][]int, newIdx int) int {
+	for orig, news := range origToNew {
+		for _, n := range news {
+			if n == newIdx {
+				return orig
+			}
+		}
+	}
+	return -1
 }

@@ -47,6 +47,17 @@ type MessageSpec struct {
 	// that message's content, even across repair rounds where the
 	// referenced message might not itself need regenerating.
 	ReplyTo int
+
+	// Level, if non-empty, overrides Request.Level for this one message:
+	// prowords.LevelF3 or prowords.LevelFull. This lets a multi-party
+	// flow evaluate different parties at different credential levels
+	// (e.g. an F3 candidate's messages drawing only from the reduced
+	// proword list, while a Net Control party's messages in the same
+	// batch draw from the full list) -- each message is graded only
+	// against its own sender's level, never mixed with another party's.
+	// Leave empty to use Request.Level, as in the original single-batch
+	// (non-flow) mode where every message shares one level.
+	Level string
 }
 
 // Request describes one batch of training messages to generate. The
@@ -57,7 +68,7 @@ type MessageSpec struct {
 type Request struct {
 	Incident *incident.Incident // used to apply the incident's own defaults before deciding what the LLM needs to fill in
 	Messages []MessageSpec
-	Level    string // prowords.LevelF3 or prowords.LevelFull
+	Level    string // prowords.LevelF3 or prowords.LevelFull; fallback for any MessageSpec that doesn't set its own Level
 	Scenario string // optional user-supplied scenario; if empty, a generic one is invented
 
 	// Progress, if non-nil, is called with human-readable status updates
@@ -132,11 +143,10 @@ func Generate(ctx context.Context, client *ClaudeClient, req Request) ([]Result,
 			return nil, fmt.Errorf("message %d: invalid replyTo %d", i+1, m.ReplyTo)
 		}
 	}
-	profile, err := prowords.Profile(req.Level)
+	plans, err := planByLevel(req)
 	if err != nil {
 		return nil, err
 	}
-	plans, _ := Plan(profile, count)
 
 	progress(fmt.Sprintf("Preparing %d message(s)...", count))
 	specsPerMsg := make([][]FieldSpec, count)
@@ -221,6 +231,38 @@ func Generate(ctx context.Context, client *ClaudeClient, req Request) ([]Result,
 	}
 	progress("Done generating messages.")
 	return results, nil
+}
+
+// planByLevel groups req.Messages by their effective proword level (a
+// message's own Level if set, else req.Level) and runs Plan independently
+// within each group, so that messages from parties evaluated at different
+// credential levels each only draw proword requirements from their own
+// level's profile -- an F3 party's messages never get saddled with a
+// full-list-only category, and a full-list party's messages aren't limited
+// to the reduced list just because they share a batch with an F3 party. The
+// returned slice is in req.Messages order.
+func planByLevel(req Request) ([]MessagePlan, error) {
+	count := len(req.Messages)
+	groups := map[string][]int{}
+	for i, m := range req.Messages {
+		lvl := m.Level
+		if lvl == "" {
+			lvl = req.Level
+		}
+		groups[lvl] = append(groups[lvl], i)
+	}
+	plans := make([]MessagePlan, count)
+	for lvl, idxs := range groups {
+		profile, err := prowords.Profile(lvl)
+		if err != nil {
+			return nil, err
+		}
+		groupPlans, _ := Plan(profile, len(idxs))
+		for j, idx := range idxs {
+			plans[idx] = groupPlans[j]
+		}
+	}
+	return plans, nil
 }
 
 // applyPartyFields sets draft's From/To ICS Position and Location fields
