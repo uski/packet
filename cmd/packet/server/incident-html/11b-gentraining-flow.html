@@ -22,7 +22,10 @@
       return [...document.querySelectorAll('#mpparties .mprow')].map((row, i) => {
         const role = row.querySelector('.mp-role').value.trim() || `Party ${i + 1}`
         const loc = row.querySelector('.mp-location').value.trim()
-        return { value: String(i), label: loc ? `${role} (${loc})` : role }
+        const f3 = row.querySelector('.mp-f3').checked
+        let label = loc ? `${role} (${loc})` : role
+        if (f3) label += ' [F3]'
+        return { value: String(i), label }
       })
     }
 
@@ -35,7 +38,10 @@
       const partyOptions = mpPartyOptions()
       const msgRows = [...document.querySelectorAll('#mpmessages .mprow')]
       msgRows.forEach((row, i) => {
-        mpSetOptions(row.querySelector('.mp-from'), partyOptions)
+        mpSetOptions(row.querySelector('.mp-from'), [
+          { value: '-1', label: 'Each Station (fan-out)' },
+          ...partyOptions,
+        ])
         mpSetOptions(row.querySelector('.mp-to'), [
           { value: '-1', label: 'All Stations' },
           ...partyOptions,
@@ -44,6 +50,10 @@
         const replyOptions = [{ value: '0', label: '(none)' }]
         msgRows.forEach((r2, j) => {
           if (j === i) return
+          // A message can't reply to a fanned-out ("Each Station") entry --
+          // there's no single message to point at -- so it's left out of
+          // the choices entirely.
+          if (r2.querySelector('.mp-from').value === '-1') return
           const typeLabel = r2.querySelector('.mp-type').selectedOptions[0]?.textContent || '?'
           replyOptions.push({ value: String(j + 1), label: `Message ${j + 1} (${typeLabel})` })
         })
@@ -77,6 +87,7 @@
         typeSel.appendChild(opt)
       })
       typeSel.addEventListener('change', mpSyncOptions)
+      row.querySelector('.mp-from').addEventListener('change', mpSyncOptions)
       row.querySelector('.mpremove').addEventListener('click', () => {
         if (document.querySelectorAll('#mpmessages .mprow').length > 1) {
           row.remove()
@@ -93,6 +104,7 @@
       const parties = [...document.querySelectorAll('#mpparties .mprow')].map(row => ({
         role: row.querySelector('.mp-role').value.trim(),
         location: row.querySelector('.mp-location').value.trim(),
+        f3: row.querySelector('.mp-f3').checked,
       }))
       const messages = [...document.querySelectorAll('#mpmessages .mprow')].map(row => {
         const toVal = row.querySelector('.mp-to').value
@@ -230,7 +242,6 @@
         const flow = mpBuildFlow()
         const body = JSON.stringify({
           dir,
-          level: document.querySelector('input[name=mplevel]:checked').value,
           scenario: document.getElementById('mpscenario').value,
           parties: flow.parties,
           messages: flow.messages,
@@ -317,6 +328,10 @@
       border-radius: 0.25rem;
     }
 
+    #mpparties .mprow {
+      grid-template-columns: 1fr 1fr auto auto;
+    }
+
     #mpmessages .mprow {
       grid-template-columns: 1fr 1fr;
     }
@@ -336,17 +351,18 @@
       grid-column: 1 / -1;
     }
 
+    .mpfield.mpcheck {
+      flex-direction: row;
+      align-items: center;
+      gap: 0.35rem;
+      white-space: nowrap;
+    }
+
     #mpadd,
     #mppartyadd,
     #mpmsgadd {
       margin-top: 0.5rem;
       align-self: start;
-    }
-
-    #mplevels {
-      display: flex;
-      gap: 1.5rem;
-      margin-top: 0.5rem;
     }
 
     #mpscenario {
@@ -442,12 +458,13 @@
         <div class=mprow>
           <label class=mpfield>Role<input type=text class=mp-role placeholder="e.g. Net Control"></label>
           <label class=mpfield>Location<input type=text class=mp-location placeholder="e.g. County EOC (optional)"></label>
+          <label class="mpfield mpcheck"><input type=checkbox class=mp-f3><span>F3 (limited prowords)</span></label>
           <button type=button class=mpremove title="Remove this party">&times;</button>
         </div>
       </template>
       <button type=button id=mppartyadd>+ Add party</button>
 
-      <p>Messages, in order:</p>
+      <p>Messages, in order: (choose "Each Station" as From to generate one reply from every party at once, e.g. answering a broadcast request)</p>
       <div id=mpmessages></div>
       <template id=mpmsgtmpl>
         <div class=mprow>
@@ -462,11 +479,6 @@
       </template>
       <button type=button id=mpmsgadd>+ Add message</button>
 
-      <p>Proword level:</p>
-      <div id=mplevels>
-        <label><input type=radio name=mplevel value=full checked> Full list (F2/F1, all Net Control/Packet/Shadow tiers)</label>
-        <label><input type=radio name=mplevel value=f3> F3 reduced list</label>
-      </div>
       <p>Overall scenario (optional):</p>
       <textarea id=mpscenario rows=2 placeholder="e.g. a magnitude 5.4 earthquake has just occurred (leave blank for a generic scenario)"></textarea>
       <div id=mperr></div>
