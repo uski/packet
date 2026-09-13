@@ -232,18 +232,21 @@ type generation struct {
 func (g *generation) generateMessage(idx, n int, plan MessagePlan) error {
 	count := len(g.req.Messages)
 	res := &g.results[idx]
-	var retryNote string
+	wanted := plan.Categories
+	var best Result
+	bestScore := -1
+	var retryNote, reason string
 	var lastErr error
 	for round := range maxRounds {
 		label := fmt.Sprintf("Drafting message %d of %d", n, count)
 		if round > 0 {
-			label = fmt.Sprintf("Revising message %d of %d (attempt %d of %d)", n, count, round+1, maxRounds)
+			label = fmt.Sprintf("Revising message %d of %d, attempt %d of %d: %s", n, count, round+1, maxRounds, reason)
 		}
 		g.progress(label + "...")
 		prompt := buildPrompt(g.req, g.brief, g.specs, g.results, []int{idx}, []MessagePlan{plan}, g.routed, g.baseWords, res.Values != nil) + retryNote
 		text, err := completeWithHeartbeat(g.ctx, g.client, systemPrompt, prompt, maxOutputTokens, g.progress, label)
 		if errors.Is(err, ErrOutputCutOff) {
-			lastErr = err
+			lastErr, reason = err, "the previous response was cut off"
 			retryNote = "\nYour previous response was far too long and was cut off. Respond with ONLY the JSON array, keeping every value short.\n"
 			continue
 		} else if err != nil {
@@ -254,7 +257,7 @@ func (g *generation) generateMessage(idx, n int, plan MessagePlan) error {
 			err = errors.New("the response held no message object")
 		}
 		if err != nil {
-			lastErr = err
+			lastErr, reason = err, "the previous response was unusable"
 			retryNote = fmt.Sprintf("\nYour previous response could not be used (%s). Respond with ONLY a JSON array holding one object that maps field tags to string values.\n", err)
 			continue
 		}
@@ -278,18 +281,51 @@ func (g *generation) generateMessage(idx, n int, plan MessagePlan) error {
 				g.specs[idx] = append(g.specs[idx], p)
 			}
 		}
-		plan = MessagePlan{Categories: res.Missing, MissingFields: problems}
-		if res.Words > MaxWords+WordTolerance {
-			plan.Words = res.Words
+		over := res.Words > MaxWords+WordTolerance
+		score := 100*len(problems) + len(res.Missing)
+		if over {
+			score += 10
 		}
-		if len(plan.Categories) == 0 && len(problems) == 0 && plan.Words == 0 {
+		if bestScore >= 0 && score >= bestScore {
+			break // the revision didn't improve on the best version so far
+		}
+		best, bestScore = *res, score
+		if score == 0 {
 			return nil
 		}
+		// The revision sees every requirement, with the unmet ones
+		// flagged, so fixing one doesn't lose another.
+		plan = MessagePlan{Categories: wanted, Unmet: res.Missing, MissingFields: problems}
+		if over {
+			plan.Words = res.Words
+		}
+		reason = revisionReason(res, problems, over)
 	}
-	if res.Values == nil {
+	if bestScore < 0 {
 		return fmt.Errorf("message %d: no usable response from Claude after %d attempts: %w", idx+1, maxRounds, lastErr)
 	}
+	*res = best
 	return nil
+}
+
+// revisionReason describes, for the progress display, why a message is
+// being sent back to Claude.
+func revisionReason(res *Result, problems []FieldSpec, over bool) string {
+	var parts []string
+	if len(problems) > 0 {
+		parts = append(parts, "fixing "+strings.Join(fieldLabels(problems), ", "))
+	}
+	if over {
+		parts = append(parts, fmt.Sprintf("shortening from %d words", res.Words))
+	}
+	if len(res.Missing) > 0 {
+		names := make([]string, len(res.Missing))
+		for i, cat := range res.Missing {
+			names[i] = prowords.ProwordName(cat)
+		}
+		parts = append(parts, "adding "+strings.Join(names, ", "))
+	}
+	return strings.Join(parts, "; ")
 }
 
 // generationOrder returns the message indices in the order to generate
@@ -507,16 +543,25 @@ func buildPrompt(req Request, brief string, specsPerMsg [][]FieldSpec, results [
 		}
 		b.WriteString("Requirements for this message:\n")
 		for _, cat := range plans[pos].Categories {
+			text := prowords.Prompt(cat)
+			if slices.Contains(plans[pos].Unmet, cat) {
+				text = "NOT MET IN YOUR PREVIOUS VERSION: " + text
+			}
 			if tag, ok := routed[cat]; ok {
-				fmt.Fprintf(&b, "  - %s (put this ONLY in the %q field above, not in the free-text body)\n", prowords.Prompt(cat), tag)
+				fmt.Fprintf(&b, "  - %s (put this ONLY in the %q field above, not in the free-text body)\n", text, tag)
 			} else {
-				fmt.Fprintf(&b, "  - %s\n", prowords.Prompt(cat))
+				fmt.Fprintf(&b, "  - %s\n", text)
 			}
 		}
 		budget := max(MaxWords-baseWords[idx], minValueWords)
-		fmt.Fprintf(&b, "Word budget: this whole message must total about %d words or fewer across ALL of its fields. Its pre-filled fields already use %d, so the values you give for it must total at most %d words. Optional fields may stay empty; leave them out rather than go over.\n", MaxWords, baseWords[idx], budget)
+		fmt.Fprintf(&b, "Word budget: this whole message must total about %d words or fewer across ALL of its fields. Its pre-filled fields already use %d, so the values you give for it must total at most %d words (a phone number, email address, call sign, or other group without spaces counts as one word). Optional fields may stay empty; leave them out rather than go over.\n", MaxWords, baseWords[idx], budget)
 		if plans[pos].Words > 0 {
 			fmt.Fprintf(&b, "Your previous response made this message %d words in total: cut it to at most %d by shortening text and leaving optional fields empty (never leave a required field empty).\n", plans[pos].Words, MaxWords)
+		}
+		if prev := results[idx].Values; isRepair && prev != nil {
+			if data, err := json.Marshal(prev); err == nil {
+				fmt.Fprintf(&b, "Your previous version of this message (field tag -> value). Revise it rather than starting over, keeping everything that already works:\n%s\n", data)
+			}
 		}
 		if len(plans[pos].MissingFields) > 0 {
 			b.WriteString("The following REQUIRED fields are empty or invalid. You MUST give every one of them a valid, non-empty value this time:\n")
@@ -534,10 +579,10 @@ func buildPrompt(req Request, brief string, specsPerMsg [][]FieldSpec, results [
 		b.WriteString("\n")
 	}
 	if isRepair {
-		b.WriteString("The previous attempt did not clearly satisfy all of the requirements above for these messages. Revise them so every requirement is unambiguously satisfied, and return the complete field values again (not just the changed ones). Every field listed under \"Fields to fill in\" for a message is required to have a non-empty value in your response -- do not omit any of them.\n\n")
+		b.WriteString("Revise your previous version rather than starting over: fix what is flagged above, keep everything that already works, and return the complete field values again (not just the changed ones). Every field listed under \"Fields to fill in\" for a message is required to have a non-empty value in your response -- do not omit any of them.\n\n")
 	}
 	fmt.Fprintf(&b, "Every message must also include the exact phrase %q somewhere in its content, to clearly mark it as training/exercise traffic rather than a real report.\n\n", DrillTrafficPhrase)
-	b.WriteString("Respond with ONLY a JSON array of exactly that many objects, in the same order as listed above, each mapping THAT message's own field tags to their string values. Keep every message SHORT: real emergency radio traffic is deliberately terse, and each message's word budget above covers ALL of its fields together, so a free-text field should be one or two short sentences at most -- include only what's needed to satisfy the listed requirements. Only set the fields listed for each message; every field listed is required and MUST be given a non-empty value, but never add fields beyond that list. For any field marked as a dropdown above, its value must be one of the listed choices, verbatim -- do not invent your own wording for it.\n")
+	b.WriteString("Respond with ONLY a JSON array of exactly that many objects, in the same order as listed above, each mapping THAT message's own field tags to their string values. Keep every message SHORT: real emergency radio traffic is deliberately terse, and each message's word budget above covers ALL of its fields together, so a free-text field should be one or two short sentences at most -- include only what's needed to satisfy the listed requirements. Only set the fields listed for each message; every field listed is required and MUST be given a non-empty value, but never add fields beyond that list. For any field marked as a dropdown above, its value must be one of the listed choices, verbatim -- do not invent your own wording for it. Before answering, check your values against every requirement and the word budget.\n")
 	return b.String()
 }
 

@@ -140,6 +140,78 @@ func TestGenerateRetriesCutOffResponse(t *testing.T) {
 	}
 }
 
+// f3PlainJSONNoEmail is f3PlainJSON without its email address, so it
+// misses exactly one f3 category.
+var f3PlainJSONNoEmail = strings.Replace(f3PlainJSON, " or email kj6abc@xanadu-city.org", "", 1)
+
+func TestGenerateRevisionShowsPreviousVersionAndUnmetRequirement(t *testing.T) {
+	var calls atomic.Int32
+	var revisionPrompt string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var req claudeRequest
+		json.NewDecoder(r.Body).Decode(&req)
+		if calls.Add(1) == 1 {
+			writeClaudeText(w, f3PlainJSONNoEmail)
+			return
+		}
+		revisionPrompt = req.Messages[0].Content
+		writeClaudeText(w, f3PlainJSON)
+	}))
+	defer srv.Close()
+
+	client := &ClaudeClient{APIKey: "test-key", URL: srv.URL}
+	if _, err := Generate(context.Background(), client, Request{
+		Incident: draftTestIncident(t),
+		Messages: []MessageSpec{{MsgType: message.PlainMessage}},
+		Level:    "f3",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if calls.Load() != 2 {
+		t.Fatalf("expected 2 calls, got %d", calls.Load())
+	}
+	if !strings.Contains(revisionPrompt, "Your previous version") || !strings.Contains(revisionPrompt, "Kaczmarek Street") {
+		t.Errorf("revision prompt should include the previous version to edit:\n%s", revisionPrompt)
+	}
+	if !strings.Contains(revisionPrompt, "NOT MET IN YOUR PREVIOUS VERSION: Include a plausible email address") {
+		t.Errorf("revision prompt should flag the unmet EMAIL ADDRESS requirement:\n%s", revisionPrompt)
+	}
+	if !strings.Contains(revisionPrompt, "TELEPHONE FIGURES") {
+		t.Errorf("revision prompt should still list the requirements already met, so they aren't lost:\n%s", revisionPrompt)
+	}
+}
+
+func TestGenerateKeepsBestVersionWhenRevisionIsWorse(t *testing.T) {
+	var calls atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if calls.Add(1) == 1 {
+			writeClaudeText(w, f3PlainJSONNoEmail)
+			return
+		}
+		writeClaudeText(w, `[{"subjectHandling":"ROUTINE","subjectSummary":"Road closure","defaultBody":"Road closed."}]`)
+	}))
+	defer srv.Close()
+
+	client := &ClaudeClient{APIKey: "test-key", URL: srv.URL}
+	results, err := Generate(context.Background(), client, Request{
+		Incident: draftTestIncident(t),
+		Messages: []MessageSpec{{MsgType: message.PlainMessage}},
+		Level:    "f3",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if calls.Load() != 2 {
+		t.Errorf("expected revising to stop after a revision that made things worse, got %d calls", calls.Load())
+	}
+	if !strings.Contains(results[0].Values["defaultBody"], "Kaczmarek Street") {
+		t.Errorf("expected the better first version to be kept, got %q", results[0].Values["defaultBody"])
+	}
+	if len(results[0].Missing) != 1 {
+		t.Errorf("expected the kept version's single missing category to be reported, got %v", results[0].Missing)
+	}
+}
+
 func TestGenerateFailsAfterRepeatedUnusableResponses(t *testing.T) {
 	var calls atomic.Int32
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

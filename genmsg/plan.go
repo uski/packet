@@ -7,6 +7,7 @@ import "github.com/rothskeller/packet/v4/prowords"
 // Claude's previous response left empty that it must fill in this time.
 type MessagePlan struct {
 	Categories    []prowords.Category
+	Unmet         []prowords.Category // on a repair round, the Categories the previous version didn't satisfy
 	MissingFields []FieldSpec
 	Words         int // on a repair round, the message's total words if it went over budget, else 0
 }
