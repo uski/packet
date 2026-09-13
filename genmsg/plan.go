@@ -8,6 +8,7 @@ import "github.com/rothskeller/packet/v4/prowords"
 type MessagePlan struct {
 	Categories    []prowords.Category
 	MissingFields []FieldSpec
+	Words         int // on a repair round, the message's total words if it went over budget, else 0
 }
 
 // alwaysEvery lists categories common enough that every generated message

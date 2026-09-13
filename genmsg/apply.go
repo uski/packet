@@ -7,6 +7,7 @@ import (
 	"github.com/rothskeller/packet/v4/incident"
 	"github.com/rothskeller/packet/v4/message"
 	"github.com/rothskeller/packet/v4/message/field"
+	"github.com/rothskeller/packet/v4/prowords"
 )
 
 // Applied is one message that was successfully created in an incident by
@@ -38,14 +39,16 @@ func Apply(inc *incident.Incident, specs []MessageSpec, results []Result) ([]App
 	applied := make([]Applied, 0, len(results))
 	for i, res := range results {
 		spec := specs[i]
-		newmsg, ok := spec.MsgType.NewDraft().(*message.DraftMessage)
-		if !ok {
-			return applied, fmt.Errorf("message type %q does not support draft creation", spec.MsgType.Tag())
+		newmsg, err := buildDraft(inc, spec, res.Values)
+		if err != nil {
+			return applied, err
 		}
-		inc.ApplyDefaults(newmsg)
-		applyPartyFields(newmsg, spec)
-		setFieldValues(newmsg, res.Values)
 		ensureDrillTraffic(newmsg)
+		// Measured on the final message, after the drill-traffic phrase.
+		res.Counts = prowords.CountFields(AllFieldValues(newmsg))
+		res.Missing = missingCategories(res.Assigned, res.Counts)
+		res.MissingFields = fieldLabels(problemSpecs(newmsg))
+		res.Words = messageWordCount(newmsg)
 		le, addErr := inc.AddDraftMessage(newmsg)
 		if addErr != nil {
 			return applied, fmt.Errorf("adding generated draft message: %w", addErr)
@@ -72,7 +75,7 @@ func ensureDrillTraffic(msg *message.DraftMessage) {
 		if strings.Contains(strings.ToLower(f.Value(msg)), needle) {
 			return // already present somewhere; nothing to do
 		}
-		if multiline == nil && f.Multiline() {
+		if f.Multiline() && (multiline == nil || f.Common() == "defaultBody") {
 			multiline = f
 		}
 		if fallback == nil && (f.Common() == "messageSummary" || f.Common() == "subjectSummary") {

@@ -23,6 +23,7 @@ type FieldSpec struct {
 	Multiline bool     // whether the field expects multi-line text
 	Choices   []string // allowed/recommended values, if the field is restricted
 	Required  bool     // true if the field currently has no value and fails validation without one
+	Problem   string   // on a repair round, why the field's current value fails validation
 }
 
 // Describe returns the settable, addressable fields of msg (which should be
@@ -38,35 +39,41 @@ func Describe(msg message.Message) []FieldSpec {
 		if !f.Editable(msg, false) || !f.Settable() {
 			continue
 		}
-		key := f.Tag()
-		if key == "" {
-			key = f.Common()
+		// Fields with neither a PIFO tag nor a common name (e.g. virtual
+		// date/time combinations) aren't independently addressable.
+		if key := fieldKey(f); key != "" {
+			specs = append(specs, newFieldSpec(msg, f, key))
 		}
-		if key == "" {
-			// Fields with neither a PIFO tag nor a common name
-			// (e.g. read-only computed fields, or virtual
-			// date/time combinations) aren't independently
-			// addressable; skip them.
-			continue
-		}
-		spec := FieldSpec{
-			Tag:       key,
-			Common:    f.Common(),
-			Label:     f.Label(),
-			Help:      f.EditHelp(),
-			Multiline: f.Multiline(),
-			Required:  f.Value(msg) == "" && f.Validate(msg, f, 0) != nil,
-		}
-		if f.Restricted() {
-			for _, c := range f.Choices(msg) {
-				if c.Human != "" {
-					spec.Choices = append(spec.Choices, c.Human)
-				}
-			}
-		}
-		specs = append(specs, spec)
 	}
 	return specs
+}
+
+// fieldKey returns the key a field is addressed by: its PIFO tag, or its
+// Common name if it has no tag.
+func fieldKey(f field.Field) string {
+	if f.Tag() != "" {
+		return f.Tag()
+	}
+	return f.Common()
+}
+
+func newFieldSpec(msg message.Message, f field.Field, key string) FieldSpec {
+	spec := FieldSpec{
+		Tag:       key,
+		Common:    f.Common(),
+		Label:     f.Label(),
+		Help:      f.EditHelp(),
+		Multiline: f.Multiline(),
+		Required:  f.Value(msg) == "" && f.Validate(msg, f, 0) != nil,
+	}
+	if f.Restricted() {
+		for _, c := range f.Choices(msg) {
+			if c.Human != "" {
+				spec.Choices = append(spec.Choices, c.Human)
+			}
+		}
+	}
+	return spec
 }
 
 // skipCommon lists the well-known common fields that the incident's
@@ -200,12 +207,24 @@ var alwaysInclude = map[string]bool{
 // "rarely provided" in practice.
 func Generatable(specs []FieldSpec) []FieldSpec {
 	var out []FieldSpec
+	hasBody := false
 	for _, s := range specs {
 		if skipCommon[s.Common] {
 			continue
 		}
-		if s.Required || s.Multiline || alwaysInclude[s.Common] {
+		if s.Required || alwaysInclude[s.Common] || s.Common == "defaultBody" {
 			out = append(out, s)
+			hasBody = hasBody || s.Multiline
+		}
+	}
+	// Only one free-text field: a form with many optional comment fields
+	// (e.g. a Situation Report) gets its main body, not all of them.
+	if !hasBody {
+		for _, s := range specs {
+			if s.Multiline && !skipCommon[s.Common] {
+				out = append(out, s)
+				break
+			}
 		}
 	}
 	return out

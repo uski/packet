@@ -107,32 +107,6 @@ func TestMissingCategories(t *testing.T) {
 	}
 }
 
-func TestMissingRequiredFields(t *testing.T) {
-	specs := []FieldSpec{
-		{Tag: "5.", Label: "Handling", Required: true},
-		{Tag: "10.", Label: "Subject", Required: true},
-		{Tag: "22.", Label: "Reply", Required: false},
-	}
-
-	// A required field that's entirely absent from values, and one that's
-	// present but blank/whitespace-only, both count as missing; the
-	// non-required field never does, and a filled required field doesn't.
-	values := map[string]string{"10.": "  ", "22.": ""}
-	missing := missingRequiredFields(specs, values)
-	if len(missing) != 2 {
-		t.Fatalf("got %d missing fields, want 2: %+v", len(missing), missing)
-	}
-	got := map[string]bool{missing[0].Tag: true, missing[1].Tag: true}
-	if !got["5."] || !got["10."] {
-		t.Errorf("expected 5. and 10. to be missing, got %v", missing)
-	}
-
-	values = map[string]string{"5.": "ROUTINE", "10.": "Road closure"}
-	if missing := missingRequiredFields(specs, values); len(missing) != 0 {
-		t.Errorf("expected no missing fields once all required ones are filled, got %+v", missing)
-	}
-}
-
 func TestPlanByLevelGroupsMessagesByTheirOwnLevel(t *testing.T) {
 	// A batch mixing an F3 party's message with two full-level messages
 	// must plan each group independently: the F3 message may only ever

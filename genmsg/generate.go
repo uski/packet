@@ -102,6 +102,7 @@ type Result struct {
 	Missing       []prowords.Category
 	InvalidFields []string
 	MissingFields []string
+	Words         int // total words across the message's content fields
 }
 
 // DrillTrafficPhrase is the fixed marker every generated message must
@@ -151,25 +152,18 @@ func Generate(ctx context.Context, client *ClaudeClient, req Request) ([]Result,
 
 	progress(fmt.Sprintf("Preparing %d message(s)...", count))
 	specsPerMsg := make([][]FieldSpec, count)
-	// drafts holds each message's working draft (defaults and party
-	// fields already applied), kept in sync with the latest generated
-	// values round by round so AllFieldValues can measure proword
-	// coverage across the WHOLE message, not just the fields the LLM was
-	// asked to fill in. routedPerMsg records, for each message, which
-	// field (if any) was given as the dedicated home for an assigned
-	// category (see SelectFields/ClassifyField), so buildPrompt can send
-	// content there instead of into the free-text body.
-	drafts := make([]*message.DraftMessage, count)
+	// routedPerMsg records, for each message, which field (if any) is the
+	// dedicated home for an assigned category (see SelectFields), so
+	// buildPrompt can send content there instead of into the body.
 	routedPerMsg := make([]map[prowords.Category]string, count)
 	assigned := make([][]prowords.Category, count)
+	baseWords := make([]int, count)
 	for i, m := range req.Messages {
-		draft, ok := m.MsgType.NewDraft().(*message.DraftMessage)
-		if !ok {
-			return nil, fmt.Errorf("message type %q does not support draft creation", m.MsgType.Tag())
+		draft, err := buildDraft(req.Incident, m, nil)
+		if err != nil {
+			return nil, err
 		}
-		req.Incident.ApplyDefaults(draft)
-		applyPartyFields(draft, m)
-		drafts[i] = draft
+		baseWords[i] = messageWordCount(draft)
 		// Categories the pre-filled fields already cover don't need to
 		// be asked for again; Assigned keeps the full list so coverage
 		// is still reported against it.
@@ -203,10 +197,10 @@ func Generate(ctx context.Context, client *ClaudeClient, req Request) ([]Result,
 		if round == 0 {
 			label = fmt.Sprintf("Asking Claude to draft %d message(s)", len(pending))
 		} else {
-			label = fmt.Sprintf("Asking Claude to revise %d message(s) still missing required content (attempt %d of %d)", len(pending), round+1, maxRounds)
+			label = fmt.Sprintf("Asking Claude to revise %d message(s) that are too long or missing required content (attempt %d of %d)", len(pending), round+1, maxRounds)
 		}
 		progress(label + "...")
-		prompt := buildPrompt(req, specsPerMsg, results, pending, pendingPlans, routedPerMsg, round > 0)
+		prompt := buildPrompt(req, specsPerMsg, results, pending, pendingPlans, routedPerMsg, baseWords, round > 0)
 		maxTokens := maxTokensFor(len(pending))
 		text, err := completeWithHeartbeat(ctx, client, systemPrompt, prompt, maxTokens, progress, label)
 		if err != nil {
@@ -228,24 +222,33 @@ func Generate(ctx context.Context, client *ClaudeClient, req Request) ([]Result,
 				nextPlans = append(nextPlans, pendingPlans[j])
 				continue
 			}
-			// Repair rounds only overwrite the fields Claude
-			// actually returned this time, layering onto what we
-			// already had.
-			if results[idx].Values == nil {
-				results[idx].Values = map[string]string{}
+			// Each response holds the message's complete values,
+			// replacing the previous round's, so content Claude drops
+			// to get under the word budget is really gone.
+			draft, err := buildDraft(req.Incident, req.Messages[idx], parsed[j])
+			if err != nil {
+				return nil, err
 			}
-			for tag, val := range parsed[j] {
-				results[idx].Values[tag] = val
+			res := &results[idx]
+			res.Values = parsed[j]
+			res.InvalidFields = invalid[j]
+			res.Counts = prowords.CountFields(AllFieldValues(draft))
+			res.Missing = missingCategories(res.Assigned, res.Counts)
+			res.Words = messageWordCount(draft)
+			problems := problemSpecs(draft)
+			res.MissingFields = fieldLabels(problems)
+			for _, p := range problems {
+				if !slices.ContainsFunc(specsPerMsg[idx], func(s FieldSpec) bool { return s.Tag == p.Tag }) {
+					specsPerMsg[idx] = append(specsPerMsg[idx], p)
+				}
 			}
-			results[idx].InvalidFields = append(results[idx].InvalidFields, invalid[j]...)
-			setFieldValues(drafts[idx], parsed[j])
-			results[idx].Counts = prowords.CountFields(AllFieldValues(drafts[idx]))
-			results[idx].Missing = missingCategories(results[idx].Assigned, results[idx].Counts)
-			missingFields := missingRequiredFields(specsPerMsg[idx], results[idx].Values)
-			results[idx].MissingFields = fieldLabels(missingFields)
-			if len(results[idx].Missing) > 0 || len(missingFields) > 0 {
+			plan := MessagePlan{Categories: res.Missing, MissingFields: problems}
+			if res.Words > MaxWords+WordTolerance {
+				plan.Words = res.Words
+			}
+			if len(plan.Categories) > 0 || len(problems) > 0 || plan.Words > 0 {
 				nextPending = append(nextPending, idx)
-				nextPlans = append(nextPlans, MessagePlan{Categories: results[idx].Missing, MissingFields: missingFields})
+				nextPlans = append(nextPlans, plan)
 			}
 		}
 		pending, pendingPlans = nextPending, nextPlans
@@ -345,7 +348,7 @@ func completeWithHeartbeat(ctx context.Context, client *ClaudeClient, system, pr
 // SelectFields/ClassifyField), that field's tag -- so the prompt tells
 // Claude to put that content only there, rather than leaving it to be woven
 // into the free-text body, keeping the message shorter.
-func buildPrompt(req Request, specsPerMsg [][]FieldSpec, results []Result, pending []int, plans []MessagePlan, routedPerMsg []map[prowords.Category]string, isRepair bool) string {
+func buildPrompt(req Request, specsPerMsg [][]FieldSpec, results []Result, pending []int, plans []MessagePlan, routedPerMsg []map[prowords.Category]string, baseWords []int, isRepair bool) string {
 	var b strings.Builder
 	if req.Scenario != "" {
 		fmt.Fprintf(&b, "Scenario to base all of the messages on: %s\n\n", req.Scenario)
@@ -415,12 +418,20 @@ func buildPrompt(req Request, specsPerMsg [][]FieldSpec, results []Result, pendi
 				fmt.Fprintf(&b, "  - %s\n", prowords.Prompt(cat))
 			}
 		}
+		budget := max(MaxWords-baseWords[idx], minValueWords)
+		fmt.Fprintf(&b, "Word budget: this whole message must total about %d words or fewer across ALL of its fields. Its pre-filled fields already use %d, so the values you give for it must total at most %d words. Optional fields may stay empty; leave them out rather than go over.\n", MaxWords, baseWords[idx], budget)
+		if plans[pos].Words > 0 {
+			fmt.Fprintf(&b, "Your previous response made this message %d words in total: cut it to at most %d by shortening text and leaving optional fields empty (never leave a required field empty).\n", plans[pos].Words, MaxWords)
+		}
 		if len(plans[pos].MissingFields) > 0 {
-			b.WriteString("Your previous response left the following REQUIRED fields empty or missing entirely. You MUST provide a non-empty value for every one of them this time:\n")
+			b.WriteString("The following REQUIRED fields are empty or invalid. You MUST give every one of them a valid, non-empty value this time:\n")
 			for _, s := range plans[pos].MissingFields {
 				fmt.Fprintf(&b, "  - %q: %s", s.Tag, s.Label)
-				if s.Help != "" {
-					fmt.Fprintf(&b, " -- %s", s.Help)
+				if s.Problem != "" {
+					fmt.Fprintf(&b, " -- problem: %s", s.Problem)
+				}
+				if len(s.Choices) > 0 {
+					fmt.Fprintf(&b, " (must be exactly one of: %s)", strings.Join(s.Choices, ", "))
 				}
 				b.WriteString("\n")
 			}
@@ -431,7 +442,7 @@ func buildPrompt(req Request, specsPerMsg [][]FieldSpec, results []Result, pendi
 		b.WriteString("The previous attempt did not clearly satisfy all of the requirements above for these messages. Revise them so every requirement is unambiguously satisfied, and return the complete field values again (not just the changed ones). Every field listed under \"Fields to fill in\" for a message is required to have a non-empty value in your response -- do not omit any of them.\n\n")
 	}
 	fmt.Fprintf(&b, "Every message must also include the exact phrase %q somewhere in its content, to clearly mark it as training/exercise traffic rather than a real report.\n\n", DrillTrafficPhrase)
-	b.WriteString("Respond with ONLY a JSON array of exactly that many objects, in the same order as listed above, each mapping THAT message's own field tags to their string values. Keep every message SHORT: real emergency radio traffic is deliberately terse to save airtime, so free-text fields should be one to three short sentences, not a full paragraph -- include only what's needed to satisfy the listed requirements, don't pad it out. Only set the fields listed for each message; every field listed is required and MUST be given a non-empty value, but never add fields beyond that list. For any field marked as a dropdown above, its value must be one of the listed choices, verbatim -- do not invent your own wording for it.\n")
+	b.WriteString("Respond with ONLY a JSON array of exactly that many objects, in the same order as listed above, each mapping THAT message's own field tags to their string values. Keep every message SHORT: real emergency radio traffic is deliberately terse, and each message's word budget above covers ALL of its fields together, so a free-text field should be one or two short sentences at most -- include only what's needed to satisfy the listed requirements. Only set the fields listed for each message; every field listed is required and MUST be given a non-empty value, but never add fields beyond that list. For any field marked as a dropdown above, its value must be one of the listed choices, verbatim -- do not invent your own wording for it.\n")
 	return b.String()
 }
 
@@ -532,20 +543,6 @@ func matchChoice(value string, choices []string) (string, bool) {
 		}
 	}
 	return "", false
-}
-
-// missingRequiredFields returns the subset of specs marked Required whose
-// value in values is empty or absent -- i.e. required fields Claude's
-// response did not actually fill in, regardless of whether they affect
-// proword coverage.
-func missingRequiredFields(specs []FieldSpec, values map[string]string) []FieldSpec {
-	var missing []FieldSpec
-	for _, s := range specs {
-		if s.Required && strings.TrimSpace(values[s.Tag]) == "" {
-			missing = append(missing, s)
-		}
-	}
-	return missing
 }
 
 // fieldLabels returns the human-readable labels of specs, for reporting
