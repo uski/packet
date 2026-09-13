@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"slices"
 	"strings"
 	"time"
@@ -302,6 +303,7 @@ func (g *generation) generateMessage(idx, n int, plan MessagePlan) error {
 			plan.Words = res.Words
 		}
 		reason = revisionReason(res, problems, over)
+		slog.Info("revising generated training message", "message", idx+1, "reason", reason, "values", res.Values)
 	}
 	if bestScore < 0 {
 		return fmt.Errorf("message %d: no usable response from Claude after %d attempts: %w", idx+1, maxRounds, lastErr)
