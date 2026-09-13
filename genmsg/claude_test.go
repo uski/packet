@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 )
 
@@ -30,7 +31,7 @@ func TestClaudeClientComplete(t *testing.T) {
 	defer srv.Close()
 
 	c := &ClaudeClient{APIKey: "test-key", URL: srv.URL}
-	text, err := c.Complete(context.Background(), "system", "prompt")
+	text, err := c.Complete(context.Background(), "system", "prompt", 8192)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -45,8 +46,44 @@ func TestClaudeClientNoAPIKey(t *testing.T) {
 	if c.HasAPIKey() {
 		t.Fatal("expected no API key")
 	}
-	if _, err := c.Complete(context.Background(), "s", "p"); err != ErrNoAPIKey {
+	if _, err := c.Complete(context.Background(), "s", "p", 8192); err != ErrNoAPIKey {
 		t.Errorf("got err %v, want ErrNoAPIKey", err)
+	}
+}
+
+func TestClaudeClientMaxTokensCutOff(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		resp := claudeResponse{StopReason: "max_tokens"}
+		resp.Content = []struct {
+			Type string `json:"type"`
+			Text string `json:"text"`
+		}{{Type: "text", Text: `[{"a":"truncated mid-str`}} // deliberately unparseable, as a real cut-off response would be
+		json.NewEncoder(w).Encode(resp)
+	}))
+	defer srv.Close()
+
+	c := &ClaudeClient{APIKey: "test-key", URL: srv.URL}
+	_, err := c.Complete(context.Background(), "system", "prompt", 123)
+	if err == nil {
+		t.Fatal("expected an error for a max_tokens stop reason, got nil")
+	}
+	if !strings.Contains(err.Error(), "cut off") || !strings.Contains(err.Error(), "123") {
+		t.Errorf("expected a clear cut-off error mentioning the token limit, got %q", err.Error())
+	}
+}
+
+func TestMaxTokensFor(t *testing.T) {
+	if got := maxTokensFor(1); got != 8192 {
+		t.Errorf("maxTokensFor(1) = %d, want 8192", got)
+	}
+	if got := maxTokensFor(0); got != 8192 {
+		t.Errorf("maxTokensFor(0) = %d, want 8192", got)
+	}
+	if got := maxTokensFor(3); got <= 8192 {
+		t.Errorf("maxTokensFor(3) = %d, want more than the single-message base", got)
+	}
+	if got := maxTokensFor(100); got > 16000 {
+		t.Errorf("maxTokensFor(100) = %d, want it capped at 16000", got)
 	}
 }
 
@@ -60,7 +97,7 @@ func TestClaudeClientAPIError(t *testing.T) {
 	defer srv.Close()
 
 	c := &ClaudeClient{APIKey: "k", URL: srv.URL}
-	if _, err := c.Complete(context.Background(), "s", "p"); err == nil {
+	if _, err := c.Complete(context.Background(), "s", "p", 8192); err == nil {
 		t.Error("expected error from API error response, got nil")
 	}
 }

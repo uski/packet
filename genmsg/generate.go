@@ -188,7 +188,8 @@ func Generate(ctx context.Context, client *ClaudeClient, req Request) ([]Result,
 		}
 		progress(label + "...")
 		prompt := buildPrompt(req, specsPerMsg, results, pending, pendingPlans, round > 0)
-		text, err := completeWithHeartbeat(ctx, client, systemPrompt, prompt, progress, label)
+		maxTokens := maxTokensFor(len(pending))
+		text, err := completeWithHeartbeat(ctx, client, systemPrompt, prompt, maxTokens, progress, label)
 		if err != nil {
 			return nil, err
 		}
@@ -293,7 +294,7 @@ func applyPartyFields(draft *message.DraftMessage, m MessageSpec) {
 // "still working" update derived from label every heartbeatInterval while
 // the call is in flight, so a caller displaying progress to a user always
 // has something recent to show during a slow API call.
-func completeWithHeartbeat(ctx context.Context, client *ClaudeClient, system, prompt string, progress func(string), label string) (string, error) {
+func completeWithHeartbeat(ctx context.Context, client *ClaudeClient, system, prompt string, maxTokens int, progress func(string), label string) (string, error) {
 	done := make(chan struct{})
 	defer close(done)
 	go func() {
@@ -310,7 +311,7 @@ func completeWithHeartbeat(ctx context.Context, client *ClaudeClient, system, pr
 			}
 		}
 	}()
-	return client.Complete(ctx, system, prompt)
+	return client.Complete(ctx, system, prompt, maxTokens)
 }
 
 // buildPrompt describes each pending message (its type, its own fields, its

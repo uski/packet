@@ -86,22 +86,27 @@ type claudeResponse struct {
 		Type string `json:"type"`
 		Text string `json:"text"`
 	} `json:"content"`
-	Error *struct {
+	StopReason string `json:"stop_reason"`
+	Error      *struct {
 		Type    string `json:"type"`
 		Message string `json:"message"`
 	} `json:"error"`
 }
 
-// Complete sends system and prompt to Claude as a single-turn conversation
-// and returns its text response.
-func (c *ClaudeClient) Complete(ctx context.Context, system, prompt string) (string, error) {
+// Complete sends system and prompt to Claude as a single-turn conversation,
+// allowing up to maxTokens tokens of output, and returns its text response.
+// If Claude's response is cut off before finishing (stop_reason
+// "max_tokens"), that's reported as an error rather than handing back
+// truncated, unparseable JSON -- see maxTokensFor, which sizes maxTokens to
+// the batch so this should only happen for an unusually large batch.
+func (c *ClaudeClient) Complete(ctx context.Context, system, prompt string, maxTokens int) (string, error) {
 	key := c.apiKey()
 	if key == "" {
 		return "", ErrNoAPIKey
 	}
 	reqBody := claudeRequest{
 		Model:     c.model(),
-		MaxTokens: 8192,
+		MaxTokens: maxTokens,
 		System:    system,
 		Messages:  []claudeMessage{{Role: "user", Content: prompt}},
 	}
@@ -142,10 +147,34 @@ func (c *ClaudeClient) Complete(ctx context.Context, system, prompt string) (str
 			text.WriteString(part.Text)
 		}
 	}
+	if cr.StopReason == "max_tokens" {
+		return "", fmt.Errorf("Claude's response was cut off after reaching the %d-token output limit before it finished; try generating fewer messages in one batch, or splitting a large \"each station\" fan-out into a smaller set of parties", maxTokens)
+	}
 	if text.Len() == 0 {
 		return "", fmt.Errorf("Claude API returned no text content")
 	}
 	return text.String(), nil
+}
+
+// maxTokensFor sizes the output token budget for a batch of n messages:
+// enough for a single message's JSON at the existing default, plus a
+// generous per-message allowance for larger batches (a multi-party flow, or
+// an "each station" fan-out, can ask for many messages in one call), capped
+// well within the model's output limit.
+func maxTokensFor(n int) int {
+	const (
+		base        = 8192
+		perExtraMsg = 1500
+		maxCap      = 16000
+	)
+	if n <= 1 {
+		return base
+	}
+	tokens := base + perExtraMsg*(n-1)
+	if tokens > maxCap {
+		return maxCap
+	}
+	return tokens
 }
 
 // extractJSON strips leading/trailing markdown code fences (```json ... ```
