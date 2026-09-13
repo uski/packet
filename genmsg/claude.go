@@ -62,7 +62,10 @@ func (c *ClaudeClient) httpClient() *http.Client {
 	if c.HTTP != nil {
 		return c.HTTP
 	}
-	return &http.Client{Timeout: 120 * time.Second}
+	// Without streaming, response headers only arrive once the whole
+	// completion is done, and a large multi-party batch (up to
+	// maxTokensFor's cap) can take several minutes to generate.
+	return &http.Client{Timeout: 10 * time.Minute}
 }
 
 // HasAPIKey reports whether a Claude API key is configured, so callers can
