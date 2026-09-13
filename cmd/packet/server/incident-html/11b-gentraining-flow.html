@@ -23,7 +23,9 @@
         const role = row.querySelector('.mp-role').value.trim() || `Party ${i + 1}`
         const loc = row.querySelector('.mp-location').value.trim()
         const f3 = row.querySelector('.mp-f3').checked
+        const prefix = row.querySelector('.mp-prefix').value.trim().toUpperCase()
         let label = loc ? `${role} (${loc})` : role
+        if (prefix) label += ` ${prefix}`
         if (f3) label += ' [F3]'
         return { value: String(i), label }
       })
@@ -105,6 +107,7 @@
         role: row.querySelector('.mp-role').value.trim(),
         location: row.querySelector('.mp-location').value.trim(),
         f3: row.querySelector('.mp-f3').checked,
+        prefix: row.querySelector('.mp-prefix').value.trim().toUpperCase(),
       }))
       const messages = [...document.querySelectorAll('#mpmessages .mprow')].map(row => {
         const toVal = row.querySelector('.mp-to').value
@@ -335,7 +338,11 @@
     }
 
     #mpparties .mprow {
-      grid-template-columns: 1fr 1fr auto auto;
+      grid-template-columns: 1fr 1fr 6rem auto auto;
+    }
+
+    .mp-prefix {
+      text-transform: uppercase;
     }
 
     #mpmessages .mprow {
@@ -464,6 +471,7 @@
         <div class=mprow>
           <label class=mpfield>Role<input type=text class=mp-role placeholder="e.g. Net Control"></label>
           <label class=mpfield>Location<input type=text class=mp-location placeholder="e.g. County EOC (optional)"></label>
+          <label class=mpfield>Msg # prefix<input type=text class=mp-prefix maxlength=3 placeholder="e.g. S24" autocapitalize=characters></label>
           <label class="mpfield mpcheck"><input type=checkbox class=mp-f3><span>F3 (limited prowords)</span></label>
           <button type=button class=mpremove title="Remove this party">&times;</button>
         </div>
