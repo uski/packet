@@ -37,6 +37,9 @@ func buildDraft(inc *incident.Incident, m MessageSpec, values map[string]string)
 	if f := FindFieldByCommon(draft, "defaultBody"); f != nil {
 		f.SetValue(draft, "")
 	}
+	if m.ClearOperator {
+		clearOperatorFields(draft)
+	}
 	applyPartyFields(draft, m)
 	setFieldValues(draft, values)
 	// After the values, since they can make further dates/times required.
@@ -99,6 +102,28 @@ func problemSpecs(msg message.Message) []FieldSpec {
 		}
 	}
 	return specs
+}
+
+// operatorCommon lists the common fields of a form's Radio Operator section.
+var operatorCommon = map[string]bool{
+	"operatorName":        true,
+	"operatorCall":        true,
+	"operatorDate":        true,
+	"operatorTime":        true,
+	"operatorMethod":      true,
+	"operatorMethodOther": true,
+	"receiverSender":      true,
+}
+
+// clearOperatorFields empties msg's Radio Operator section (operator name,
+// call sign, date and time, sent or received, how, and relay stations),
+// which the incident's defaults fill with the local operator.
+func clearOperatorFields(msg *message.DraftMessage) {
+	for f := range msg.Fields() {
+		if f.Settable() && f.Value(msg) != "" && (operatorCommon[f.Common()] || strings.HasPrefix(f.Label(), "Operator")) {
+			f.SetValue(msg, "")
+		}
+	}
 }
 
 // maxSummaryWords caps a subject, title, or summary field, which Claude

@@ -219,6 +219,36 @@ func TestGenerateShortensLongSubject(t *testing.T) {
 	}
 }
 
+func TestBuildDraftClearsOperatorSectionForFlow(t *testing.T) {
+	mt := formType(t, "ICS213")
+	var inc *incident.Incident
+	if err := incident.Create(t.TempDir(), func(i *incident.Incident) error {
+		i.Config.OpCall, i.Config.OpName = "KN6YUY", "Evaluator"
+		inc = i
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	flow, err := buildDraft(inc, MessageSpec{MsgType: mt, ClearOperator: true}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for f := range flow.Fields() {
+		if (operatorCommon[f.Common()] || strings.HasPrefix(f.Label(), "Operator")) && f.Value(flow) != "" {
+			t.Errorf("Radio Operator field %q = %q, want it empty for a multi-party message", f.Label(), f.Value(flow))
+		}
+	}
+
+	single, err := buildDraft(inc, MessageSpec{MsgType: mt}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := FindFieldByCommon(single, "operatorCall").Value(single); got != "KN6YUY" {
+		t.Errorf("single-batch operator call = %q, want the incident's KN6YUY", got)
+	}
+}
+
 func TestSetFieldValuesKeepsLaterItemRows(t *testing.T) {
 	mt := formType(t, "ResReq")
 	inc := draftTestIncident(t)
