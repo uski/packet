@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <meta charset="utf-8">
+  <title>Prowords: {{.Title}}</title>
+  <style>
+    @font-face {
+      font-family: Go;
+      src: local("Go"),
+        local("Go-Regular"),
+        local("Go Regular"),
+        url("/Go-Regular.woff2") format("woff2");
+    }
+
+    body {
+      font-family: Go, sans-serif;
+      margin: 1rem;
+    }
+
+    h1 {
+      font-size: 1.5rem;
+      margin: 0 0 0.5rem;
+    }
+
+    .hint {
+      color: #666;
+      margin: 0 0 1rem;
+    }
+
+    table {
+      border-collapse: collapse;
+      margin-bottom: 1.5rem;
+    }
+
+    th,
+    td {
+      border: 1px solid #ccc;
+      padding: 0.15rem 0.5rem;
+      text-align: left;
+    }
+
+    td.count {
+      text-align: right;
+    }
+
+    .field {
+      margin-bottom: 0.75rem;
+    }
+
+    .label {
+      color: #666;
+      font-size: 0.85rem;
+    }
+
+    .value {
+      white-space: pre-wrap;
+    }
+
+    .pw {
+      text-decoration: underline 2px red;
+      text-underline-offset: 3px;
+      cursor: help;
+    }
+  </style>
+</head>
+
+<body>
+  <h1>Prowords in {{.Title}}</h1>
+  <p class="hint">Text that calls for a proword is underlined in red. Hover over it to see which proword.</p>
+  {{if .Counts}}
+  <table>
+    <tr><th>Proword</th><th>Count</th></tr>
+    {{range .Counts}}<tr><td>{{.Name}}</td><td class="count">{{.Count}}</td></tr>
+    {{end}}
+  </table>
+  {{else}}
+  <p>No prowords found.</p>
+  {{end}}
+  {{range .Fields}}
+  <div class="field">
+    <div class="label">{{.Label}}</div>
+    <div class="value">{{range .Segments}}{{if .Proword}}<span class="pw" title="{{.Proword}}">{{.Text}}</span>{{else}}{{.Text}}{{end}}{{end}}</div>
+  </div>
+  {{end}}
+</body>
+
+</html>

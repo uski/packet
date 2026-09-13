@@ -26,6 +26,7 @@ type genTrainingProwordCount struct {
 
 // genTrainingMessage describes one generated message in the JSON response.
 type genTrainingMessage struct {
+	Ident         int                       `json:"ident"`
 	ID            string                    `json:"id"`
 	Type          string                    `json:"type"`
 	Prowords      []genTrainingProwordCount `json:"prowords"`
@@ -235,7 +236,7 @@ func buildGenTrainingResult(applied []genmsg.Applied) genTrainingResult {
 	var result genTrainingResult
 	result.Messages = make([]genTrainingMessage, len(applied))
 	for j, a := range applied {
-		gm := genTrainingMessage{ID: a.ID, Type: a.MsgType.Name()}
+		gm := genTrainingMessage{Ident: a.Ident, ID: a.ID, Type: a.MsgType.Name()}
 		cats := slices.Collect(maps.Keys(a.Result.Counts))
 		slices.SortFunc(cats, func(x, y prowords.Category) int {
 			return cmp.Compare(prowords.ProwordName(x), prowords.ProwordName(y))

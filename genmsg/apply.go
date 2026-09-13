@@ -17,6 +17,7 @@ import (
 // generation Result (including the proword counts an evaluator can show in
 // a summary table).
 type Applied struct {
+	Ident   int // the incident log entry's identifier
 	ID      string
 	MsgType message.EditableMType
 	Result  Result
@@ -77,7 +78,7 @@ func Apply(inc *incident.Incident, specs []MessageSpec, results []Result) ([]App
 			return nil, fmt.Errorf("adding generated draft message: %w", addErr)
 		}
 		ids[i] = le.LocalMsgID
-		applied[i] = Applied{ID: le.LocalMsgID, MsgType: spec.MsgType, Result: res}
+		applied[i] = Applied{Ident: le.Ident, ID: le.LocalMsgID, MsgType: spec.MsgType, Result: res}
 	}
 	return applied, nil
 }

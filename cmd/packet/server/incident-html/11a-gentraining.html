@@ -25,7 +25,16 @@
       div.innerHTML = ''
       data.messages.forEach(msg => {
         const h = document.createElement('h2')
-        h.textContent = `${msg.id} — ${msg.type} — ${msg.words} words`
+        h.textContent = `${msg.id} — ${msg.type} — ${msg.words} words `
+        const view = document.createElement('a')
+        view.href = '#'
+        view.textContent = 'View prowords'
+        view.addEventListener('click', evt => {
+          evt.preventDefault()
+          const params = new URLSearchParams({ dir: document.body.dataset.dir, id: msg.ident })
+          window.open('/view-prowords?' + params.toString(), `vpw${msg.ident}`)
+        })
+        h.appendChild(view)
         div.appendChild(h)
         if (msg.missing && msg.missing.length) {
           const warn = document.createElement('p')

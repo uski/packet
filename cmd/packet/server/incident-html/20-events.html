@@ -238,6 +238,15 @@
           window.open('/view-encoded?' + params.toString(), `venc${sel.ident}`)
         }
       })
+      // Message: View Prowords
+      setupMenuItem({
+        id: 'm-msg-view-prowords', cid: 'cm-msg-view-prowords',
+        shown: sel => sel.st !== 'H',
+        clicked: sel => {
+          const params = new URLSearchParams({ dir: document.body.dataset.dir, id: sel.ident })
+          window.open('/view-prowords?' + params.toString(), `vpw${sel.ident}`)
+        }
+      })
       // Message: Ready to Send
       setupMenuItem({
         id: 'm-msg-ready', cid: 'cm-msg-ready',
