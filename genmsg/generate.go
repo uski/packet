@@ -581,7 +581,7 @@ func buildPrompt(req Request, brief string, specsPerMsg [][]FieldSpec, results [
 				b.WriteString(" [keep this SHORT: at most 3 words, ideally 2, e.g. \"EOC Net Control\" or \"Command Post\", not a full sentence]")
 			}
 			if alwaysInclude[s.Common] {
-				fmt.Fprintf(&b, " [a short title of at most %d words; the message's details go in its message fields, never here]", maxSummaryWords)
+				fmt.Fprintf(&b, " [a short title of at most %d words, in sentence case; the message's details go in its message fields, never here]", maxSummaryWords)
 			}
 			if names := routedForTag(routed, s.Tag); len(names) > 0 {
 				fmt.Fprintf(&b, " [put the %s content here -- do NOT also add it to the free-text body]", strings.Join(names, "/"))
@@ -665,7 +665,7 @@ func buildPrompt(req Request, brief string, specsPerMsg [][]FieldSpec, results [
 		b.WriteString("Revise your previous version rather than starting over: fix what is flagged above, keep everything that already works, and return the complete field values again (not just the changed ones). Every field under \"Fields you MUST fill in\" needs a non-empty value in your response -- do not omit any of them.\n\n")
 	}
 	fmt.Fprintf(&b, "Every message must also include the exact phrase %q somewhere in its content, to clearly mark it as training/exercise traffic rather than a real report.\n\n", DrillTrafficPhrase)
-	b.WriteString("Respond with ONLY a JSON array of exactly that many objects, in the same order as listed above, each mapping THAT message's own field tags to their string values. Keep every message SHORT: real emergency radio traffic is deliberately terse, and each message's word budget above covers ALL of its fields together, so a free-text field should be one or two short sentences at most -- include only what's needed to satisfy the listed requirements. Only use the field tags listed for each message: give every MUST field a non-empty value, fill an optional field only when the message's information belongs there, and never add other keys. For any field marked as a dropdown above, its value must be one of the listed choices, verbatim -- do not invent your own wording for it. Before answering, check your values against every requirement and the word budget.\n")
+	b.WriteString("Respond with ONLY a JSON array of exactly that many objects, in the same order as listed above, each mapping THAT message's own field tags to their string values. Keep every message SHORT: real emergency radio traffic is deliberately terse, and each message's word budget above covers ALL of its fields together, so a free-text field should be one or two short sentences at most -- include only what's needed to satisfy the listed requirements. Only use the field tags listed for each message: give every MUST field a non-empty value, fill an optional field only when the message's information belongs there, and never add other keys. For any field marked as a dropdown above, its value must be one of the listed choices, verbatim -- do not invent your own wording for it. Everywhere else, use normal sentence capitalization: capitalize only the first word of a sentence or phrase, proper names, and acronyms, and never Title Case ordinary words (write \"Generator runtime is 8 hours\", not \"Generator Runtime is 8 hours\"), because capitalized ordinary words read as names that call for I SPELL. Before answering, check your values against every requirement and the word budget.\n")
 	return b.String()
 }
 

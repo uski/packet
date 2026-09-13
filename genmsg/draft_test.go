@@ -261,6 +261,9 @@ func TestBuildPromptSeparatesOptionalFields(t *testing.T) {
 	if !strings.Contains(prompt, "each requested item in its own item row") {
 		t.Errorf("prompt should tell Claude to fill form fields by their meaning:\n%s", prompt)
 	}
+	if !strings.Contains(prompt, "never Title Case ordinary words") {
+		t.Errorf("prompt should tell Claude not to capitalize ordinary words:\n%s", prompt)
+	}
 }
 
 func TestBuildDraftFillsRequiredDateTimes(t *testing.T) {
