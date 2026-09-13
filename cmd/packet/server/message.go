@@ -122,6 +122,7 @@ func (s *Server) serveGetEditMessage(w http.ResponseWriter, r *http.Request) {
 	vars.ShowAddressFields = true
 	vars.SubmitLabel = "Send Message"
 	vars.SubmitURL = "/send-message?" + params.Encode()
+	vars.FilledPDFURL = "/filled-pdf?" + params.Encode()
 	if out, err = emt.EditHTML(msg.(*message.DraftMessage), vars); err != nil {
 		s.ErrPage(w, err.Error(), http.StatusInternalServerError)
 		return

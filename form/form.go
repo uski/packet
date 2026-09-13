@@ -371,6 +371,9 @@ func (ft EditableFormType) EditHTML(msg message.Message, vars message.EditHTMLVa
 		_, rmbundle, _ := strings.Cut(ft.PDFFile, "/")
 		fields["pdf-url"] = path.Join(vars.AssetBase, rmbundle)
 	}
+	if vars.FilledPDFURL != "" {
+		fields["filled-pdf-url"] = vars.FilledPDFURL
+	}
 	// Define field widths for the HTML fields based on the PDF fields.
 	for f := range ft.AllFields() {
 		if f.Tag != "" && len(f.PDF) != 0 {

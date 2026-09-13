@@ -95,4 +95,8 @@ type EditHTMLVars struct {
 	// FromAddress is the from address for the message (used only if
 	// ShowAddressFields is true).
 	FromAddress string
+	// FilledPDFURL, if set, is the URL the edit form POSTs its current,
+	// unsaved contents to for a Filled PDF button, which shows the form as
+	// filled in on screen.  If empty, there is no Filled PDF button.
+	FilledPDFURL string
 }
