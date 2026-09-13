@@ -61,7 +61,7 @@ type info struct {
 var catalog = map[Category]info{
 	ISpell: {
 		Proword: "I SPELL",
-		Prompt:  `Include at least one proper name (person, street, or city not commonly known locally), an uncommon or hard-to-spell word, or a word that sounds like another word (e.g. "to"/"too"/"two", "for"/"four"), so the sender must use the I SPELL proword.`,
+		Prompt:  `Include a hard-to-spell two-word proper name with both words capitalized, such as a person's full name or a street name (e.g. "Diego Marchetti", "Kaczmarek Street"), so the sender must use the I SPELL proword.`,
 		re:      regexp.MustCompile(`\b[A-Z][a-z]{2,}\s+[A-Z][a-z]{2,}\b`),
 	},
 	Figures: {
@@ -82,16 +82,18 @@ var catalog = map[Category]info{
 	MixedGroupSymbols: {
 		Proword: "MIXED GROUP SYMBOL(S)",
 		Prompt:  `Include at least one alphanumeric group that STARTS WITH A SYMBOL (e.g. a negative temperature like "-10 degrees" or a dollar amount like "$32"), so the sender must use the MIXED GROUP SYMBOL(S) proword.`,
-		re:      regexp.MustCompile(`[-$%][0-9]+(\.[0-9]+)?`),
+		// \B: the symbol must start the group, so the "-123" in "abc-123"
+		// is left for MIXED GROUP.
+		re: regexp.MustCompile(`\B[-$%][0-9]+(\.[0-9]+)?`),
 	},
 	Initials: {
 		Proword: "INITIAL(S)",
-		Prompt:  `Include at least one abbreviation or acronym written as two or more capital letters (e.g. "EOC", "ARRL"), so the sender must use the INITIAL(S) proword.`,
+		Prompt:  `Include at least one abbreviation or acronym written as two to five capital letters with no periods (e.g. "EOC", "ARRL"), so the sender must use the INITIAL(S) proword.`,
 		re:      regexp.MustCompile(`\b[A-Z]{2,5}\b`),
 	},
 	Symbols: {
 		Proword: "SYMBOL(S)",
-		Prompt:  `Include at least one standalone symbol used outside of normal sentence punctuation (e.g. "?" replacing an unreadable character, "!=", "#", "%") -- not merely a period/comma/colon/semicolon/question-mark/exclamation-point ending a sentence.`,
+		Prompt:  `Include at least one of these symbols, used as a symbol rather than sentence punctuation: # % & * = < > (e.g. "gate #4", "50%"), so the sender must use the SYMBOL(S) proword.`,
 		re:      regexp.MustCompile(`[#%&*<>=~^]`),
 	},
 	TelephoneFigures: {
@@ -137,7 +139,7 @@ var catalog = map[Category]info{
 	SubscriptSuperscript: {
 		Proword: "SUBSCRIPT/SUPERSCRIPT",
 		Prompt:  `Include a chemical formula or numeric expression with a subscript or superscript, written using Unicode subscript/superscript characters (e.g. "H₂O", "10⁵"), so the sender must use the SUBSCRIPT and SUPERSCRIPT prowords.`,
-		re:      regexp.MustCompile(`[\x{2080}-\x{2089}\x{00B2}\x{00B3}\x{00B9}]`),
+		re:      regexp.MustCompile(`[\x{2070}-\x{209F}\x{00B2}\x{00B3}\x{00B9}]`),
 	},
 	Newline: {
 		Proword: "NEWLINE",
