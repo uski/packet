@@ -22,7 +22,7 @@ const (
 	gentrainingHelp = `
 usage: packet gentrain ⇥[-flags] «msg-type» [«msg-type» ...]
        packet gentrain ⇥--flow «file.json» [-flags]
-  -l, --level «level»      ⇥Proword profile: "f3" or "full" (default "full")
+  -l, --level «level»      ⇥Proword profile: "f3" or "full" (default "full"); ignored with --flow, where each party has its own "f3" flag instead
   -s, --scenario «text»    ⇥Scenario to steer the generated content
   -f, --flow «file.json»   ⇥Generate a multi-party message flow from a JSON file
 
@@ -35,7 +35,7 @@ For a coherent multi-party exchange -- e.g. one message asking all stations for 
   {
     "parties": [
       {"role": "Net Control", "location": "County EOC"},
-      {"role": "Shelter Manager", "location": "Roosevelt MS"}
+      {"role": "Shelter Manager", "location": "Roosevelt MS", "f3": true}
     ],
     "messages": [
       {"msgType": "ICS213", "from": 0, "to": -1, "toLabel": "All Stations",
@@ -47,7 +47,9 @@ For a coherent multi-party exchange -- e.g. one message asking all stations for 
 
 "parties" are referenced by 0-based index from each message's "from"/"to". Use "to": -1 with "toLabel" for a broadcast recipient that isn't one of the defined parties (e.g. "All Stations"). "replyTo" is the 1-based index of another message in the same file that this one replies to; Claude is given that message's content so the reply is directly consistent with it, not just generated independently. The From/To ICS Position and Location on each message are set directly from the parties (never left for Claude to invent), so they stay perfectly consistent across the whole flow.
 
-The messages are generated to exercise the message-passing prowords required for the given --level: "f3" is the reduced proword list evaluated only for the Field Communicator Type III credential; "full" (the default) is the complete proword list required for every other credential (F2, F1, and all Net Control, Packet Operator, and Shadow Communicator tiers). The set of required prowords is spread across the generated messages rather than crammed into every one.
+Use "from": -1 to fan a single message entry out into one message from EVERY party, e.g. so several field stations can each independently reply to one "All Stations" broadcast without listing each reply by hand. If the fanned-out message replies to another one (via "replyTo") whose sender is one of the parties, that sender is excluded from the fan-out (a station doesn't reply to its own broadcast). A message may not itself reply to a "from": -1 entry, since there is no single message to point at.
+
+Each party's "f3" (boolean, default false) selects which proword list that party's own messages are evaluated on: true for the reduced Field Communicator Type III list, false (or omitted) for the complete list required by every other credential (F2, F1, and all Net Control, Packet Operator, and Shadow Communicator tiers). This lets one flow mix parties at different credential levels -- each message's required prowords are drawn only from its own sender's list, and spread across that sender's messages rather than crammed into every one. --level (below) only applies when no «msg-type» flow is used.
 
 If --scenario is given, its text is used to steer the emergency-response scenario the messages are based on (e.g. "a downed power line on Almaden Expressway"). If omitted, a generic SCCo emergency-response scenario is invented (utility outage, fallen tree, road closure, traffic congestion, etc.).
 
