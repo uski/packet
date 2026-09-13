@@ -12,6 +12,7 @@ import (
 	"github.com/rothskeller/packet/v4/form/formdefs"
 	"github.com/rothskeller/packet/v4/incident"
 	"github.com/rothskeller/packet/v4/message"
+	"github.com/rothskeller/packet/v4/prowords"
 )
 
 func draftTestIncident(t *testing.T) *incident.Incident {
@@ -23,16 +24,97 @@ func draftTestIncident(t *testing.T) *incident.Incident {
 	return inc
 }
 
-func sitRepType(t *testing.T) message.EditableMType {
+func formType(t *testing.T, tag string) message.EditableMType {
 	t.Helper()
 	if err := formdefs.RegisterForms(); err != nil {
 		t.Fatal(err)
 	}
-	mt, ok := FindMsgType("SitRep")
+	mt, ok := FindMsgType(tag)
 	if !ok {
-		t.Skip("SitRep not registered (build without -tags sccopifo?)")
+		t.Skipf("%s not registered (build without -tags sccopifo?)", tag)
 	}
 	return mt
+}
+
+func sitRepType(t *testing.T) message.EditableMType { return formType(t, "SitRep") }
+
+func specsByTag(specs []FieldSpec) map[string]FieldSpec {
+	m := make(map[string]FieldSpec, len(specs))
+	for _, s := range specs {
+		m[s.Tag] = s
+	}
+	return m
+}
+
+func TestPromptFieldsResourceRequestOffersEveryItemRow(t *testing.T) {
+	mt := formType(t, "ResReq")
+	spec := MessageSpec{MsgType: mt, From: "Shelter Manager", FromLocation: "Roosevelt MS", To: "Logistics", ToLocation: "County EOC"}
+	draft, err := buildDraft(draftTestIncident(t), spec, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	specs, _ := PromptFields(draft, nil)
+	byTag := specsByTag(specs)
+	if s, ok := byTag["23n."]; !ok || s.Optional {
+		t.Error("Item 1's name (23n.) is required and should be a MUST field")
+	}
+	// Item 2 onward is blocked until the row before it is filled, but a
+	// message requesting several items needs them.
+	for _, tag := range []string{"24n.", "24q.", "28n.", "60."} {
+		if s, ok := byTag[tag]; !ok || !s.Optional {
+			t.Errorf("field %q should be offered as optional", tag)
+		}
+	}
+	// Filled by the tool itself: the party position and the prepared time.
+	for _, tag := range []string{"7a.", "22t.", "OpRelayRcvd", "OpRelaySent"} {
+		if _, ok := byTag[tag]; ok {
+			t.Errorf("tool-filled field %q should not be offered to Claude", tag)
+		}
+	}
+}
+
+func TestSetFieldValuesKeepsLaterItemRows(t *testing.T) {
+	mt := formType(t, "ResReq")
+	inc := draftTestIncident(t)
+	values := map[string]string{"23n.": "Blankets", "23q.": "50", "24n.": "Generator", "24q.": "1", "25n.": "Cots", "25q.": "20"}
+	// Map iteration order is random, so repeat to catch order dependence.
+	for range 20 {
+		draft, err := buildDraft(inc, MessageSpec{MsgType: mt}, values)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for tag, want := range values {
+			if got := FindField(draft, tag).Value(draft); got != want {
+				t.Fatalf("field %q = %q, want %q", tag, got, want)
+			}
+		}
+	}
+}
+
+func TestBuildPromptSeparatesOptionalFields(t *testing.T) {
+	req := Request{Messages: []MessageSpec{{MsgType: message.PlainMessage}}}
+	specs := [][]FieldSpec{{
+		{Tag: "23n.", Label: "Item 1: Item Name", Required: true},
+		{Tag: "24n.", Label: "Item 2: Item Name", Optional: true},
+		{Tag: "60.", Label: "Comments", Multiline: true, Optional: true},
+	}}
+	prompt := buildPrompt(req, "", specs, make([]Result, 1), []int{0}, []MessagePlan{{}}, make([]map[prowords.Category]string, 1), make([]int, 1), false)
+	must := strings.Index(prompt, "Fields you MUST fill in")
+	other := strings.Index(prompt, "Other fields on this form")
+	if must < 0 || other < must {
+		t.Fatalf("expected a MUST section followed by an optional section:\n%s", prompt)
+	}
+	if i := strings.Index(prompt, `"23n."`); i < must || i > other {
+		t.Errorf("required field should be listed in the MUST section:\n%s", prompt)
+	}
+	for _, tag := range []string{`"24n."`, `"60."`} {
+		if i := strings.Index(prompt, tag); i < other {
+			t.Errorf("optional field %s should be listed in the optional section:\n%s", tag, prompt)
+		}
+	}
+	if !strings.Contains(prompt, "each requested item in its own item row") {
+		t.Errorf("prompt should tell Claude to fill form fields by their meaning:\n%s", prompt)
+	}
 }
 
 func TestBuildDraftFillsRequiredDateTimes(t *testing.T) {
@@ -54,25 +136,20 @@ func TestBuildDraftFillsRequiredDateTimes(t *testing.T) {
 	}
 }
 
-func TestGeneratableSitRepSkipsOptionalComments(t *testing.T) {
+func TestPromptFieldsSitRepCommentsAreOptional(t *testing.T) {
 	mt := sitRepType(t)
 	draft, err := buildDraft(draftTestIncident(t), MessageSpec{MsgType: mt}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	tags := map[string]bool{}
-	for _, s := range Generatable(Describe(draft)) {
-		tags[s.Tag] = true
+	specs, _ := PromptFields(draft, nil)
+	byTag := specsByTag(specs)
+	if s, ok := byTag["22."]; !ok || s.Optional {
+		t.Error("required Incident Name (22.) should be a MUST field")
 	}
-	if !tags["22."] {
-		t.Error("expected required Incident Name (22.) to be selected")
-	}
-	if !tags["26."] {
-		t.Error("expected the main body field (26., defaultBody) to be selected")
-	}
-	for _, tag := range []string{"25.", "70b."} {
-		if tags[tag] {
-			t.Errorf("optional free-text field %q should not be selected", tag)
+	for _, tag := range []string{"25.", "26.", "70b."} {
+		if s, ok := byTag[tag]; !ok || !s.Optional {
+			t.Errorf("optional free-text field %q should be offered as optional, not forced", tag)
 		}
 	}
 }

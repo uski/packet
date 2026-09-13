@@ -4,6 +4,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/rothskeller/packet/v4/message"
 	"github.com/rothskeller/packet/v4/prowords"
 )
 
@@ -20,11 +21,10 @@ import (
 // provided" by the forms that have them, so Generatable alone would never
 // select them.
 func ClassifyField(spec FieldSpec) []prowords.Category {
-	switch spec.Common {
-	case "fromName", "toName":
+	text := strings.ToLower(spec.Label + " " + spec.Help)
+	if spec.Common == "fromName" || spec.Common == "toName" || strings.Contains(text, "name of the person") {
 		return []prowords.Category{prowords.ISpell}
 	}
-	text := strings.ToLower(spec.Label + " " + spec.Help)
 	var cats []prowords.Category
 	if strings.Contains(text, "email") || strings.Contains(text, "e-mail") {
 		cats = append(cats, prowords.EmailAddress)
@@ -74,6 +74,9 @@ func SelectFields(all []FieldSpec, categories []prowords.Category) (selected []F
 			// doubling up, and prefer the author's own (From) name and
 			// contact fields over the recipient's.
 			score := 0
+			if included[s.Tag] {
+				score += 4 // a field the form requires anyway, rather than adding one
+			}
 			if !used[s.Tag] {
 				score += 2
 			}
@@ -96,4 +99,35 @@ func SelectFields(all []FieldSpec, categories []prowords.Category) (selected []F
 		}
 	}
 	return selected, routed
+}
+
+// PromptFields returns, in form order, the fields of msg (a draft with the
+// tool's own values already applied) to show Claude: those SelectFields
+// says it must fill, and every other field it may fill, marked Optional.
+// Seeing the whole form lets Claude put each piece of information in the
+// field made for it. Fields the tool already filled (party positions and
+// locations, dates, times) are left out so Claude can't overwrite them.
+func PromptFields(msg message.Message, categories []prowords.Category) (specs []FieldSpec, routed map[prowords.Category]string) {
+	all := Describe(msg)
+	must, routed := SelectFields(all, categories)
+	mustTag := make(map[string]bool, len(must))
+	for _, s := range must {
+		mustTag[s.Tag] = true
+	}
+	for _, s := range all {
+		if skipCommon[s.Common] {
+			continue
+		}
+		if !mustTag[s.Tag] {
+			if strings.HasPrefix(s.Label, "Operator") {
+				continue // relay and other operator bookkeeping, not message content
+			}
+			if f := FindField(msg, s.Tag); f != nil && f.Value(msg) != "" {
+				continue
+			}
+			s.Optional = true
+		}
+		specs = append(specs, s)
+	}
+	return specs, routed
 }

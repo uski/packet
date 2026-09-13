@@ -24,6 +24,7 @@ type FieldSpec struct {
 	Choices   []string // allowed/recommended values, if the field is restricted
 	Required  bool     // true if the field currently has no value and fails validation without one
 	Problem   string   // on a repair round, why the field's current value fails validation
+	Optional  bool     // offered to Claude to fill only if the message has information that belongs in it
 }
 
 // Describe returns the settable, addressable fields of msg (which should be
@@ -36,7 +37,14 @@ type FieldSpec struct {
 func Describe(msg message.Message) []FieldSpec {
 	var specs []FieldSpec
 	for f := range msg.Fields() {
-		if !f.Editable(msg, false) || !f.Settable() {
+		if !f.Settable() {
+			continue
+		}
+		// A form field that isn't editable only because the field it
+		// depends on is still empty (e.g. Item 2 until Item 1 is filled)
+		// is included, so a message can use it.
+		blockedForNow := f.Tag() != "" && f.EditHelp() != "" && !isDateTimePart(f)
+		if !f.Editable(msg, false) && !blockedForNow {
 			continue
 		}
 		// Fields with neither a PIFO tag nor a common name (e.g. virtual
@@ -46,6 +54,13 @@ func Describe(msg message.Message) []FieldSpec {
 		}
 	}
 	return specs
+}
+
+// isDateTimePart reports whether f is the date or time half of a combined
+// date/time field, which is edited through its parent.
+func isDateTimePart(f field.Field) bool {
+	p := f.Parent()
+	return p != nil && p.EditHint() == "mm/dd/yyyy hh:mm"
 }
 
 // fieldKey returns the key a field is addressed by: its PIFO tag, or its
@@ -175,12 +190,18 @@ func AllFieldValues(msg message.Message) map[string]string {
 // generated so far, for AllFieldValues-based coverage checks) and Apply (to
 // build the final message).
 func setFieldValues(msg *message.DraftMessage, values map[string]string) {
-	for key, v := range values {
-		if v == "" {
-			continue
-		}
-		if f := FindField(msg, key); f != nil {
-			f.SetValue(msg, f.FromHuman(msg, v))
+	// In form order, and twice: setting a field clears any field it makes
+	// disallowed, so a field allowed only once an earlier one is filled
+	// (e.g. Item 2 after Item 1) could otherwise lose its value.
+	for range 2 {
+		for f := range msg.Fields() {
+			v := values[fieldKey(f)]
+			if v == "" || !f.Settable() {
+				continue
+			}
+			if nv := f.FromHuman(msg, v); f.Value(msg) != nv {
+				f.SetValue(msg, nv)
+			}
 		}
 	}
 }
@@ -207,24 +228,15 @@ var alwaysInclude = map[string]bool{
 // "rarely provided" in practice.
 func Generatable(specs []FieldSpec) []FieldSpec {
 	var out []FieldSpec
-	hasBody := false
 	for _, s := range specs {
 		if skipCommon[s.Common] {
 			continue
 		}
-		if s.Required || alwaysInclude[s.Common] || s.Common == "defaultBody" {
+		// A free-text field such as Comments isn't forced unless the form
+		// requires it, or Claude would put content there that belongs in
+		// the form's own fields (e.g. a Resource Request's item rows).
+		if s.Required || alwaysInclude[s.Common] {
 			out = append(out, s)
-			hasBody = hasBody || s.Multiline
-		}
-	}
-	// Only one free-text field: a form with many optional comment fields
-	// (e.g. a Situation Report) gets its main body, not all of them.
-	if !hasBody {
-		for _, s := range specs {
-			if s.Multiline && !skipCommon[s.Common] {
-				out = append(out, s)
-				break
-			}
 		}
 	}
 	return out

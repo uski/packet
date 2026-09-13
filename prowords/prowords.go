@@ -113,7 +113,7 @@ var catalog = map[Category]info{
 	},
 	Punctuation: {
 		Proword: "(punctuation)",
-		Prompt:  `Write at least one full sentence using normal punctuation (comma, period, colon, semicolon, question mark, or exclamation point), which the sender must voice using the punctuation-symbol names (e.g. "comma", "period").`,
+		Prompt:  `Use normal punctuation (comma, period, colon, semicolon, question mark, or exclamation point) in at least one field value -- a description or short phrase is enough, no full sentence is needed -- which the sender must voice using the punctuation-symbol names (e.g. "comma", "period").`,
 		re:      regexp.MustCompile(`[,.:;?!]`),
 	},
 	GPSCoordinates: {

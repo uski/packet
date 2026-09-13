@@ -229,6 +229,22 @@ func TestGenerateRoutesEmailAndNameToDedicatedFields(t *testing.T) {
 	}
 }
 
+func TestSelectFieldsPrefersFieldTheFormRequires(t *testing.T) {
+	// A Resource Request requires "Requested By Name", so a name goes there
+	// rather than into the optional From Name field as well.
+	all := []FieldSpec{
+		{Tag: "8c.", Common: "fromName", Label: "12. From Name", Help: "This is the name of the message author.  It is optional and rarely provided."},
+		{Tag: "40.", Label: "51. Requested By Name", Help: "This is the name of the person requesting the resources.  It is required.", Required: true},
+	}
+	selected, routed := SelectFields(all, []prowords.Category{prowords.ISpell})
+	if routed[prowords.ISpell] != "40." {
+		t.Errorf("ISpell routed to %q, want the required Requested By Name field %q", routed[prowords.ISpell], "40.")
+	}
+	if len(selected) != 1 {
+		t.Errorf("no optional field should be added when a required one can hold the name, got %+v", selected)
+	}
+}
+
 func TestSelectFieldsSkipsSkipCommonFields(t *testing.T) {
 	// operatorCall always holds a real callsign (see incident.ApplyDefaults),
 	// so it happens to classify for nothing here, but skipCommon fields in

@@ -172,7 +172,7 @@ func Generate(ctx context.Context, client *ClaudeClient, req Request) ([]Result,
 		// is still reported against it.
 		assigned[i] = plans[i].Categories
 		plans[i].Categories = missingCategories(plans[i].Categories, prowords.CountFields(AllFieldValues(draft)))
-		specs, routed := SelectFields(Describe(draft), plans[i].Categories)
+		specs, routed := PromptFields(draft, plans[i].Categories)
 		if len(specs) == 0 {
 			return nil, fmt.Errorf("message type %q has no editable fields to generate", m.MsgType.Tag())
 		}
@@ -277,7 +277,9 @@ func (g *generation) generateMessage(idx, n int, plan MessagePlan) error {
 		problems := problemSpecs(draft)
 		res.MissingFields = fieldLabels(problems)
 		for _, p := range problems {
-			if !slices.ContainsFunc(g.specs[idx], func(s FieldSpec) bool { return s.Tag == p.Tag }) {
+			if i := slices.IndexFunc(g.specs[idx], func(s FieldSpec) bool { return s.Tag == p.Tag }); i >= 0 {
+				g.specs[idx][i].Optional = false // e.g. Item 2's quantity, required once Item 2 is named
+			} else {
 				g.specs[idx] = append(g.specs[idx], p)
 			}
 		}
@@ -486,7 +488,7 @@ func buildPrompt(req Request, brief string, specsPerMsg [][]FieldSpec, results [
 	} else {
 		b.WriteString("No specific scenario was given. Invent a plausible Santa Clara County emergency-response scenario (e.g. a downed power line, a fallen tree blocking a road, traffic congestion near a shelter, storm damage assessment, a utility outage) and use it consistently across all the messages in this batch.\n\n")
 	}
-	fmt.Fprintf(&b, "Generate exactly %d message(s), described below in order. They may be different form types with different fields (a training session can mix, for example, an ICS-213, a plain text message, and a Road Closure form). Weave each message's listed requirements naturally into that message's own field values -- they must fit the scenario and read like real, professional emergency radio traffic, not like a checklist. Proword content in ANY field counts, so each requirement only needs to be met ONCE, in the single field that suits it best (a person's name in a name field, an email address or phone number in a contact field) -- never repeat it in another field, and never add a sentence to the free-text body just to carry it (e.g. not \"Contact Jane Doe at jane@xanadu-city.org for logistics.\" when there are name and contact fields to hold them). Requirements already satisfied by pre-filled fields have been left out.\n\n", len(pending))
+	fmt.Fprintf(&b, "Generate exactly %d message(s), described below in order. They may be different form types with different fields (a training session can mix, for example, an ICS-213, a plain text message, and a Road Closure form). Weave each message's listed requirements naturally into that message's own field values -- they must fit the scenario and read like real, professional emergency radio traffic, not like a checklist. Proword content in ANY field counts, so each requirement only needs to be met ONCE, in the single field that suits it best (a person's name in a name field, an email address or phone number in a contact field) -- never repeat it in another field, and never add a sentence to the free-text body just to carry it (e.g. not \"Contact Jane Doe at jane@xanadu-city.org for logistics.\" when there are name and contact fields to hold them). Requirements already satisfied by pre-filled fields have been left out. Fill each form the way a trained operator fills out the real form: put every piece of information in the field made for it -- for example each requested item in its own item row (Item 1's name and quantity, then Item 2's), a person in a name field, a phone number in a phone field -- and use a free-text field such as Comments or Special Instructions only for information no other field holds, never to restate other fields (e.g. not \"Need 50 blankets, generator\" in Comments when the form has item fields).\n\n", len(pending))
 	pendingSet := make(map[int]bool, len(pending))
 	for _, idx := range pending {
 		pendingSet[idx] = true
@@ -521,8 +523,11 @@ func buildPrompt(req Request, brief string, specsPerMsg [][]FieldSpec, results [
 			}
 		}
 		routed := routedPerMsg[idx]
-		b.WriteString("Fields to fill in (JSON key is the field tag in quotes below):\n")
+		b.WriteString("Fields you MUST fill in (the JSON key is the field tag in quotes):\n")
 		for _, s := range specsPerMsg[idx] {
+			if s.Optional {
+				continue
+			}
 			fmt.Fprintf(&b, "  - %q: %s", s.Tag, s.Label)
 			if s.Help != "" {
 				fmt.Fprintf(&b, " -- %s", s.Help)
@@ -540,6 +545,22 @@ func buildPrompt(req Request, brief string, specsPerMsg [][]FieldSpec, results [
 				fmt.Fprintf(&b, " [put the %s content here -- do NOT also add it to the free-text body]", strings.Join(names, "/"))
 			}
 			b.WriteString("\n")
+		}
+		var optional []FieldSpec
+		for _, s := range specsPerMsg[idx] {
+			if s.Optional {
+				optional = append(optional, s)
+			}
+		}
+		if len(optional) > 0 {
+			b.WriteString("Other fields on this form, in form order. Fill one ONLY when this message has information that belongs in it, and leave the rest out:\n")
+			for _, s := range optional {
+				fmt.Fprintf(&b, "  - %q: %s", s.Tag, s.Label)
+				if len(s.Choices) > 0 {
+					fmt.Fprintf(&b, " (dropdown: exactly one of: %s)", strings.Join(s.Choices, ", "))
+				}
+				b.WriteString("\n")
+			}
 		}
 		b.WriteString("Requirements for this message:\n")
 		for _, cat := range plans[pos].Categories {
@@ -579,10 +600,10 @@ func buildPrompt(req Request, brief string, specsPerMsg [][]FieldSpec, results [
 		b.WriteString("\n")
 	}
 	if isRepair {
-		b.WriteString("Revise your previous version rather than starting over: fix what is flagged above, keep everything that already works, and return the complete field values again (not just the changed ones). Every field listed under \"Fields to fill in\" for a message is required to have a non-empty value in your response -- do not omit any of them.\n\n")
+		b.WriteString("Revise your previous version rather than starting over: fix what is flagged above, keep everything that already works, and return the complete field values again (not just the changed ones). Every field under \"Fields you MUST fill in\" needs a non-empty value in your response -- do not omit any of them.\n\n")
 	}
 	fmt.Fprintf(&b, "Every message must also include the exact phrase %q somewhere in its content, to clearly mark it as training/exercise traffic rather than a real report.\n\n", DrillTrafficPhrase)
-	b.WriteString("Respond with ONLY a JSON array of exactly that many objects, in the same order as listed above, each mapping THAT message's own field tags to their string values. Keep every message SHORT: real emergency radio traffic is deliberately terse, and each message's word budget above covers ALL of its fields together, so a free-text field should be one or two short sentences at most -- include only what's needed to satisfy the listed requirements. Only set the fields listed for each message; every field listed is required and MUST be given a non-empty value, but never add fields beyond that list. For any field marked as a dropdown above, its value must be one of the listed choices, verbatim -- do not invent your own wording for it. Before answering, check your values against every requirement and the word budget.\n")
+	b.WriteString("Respond with ONLY a JSON array of exactly that many objects, in the same order as listed above, each mapping THAT message's own field tags to their string values. Keep every message SHORT: real emergency radio traffic is deliberately terse, and each message's word budget above covers ALL of its fields together, so a free-text field should be one or two short sentences at most -- include only what's needed to satisfy the listed requirements. Only use the field tags listed for each message: give every MUST field a non-empty value, fill an optional field only when the message's information belongs there, and never add other keys. For any field marked as a dropdown above, its value must be one of the listed choices, verbatim -- do not invent your own wording for it. Before answering, check your values against every requirement and the word budget.\n")
 	return b.String()
 }
 
