@@ -34,8 +34,8 @@ For a coherent multi-party exchange -- e.g. one message asking all stations for 
 
   {
     "parties": [
-      {"role": "Net Control", "location": "County EOC"},
-      {"role": "Shelter Manager", "location": "Roosevelt MS", "f3": true}
+      {"role": "Net Control", "location": "County EOC", "prefix": "EOC"},
+      {"role": "Shelter Manager", "location": "Roosevelt MS", "prefix": "S24", "f3": true}
     ],
     "messages": [
       {"msgType": "ICS213", "from": 0, "to": -1, "toLabel": "All Stations",
@@ -45,7 +45,7 @@ For a coherent multi-party exchange -- e.g. one message asking all stations for 
     ]
   }
 
-"parties" are referenced by 0-based index from each message's "from"/"to". Use "to": -1 with "toLabel" for a broadcast recipient that isn't one of the defined parties (e.g. "All Stations"). "replyTo" is the 1-based index of another message in the same file that this one replies to; Claude is given that message's content so the reply is directly consistent with it, not just generated independently. The From/To ICS Position and Location on each message are set directly from the parties (never left for Claude to invent), so they stay perfectly consistent across the whole flow.
+"parties" are referenced by 0-based index from each message's "from"/"to". A party's optional "prefix" is its three-character message number prefix (e.g. "S24" for Shelter 24): its messages are numbered with it (e.g. "S24-101P", continuing after the highest such number already in the incident) and addressed to the receiving party's prefix, and a reply's Reference field gets the number of the message it answers. Use "to": -1 with "toLabel" for a broadcast recipient that isn't one of the defined parties (e.g. "All Stations"). "replyTo" is the 1-based index of another message in the same file that this one replies to; Claude is given that message's content so the reply is directly consistent with it, not just generated independently. The From/To ICS Position and Location on each message are set directly from the parties (never left for Claude to invent), so they stay perfectly consistent across the whole flow.
 
 Use "from": -1 to fan a single message entry out into one message from EVERY party, e.g. so several field stations can each independently reply to one "All Stations" broadcast without listing each reply by hand. If the fanned-out message replies to another one (via "replyTo") whose sender is one of the parties, that sender is excluded from the fan-out (a station doesn't reply to its own broadcast). A message may not itself reply to a "from": -1 entry, since there is no single message to point at.
 

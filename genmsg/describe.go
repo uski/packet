@@ -110,6 +110,7 @@ var skipCommon = map[string]bool{
 	"operatorMethodOther":  true,
 	"subjectMessageID":     true,
 	"subjectFormTag":       true,
+	"reference":            true, // set by Apply for a reply
 	"headerDate":           true,
 	"headerFrom":           true,
 	"headerTo":             true,

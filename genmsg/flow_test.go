@@ -182,6 +182,41 @@ func TestResolveFlowEachStationAllExcludedIsAnError(t *testing.T) {
 	}
 }
 
+func TestResolveFlowPrefixes(t *testing.T) {
+	fl := Flow{
+		Parties: []FlowParty{
+			{Role: "Net Control", Prefix: "eoc"},
+			{Role: "Shelter A", Prefix: " S24 "},
+			{Role: "Shelter B"},
+		},
+		Messages: []FlowMessage{
+			{MsgType: "plain", From: 0, To: -1, ToLabel: "All Stations"},
+			{MsgType: "plain", From: fromEachStation, To: 0, ReplyTo: 1},
+		},
+	}
+	specs, err := ResolveFlow(fl)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if specs[0].FromPrefix != "EOC" || specs[0].ToPrefix != "" {
+		t.Errorf("broadcast: FromPrefix=%q ToPrefix=%q, want EOC and none", specs[0].FromPrefix, specs[0].ToPrefix)
+	}
+	if specs[1].FromPrefix != "S24" || specs[1].ToPrefix != "EOC" {
+		t.Errorf("Shelter A's reply: FromPrefix=%q ToPrefix=%q, want S24 and EOC", specs[1].FromPrefix, specs[1].ToPrefix)
+	}
+	if specs[2].FromPrefix != "" || specs[2].ToPrefix != "EOC" {
+		t.Errorf("Shelter B's reply: FromPrefix=%q ToPrefix=%q, want none and EOC", specs[2].FromPrefix, specs[2].ToPrefix)
+	}
+	if fl.Parties[0].Prefix != "eoc" {
+		t.Error("ResolveFlow should not modify the caller's parties")
+	}
+
+	fl.Parties[1].Prefix = "SHELTER"
+	if _, err := ResolveFlow(fl); err == nil || !strings.Contains(err.Error(), "prefix") {
+		t.Errorf("expected an invalid prefix error, got %v", err)
+	}
+}
+
 func TestFindMsgType(t *testing.T) {
 	if _, ok := FindMsgType("plain"); !ok {
 		t.Error("expected to find the built-in plain message type")

@@ -6,7 +6,9 @@ import (
 
 	"github.com/rothskeller/packet/v4/incident"
 	"github.com/rothskeller/packet/v4/message"
+	"github.com/rothskeller/packet/v4/message/address"
 	"github.com/rothskeller/packet/v4/message/field"
+	"github.com/rothskeller/packet/v4/message/messageid"
 	"github.com/rothskeller/packet/v4/prowords"
 )
 
@@ -36,12 +38,33 @@ func Apply(inc *incident.Incident, specs []MessageSpec, results []Result) ([]App
 	if len(specs) != len(results) {
 		return nil, fmt.Errorf("genmsg.Apply: %d message specs but %d results", len(specs), len(results))
 	}
-	applied := make([]Applied, 0, len(results))
-	for i, res := range results {
-		spec := specs[i]
+	applied := make([]Applied, len(results))
+	ids := make([]string, len(results))
+	nextSeq := map[string]int{}
+	// A reply is created after the message it answers, so it can refer to
+	// that message's number.
+	for _, i := range generationOrder(specs) {
+		res, spec := results[i], specs[i]
 		newmsg, err := buildDraft(inc, spec, res.Values)
 		if err != nil {
-			return applied, err
+			return nil, err
+		}
+		if spec.FromPrefix != "" {
+			id, err := nextStationMessageID(inc, spec.FromPrefix, nextSeq)
+			if err != nil {
+				return nil, err
+			}
+			// Forms carry the number in a field; plain messages in the subject line.
+			setCommonField(newmsg, "originMessageID", id)
+			setCommonField(newmsg, "subjectMessageID", id)
+		}
+		if spec.ToPrefix != "" {
+			if addrs, err := address.ParseList(spec.ToPrefix); err == nil && len(addrs) > 0 {
+				setCommonField(newmsg, "headerTo", spec.ToPrefix)
+			}
+		}
+		if r := spec.ReplyTo; r > 0 && ids[r-1] != "" {
+			setCommonField(newmsg, "reference", ids[r-1])
 		}
 		ensureDrillTraffic(newmsg)
 		// Measured on the final message, after the drill-traffic phrase.
@@ -51,11 +74,37 @@ func Apply(inc *incident.Incident, specs []MessageSpec, results []Result) ([]App
 		res.Words = messageWordCount(newmsg)
 		le, addErr := inc.AddDraftMessage(newmsg)
 		if addErr != nil {
-			return applied, fmt.Errorf("adding generated draft message: %w", addErr)
+			return nil, fmt.Errorf("adding generated draft message: %w", addErr)
 		}
-		applied = append(applied, Applied{ID: le.LocalMsgID, MsgType: spec.MsgType, Result: res})
+		ids[i] = le.LocalMsgID
+		applied[i] = Applied{ID: le.LocalMsgID, MsgType: spec.MsgType, Result: res}
 	}
 	return applied, nil
+}
+
+func setCommonField(msg *message.DraftMessage, common, value string) {
+	if f := FindFieldByCommon(msg, common); f != nil {
+		f.SetValue(msg, f.FromHuman(msg, value))
+	}
+}
+
+// nextStationMessageID returns the next message number for the station with
+// the given prefix, e.g. "S24-101P": one past the highest number with that
+// prefix already in inc, or in this batch (tracked in next).
+func nextStationMessageID(inc *incident.Incident, prefix string, next map[string]int) (string, error) {
+	if _, ok := next[prefix]; !ok {
+		seq := 100
+		for _, le := range inc.Log {
+			for _, id := range []string{le.LocalMsgID, le.FromMsgID, le.ToMsgID} {
+				if p, n, _, err := messageid.Decode(id, true, false); err == nil && p == prefix && n > seq {
+					seq = n
+				}
+			}
+		}
+		next[prefix] = seq
+	}
+	next[prefix]++
+	return messageid.Encode(prefix, next[prefix], "P")
 }
 
 // ensureDrillTraffic guarantees DrillTrafficPhrase appears somewhere in

@@ -2,6 +2,8 @@ package genmsg
 
 import (
 	"fmt"
+	"regexp"
+	"slices"
 	"strings"
 
 	"github.com/rothskeller/packet/v4/message"
@@ -21,7 +23,13 @@ type FlowParty struct {
 	Role     string `json:"role"`
 	Location string `json:"location,omitempty"`
 	F3       bool   `json:"f3,omitempty"`
+	// Prefix is the party's three-character message number prefix, e.g.
+	// "S24" for Shelter 24 (see MessageSpec.FromPrefix).
+	Prefix string `json:"prefix,omitempty"`
 }
+
+// stationPrefixRE matches a station's message number prefix.
+var stationPrefixRE = regexp.MustCompile(`^(?:[A-Z][A-Z0-9]{2}|[0-9][A-Z]{2})$`)
 
 // fromEachStation is the sentinel value of FlowMessage.From that fans a
 // single message entry out into one message per party (see ResolveFlow),
@@ -72,16 +80,16 @@ func partyLevel(p FlowParty) string {
 	return prowords.LevelFull
 }
 
-// resolveTo resolves a FlowMessage's To/ToLabel against parties into a
-// MessageSpec's To/ToLocation.
-func resolveTo(fm FlowMessage, parties []FlowParty) (to, toLocation string, err error) {
+// resolveTo resolves a FlowMessage's To/ToLabel against parties into the
+// receiving party; a ToLabel recipient has only a Role.
+func resolveTo(fm FlowMessage, parties []FlowParty) (FlowParty, error) {
 	switch {
 	case fm.To < 0:
-		return strings.TrimSpace(fm.ToLabel), "", nil
+		return FlowParty{Role: strings.TrimSpace(fm.ToLabel)}, nil
 	case fm.To < len(parties):
-		return parties[fm.To].Role, parties[fm.To].Location, nil
+		return parties[fm.To], nil
 	default:
-		return "", "", fmt.Errorf("invalid \"to\" party index %d", fm.To)
+		return FlowParty{}, fmt.Errorf("invalid \"to\" party index %d", fm.To)
 	}
 }
 
@@ -101,6 +109,14 @@ func resolveTo(fm FlowMessage, parties []FlowParty) (to, toLocation string, err 
 func ResolveFlow(fl Flow) ([]MessageSpec, error) {
 	if len(fl.Messages) == 0 {
 		return nil, fmt.Errorf("at least one message is required")
+	}
+	fl.Parties = slices.Clone(fl.Parties)
+	for i := range fl.Parties {
+		p := strings.ToUpper(strings.TrimSpace(fl.Parties[i].Prefix))
+		if p != "" && !stationPrefixRE.MatchString(p) {
+			return nil, fmt.Errorf("party %d: invalid message number prefix %q (use three characters, e.g. S24)", i+1, fl.Parties[i].Prefix)
+		}
+		fl.Parties[i].Prefix = p
 	}
 	// First pass: structural validation against the *original* message
 	// list, and figuring out which parties each entry expands to.
@@ -146,7 +162,7 @@ func ResolveFlow(fl Flow) ([]MessageSpec, error) {
 	}
 	var pendingReplies []pending
 	for i, fm := range fl.Messages {
-		to, toLocation, err := resolveTo(fm, fl.Parties)
+		to, err := resolveTo(fm, fl.Parties)
 		if err != nil {
 			return nil, fmt.Errorf("message %d: %s", i+1, err)
 		}
@@ -154,8 +170,10 @@ func ResolveFlow(fl Flow) ([]MessageSpec, error) {
 			spec := MessageSpec{
 				From:         fl.Parties[p].Role,
 				FromLocation: fl.Parties[p].Location,
-				To:           to,
-				ToLocation:   toLocation,
+				FromPrefix:   fl.Parties[p].Prefix,
+				To:           to.Role,
+				ToLocation:   to.Location,
+				ToPrefix:     to.Prefix,
 				Purpose:      strings.TrimSpace(fm.Purpose),
 				Level:        partyLevel(fl.Parties[p]),
 			}

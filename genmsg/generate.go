@@ -38,6 +38,13 @@ type MessageSpec struct {
 	To           string
 	ToLocation   string
 
+	// FromPrefix and ToPrefix, when non-empty, are the three-character
+	// message number prefixes of the sending and receiving stations (e.g.
+	// "S24" for Shelter 24). Apply numbers the message with FromPrefix and
+	// addresses it to ToPrefix.
+	FromPrefix string
+	ToPrefix   string
+
 	// Purpose, if non-empty, is a short hint of what this specific
 	// message is about (e.g. "request shelter capacity status"). Leave
 	// empty to let Claude infer it from the scenario and its place in
