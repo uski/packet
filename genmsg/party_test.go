@@ -1,0 +1,105 @@
+package genmsg
+
+import (
+	"strings"
+	"testing"
+
+	"github.com/rothskeller/packet/v4/form/formdefs"
+	"github.com/rothskeller/packet/v4/incident"
+	"github.com/rothskeller/packet/v4/message"
+)
+
+func TestApplyPartyFieldsSetsAndExcludesFromLLMFill(t *testing.T) {
+	if err := formdefs.RegisterForms(); err != nil {
+		t.Fatal(err)
+	}
+	mt, ok := FindMsgType("ICS213")
+	if !ok {
+		t.Skip("ICS213 not registered (build without -tags sccopifo?)")
+	}
+	dir := t.TempDir()
+	var inc *incident.Incident
+	if err := incident.Create(dir, func(i *incident.Incident) error { inc = i; return nil }); err != nil {
+		t.Fatal(err)
+	}
+
+	draft := mt.NewDraft().(*message.DraftMessage)
+	inc.ApplyDefaults(draft)
+	spec := MessageSpec{MsgType: mt, From: "Net Control", FromLocation: "County EOC", To: "All Stations"}
+	applyPartyFields(draft, spec)
+
+	if got := FindFieldByCommon(draft, "fromICSPosition").Value(draft); got != "Net Control" {
+		t.Errorf("fromICSPosition = %q, want %q", got, "Net Control")
+	}
+	if got := FindFieldByCommon(draft, "fromLocation").Value(draft); got != "County EOC" {
+		t.Errorf("fromLocation = %q, want %q", got, "County EOC")
+	}
+	if got := FindFieldByCommon(draft, "toICSPosition").Value(draft); got != "All Stations" {
+		t.Errorf("toICSPosition = %q, want %q", got, "All Stations")
+	}
+
+	// Since these fields now already have values, Generatable must
+	// exclude them from what Claude is asked to fill -- otherwise the
+	// LLM's own guess could clobber the deterministic party fields we
+	// (or Apply) will set.
+	specs := Generatable(Describe(draft))
+	for _, s := range specs {
+		if s.Common == "fromICSPosition" || s.Common == "fromLocation" || s.Common == "toICSPosition" {
+			t.Errorf("field %q should have been excluded once pre-filled by applyPartyFields", s.Common)
+		}
+	}
+}
+
+func TestBuildPromptIncludesFlowContext(t *testing.T) {
+	req := Request{
+		Messages: []MessageSpec{
+			{MsgType: message.PlainMessage, From: "Net Control", FromLocation: "County EOC", To: "All Stations", Purpose: "request shelter status"},
+			{MsgType: message.PlainMessage, From: "Shelter Manager", To: "Net Control", Purpose: "report shelter status", ReplyTo: 1},
+		},
+	}
+	specs := []FieldSpec{{Tag: "defaultBody", Multiline: true}}
+	specsPerMsg := [][]FieldSpec{specs, specs}
+	results := make([]Result, 2)
+	pending := []int{0, 1}
+	plans := []MessagePlan{{}, {}}
+
+	prompt := buildPrompt(req, specsPerMsg, results, pending, plans, false)
+
+	for _, want := range []string{
+		"Message 1", "Net Control (County EOC)", "All Stations",
+		"request shelter status",
+		"Message 2", "Shelter Manager",
+		"report shelter status",
+		"direct reply to Message 1",
+	} {
+		if !strings.Contains(prompt, want) {
+			t.Errorf("prompt missing %q\n--- prompt ---\n%s", want, prompt)
+		}
+	}
+}
+
+func TestBuildPromptInjectsContextForNonPendingReplyTarget(t *testing.T) {
+	req := Request{
+		Messages: []MessageSpec{
+			{MsgType: message.PlainMessage, From: "Net Control", To: "All Stations", Purpose: "request shelter status"},
+			{MsgType: message.PlainMessage, From: "Shelter Manager", To: "Net Control", ReplyTo: 1},
+		},
+	}
+	specs := []FieldSpec{{Tag: "defaultBody", Multiline: true}}
+	specsPerMsg := [][]FieldSpec{specs, specs}
+	// Message 1 already has a result and is NOT in pending this round
+	// (as would happen on a repair round where only message 2 still
+	// needs work); its content must still be surfaced as context.
+	results := []Result{
+		{Values: map[string]string{"defaultBody": "How many beds are available at your shelter?"}},
+		{},
+	}
+	pending := []int{1}
+	plans := []MessagePlan{{}}
+
+	prompt := buildPrompt(req, specsPerMsg, results, pending, plans, true)
+
+	if !strings.Contains(prompt, "How many beds are available") {
+		t.Errorf("expected the non-pending replied-to message's content to be injected as context\n--- prompt ---\n%s", prompt)
+	}
+}

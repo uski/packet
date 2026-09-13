@@ -50,7 +50,7 @@ func TestGenerateReportsProgress(t *testing.T) {
 	client := &ClaudeClient{APIKey: "test-key", URL: srv.URL}
 	_, err := Generate(context.Background(), client, Request{
 		Incident: inc,
-		MsgTypes: []message.EditableMType{message.PlainMessage},
+		Messages: []MessageSpec{{MsgType: message.PlainMessage}},
 		Level:    "f3",
 		Progress: progress,
 	})

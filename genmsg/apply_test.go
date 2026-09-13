@@ -26,7 +26,7 @@ func TestApplyEnsuresDrillTraffic(t *testing.T) {
 		"subjectSummary":  "Road closure",
 		"defaultBody":     "Main St is closed near 5th.",
 	}}}
-	applied, err := Apply(inc, []message.EditableMType{message.PlainMessage}, results)
+	applied, err := Apply(inc, []MessageSpec{{MsgType: message.PlainMessage}}, results)
 	if err != nil {
 		t.Fatal(err)
 	}

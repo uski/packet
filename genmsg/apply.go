@@ -20,27 +20,30 @@ type Applied struct {
 }
 
 // Apply creates a new draft message in inc for each Result, using the
-// corresponding entry of msgTypes (which must be the same slice, or an
-// equivalent one, passed as Request.MsgTypes to Generate) and setting its
-// fields from Values exactly as "packet new" plus "packet set" would for a
-// hand-created message. It then guarantees DrillTrafficPhrase appears
-// somewhere in the message (see ensureDrillTraffic) before creating it. It
-// returns one Applied per result, in the same order, for the caller to
-// report to the evaluator (e.g. a table of message ID, type, and proword
-// counts, and a warning for any message whose assigned categories were not
-// fully satisfied).
-func Apply(inc *incident.Incident, msgTypes []message.EditableMType, results []Result) ([]Applied, error) {
-	if len(msgTypes) != len(results) {
-		return nil, fmt.Errorf("genmsg.Apply: %d message types but %d results", len(msgTypes), len(results))
+// corresponding entry of specs (which must be the same slice, or an
+// equivalent one, passed as Request.Messages to Generate): its message type
+// determines the draft created, and its From/To/FromLocation/ToLocation (if
+// any) are set directly via applyPartyFields, the same way Generate applied
+// them to decide what to ask Claude for. Values is then layered on top
+// exactly as "packet new" plus "packet set" would for a hand-created
+// message, and DrillTrafficPhrase's presence is guaranteed (see
+// ensureDrillTraffic) before creating it. It returns one Applied per
+// result, in the same order, for the caller to report to the evaluator
+// (e.g. a table of message ID, type, and proword counts, and a warning for
+// any message whose assigned categories were not fully satisfied).
+func Apply(inc *incident.Incident, specs []MessageSpec, results []Result) ([]Applied, error) {
+	if len(specs) != len(results) {
+		return nil, fmt.Errorf("genmsg.Apply: %d message specs but %d results", len(specs), len(results))
 	}
 	applied := make([]Applied, 0, len(results))
 	for i, res := range results {
-		msgtype := msgTypes[i]
-		newmsg, ok := msgtype.NewDraft().(*message.DraftMessage)
+		spec := specs[i]
+		newmsg, ok := spec.MsgType.NewDraft().(*message.DraftMessage)
 		if !ok {
-			return applied, fmt.Errorf("message type %q does not support draft creation", msgtype.Tag())
+			return applied, fmt.Errorf("message type %q does not support draft creation", spec.MsgType.Tag())
 		}
 		inc.ApplyDefaults(newmsg)
+		applyPartyFields(newmsg, spec)
 		for key, v := range res.Values {
 			if v == "" {
 				continue
@@ -54,7 +57,7 @@ func Apply(inc *incident.Incident, msgTypes []message.EditableMType, results []R
 		if addErr != nil {
 			return applied, fmt.Errorf("adding generated draft message: %w", addErr)
 		}
-		applied = append(applied, Applied{ID: le.LocalMsgID, MsgType: msgtype, Result: res})
+		applied = append(applied, Applied{ID: le.LocalMsgID, MsgType: spec.MsgType, Result: res})
 	}
 	return applied, nil
 }

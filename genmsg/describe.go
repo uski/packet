@@ -95,7 +95,10 @@ var skipCommon = map[string]bool{
 
 // FindField returns the field of msg whose key (as computed by Describe:
 // its PIFO tag, or its Common name if it has none) equals key, or nil if
-// there is no such field.
+// there is no such field. This is how generated LLM field values (keyed the
+// same way) get matched back to a field; for looking a field up purely by
+// its well-known Common name regardless of whether it also has a PIFO tag,
+// use FindFieldByCommon instead.
 func FindField(msg message.Message, key string) field.Field {
 	for f := range msg.Fields() {
 		fkey := f.Tag()
@@ -103,6 +106,21 @@ func FindField(msg message.Message, key string) field.Field {
 			fkey = f.Common()
 		}
 		if fkey == key {
+			return f
+		}
+	}
+	return nil
+}
+
+// FindFieldByCommon returns the field of msg whose Common name equals
+// common, or nil if there is no such field. Unlike FindField, this matches
+// on Common regardless of whether the field also has a PIFO tag -- needed
+// for fields like fromICSPosition/toICSPosition/fromLocation/toLocation,
+// which on a real PackItForms-based type are keyed by their form-specific
+// tag (e.g. "7."), not their common name.
+func FindFieldByCommon(msg message.Message, common string) field.Field {
+	for f := range msg.Fields() {
+		if f.Common() == common {
 			return f
 		}
 	}
