@@ -3,9 +3,11 @@ package genmsg
 import "github.com/rothskeller/packet/v4/prowords"
 
 // MessagePlan is the assignment of proword categories to a single message
-// in a generation batch.
+// in a generation batch, plus (on a repair round) any required fields
+// Claude's previous response left empty that it must fill in this time.
 type MessagePlan struct {
-	Categories []prowords.Category
+	Categories    []prowords.Category
+	MissingFields []FieldSpec
 }
 
 // alwaysEvery lists categories common enough that every generated message

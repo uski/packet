@@ -105,3 +105,41 @@ func TestMissingCategories(t *testing.T) {
 		t.Errorf("got missing=%v, want just EmailAddress", missing)
 	}
 }
+
+func TestMissingRequiredFields(t *testing.T) {
+	specs := []FieldSpec{
+		{Tag: "5.", Label: "Handling", Required: true},
+		{Tag: "10.", Label: "Subject", Required: true},
+		{Tag: "22.", Label: "Reply", Required: false},
+	}
+
+	// A required field that's entirely absent from values, and one that's
+	// present but blank/whitespace-only, both count as missing; the
+	// non-required field never does, and a filled required field doesn't.
+	values := map[string]string{"10.": "  ", "22.": ""}
+	missing := missingRequiredFields(specs, values)
+	if len(missing) != 2 {
+		t.Fatalf("got %d missing fields, want 2: %+v", len(missing), missing)
+	}
+	got := map[string]bool{missing[0].Tag: true, missing[1].Tag: true}
+	if !got["5."] || !got["10."] {
+		t.Errorf("expected 5. and 10. to be missing, got %v", missing)
+	}
+
+	values = map[string]string{"5.": "ROUTINE", "10.": "Road closure"}
+	if missing := missingRequiredFields(specs, values); len(missing) != 0 {
+		t.Errorf("expected no missing fields once all required ones are filled, got %+v", missing)
+	}
+}
+
+func TestFieldLabels(t *testing.T) {
+	if got := fieldLabels(nil); got != nil {
+		t.Errorf("fieldLabels(nil) = %v, want nil", got)
+	}
+	specs := []FieldSpec{{Tag: "5.", Label: "Handling"}, {Tag: "10.", Label: "Subject"}}
+	got := fieldLabels(specs)
+	want := []string{"Handling", "Subject"}
+	if len(got) != len(want) || got[0] != want[0] || got[1] != want[1] {
+		t.Errorf("fieldLabels(%+v) = %v, want %v", specs, got, want)
+	}
+}

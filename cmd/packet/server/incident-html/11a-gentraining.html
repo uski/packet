@@ -39,6 +39,12 @@
           warn.textContent = `Unrecognized value for: ${msg.invalid.join(', ')}; left at default. Review before use.`
           div.appendChild(warn)
         }
+        if (msg.missingFields && msg.missingFields.length) {
+          const warn = document.createElement('p')
+          warn.className = 'gtwarn'
+          warn.textContent = `Missing required field(s): ${msg.missingFields.join(', ')}. Review before use.`
+          div.appendChild(warn)
+        }
         if (!msg.prowords || !msg.prowords.length) {
           const none = document.createElement('p')
           none.textContent = '(no prowords detected)'

@@ -26,11 +26,12 @@ type genTrainingProwordCount struct {
 
 // genTrainingMessage describes one generated message in the JSON response.
 type genTrainingMessage struct {
-	ID       string                    `json:"id"`
-	Type     string                    `json:"type"`
-	Prowords []genTrainingProwordCount `json:"prowords"`
-	Missing  []string                  `json:"missing,omitempty"`
-	Invalid  []string                  `json:"invalid,omitempty"`
+	ID            string                    `json:"id"`
+	Type          string                    `json:"type"`
+	Prowords      []genTrainingProwordCount `json:"prowords"`
+	Missing       []string                  `json:"missing,omitempty"`
+	Invalid       []string                  `json:"invalid,omitempty"`
+	MissingFields []string                  `json:"missingFields,omitempty"`
 }
 
 // genTrainingResult is the final payload of a finished job: the generated
@@ -247,6 +248,7 @@ func buildGenTrainingResult(applied []genmsg.Applied) genTrainingResult {
 			gm.Missing = append(gm.Missing, prowords.ProwordName(cat))
 		}
 		gm.Invalid = a.Result.InvalidFields
+		gm.MissingFields = a.Result.MissingFields
 		result.Messages[j] = gm
 	}
 	return result

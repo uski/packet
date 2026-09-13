@@ -78,16 +78,18 @@ var heartbeatInterval = 4 * time.Second
 // bookkeeping about which proword categories it was asked to exercise, how
 // many times each proword category was actually detected in the final
 // values (see the prowords engine, prowords.CountFields), which assigned
-// categories (if any) could not be confirmed after generation, and the
-// labels of any restricted (dropdown/choice) fields where Claude returned a
-// value outside the field's allowed choices (dropped rather than written
-// in, so the field keeps whatever default it already had).
+// categories (if any) could not be confirmed after generation, the labels
+// of any restricted (dropdown/choice) fields where Claude returned a value
+// outside the field's allowed choices (dropped rather than written in, so
+// the field keeps whatever default it already had), and the labels of any
+// required fields still left empty after all repair rounds.
 type Result struct {
 	Values        map[string]string
 	Assigned      []prowords.Category
 	Counts        map[prowords.Category]int
 	Missing       []prowords.Category
 	InvalidFields []string
+	MissingFields []string
 }
 
 // DrillTrafficPhrase is the fixed marker every generated message must
@@ -208,9 +210,11 @@ func Generate(ctx context.Context, client *ClaudeClient, req Request) ([]Result,
 			results[idx].InvalidFields = append(results[idx].InvalidFields, invalid[j]...)
 			results[idx].Counts = prowords.CountFields(results[idx].Values)
 			results[idx].Missing = missingCategories(results[idx].Assigned, results[idx].Counts)
-			if len(results[idx].Missing) > 0 {
+			missingFields := missingRequiredFields(specsPerMsg[idx], results[idx].Values)
+			results[idx].MissingFields = fieldLabels(missingFields)
+			if len(results[idx].Missing) > 0 || len(missingFields) > 0 {
 				nextPending = append(nextPending, idx)
-				nextPlans = append(nextPlans, MessagePlan{Categories: results[idx].Missing})
+				nextPlans = append(nextPlans, MessagePlan{Categories: results[idx].Missing, MissingFields: missingFields})
 			}
 		}
 		pending, pendingPlans = nextPending, nextPlans
@@ -335,13 +339,23 @@ func buildPrompt(req Request, specsPerMsg [][]FieldSpec, results []Result, pendi
 		for _, cat := range plans[pos].Categories {
 			fmt.Fprintf(&b, "  - %s\n", prowords.Prompt(cat))
 		}
+		if len(plans[pos].MissingFields) > 0 {
+			b.WriteString("Your previous response left the following REQUIRED fields empty or missing entirely. You MUST provide a non-empty value for every one of them this time:\n")
+			for _, s := range plans[pos].MissingFields {
+				fmt.Fprintf(&b, "  - %q: %s", s.Tag, s.Label)
+				if s.Help != "" {
+					fmt.Fprintf(&b, " -- %s", s.Help)
+				}
+				b.WriteString("\n")
+			}
+		}
 		b.WriteString("\n")
 	}
 	if isRepair {
-		b.WriteString("The previous attempt did not clearly satisfy all of the requirements above for these messages. Revise them so every requirement is unambiguously satisfied, and return the complete field values again (not just the changed ones).\n\n")
+		b.WriteString("The previous attempt did not clearly satisfy all of the requirements above for these messages. Revise them so every requirement is unambiguously satisfied, and return the complete field values again (not just the changed ones). Every field listed under \"Fields to fill in\" for a message is required to have a non-empty value in your response -- do not omit any of them.\n\n")
 	}
 	fmt.Fprintf(&b, "Every message must also include the exact phrase %q somewhere in its content, to clearly mark it as training/exercise traffic rather than a real report.\n\n", DrillTrafficPhrase)
-	b.WriteString("Respond with ONLY a JSON array of exactly that many objects, in the same order as listed above, each mapping THAT message's own field tags to their string values. Keep every message SHORT: real emergency radio traffic is deliberately terse to save airtime, so free-text fields should be one to three short sentences, not a full paragraph -- include only what's needed to satisfy the listed requirements, don't pad it out. Only set the fields listed for each message; every field listed is one you should fill in, but never add fields beyond that list. For any field marked as a dropdown above, its value must be one of the listed choices, verbatim -- do not invent your own wording for it.\n")
+	b.WriteString("Respond with ONLY a JSON array of exactly that many objects, in the same order as listed above, each mapping THAT message's own field tags to their string values. Keep every message SHORT: real emergency radio traffic is deliberately terse to save airtime, so free-text fields should be one to three short sentences, not a full paragraph -- include only what's needed to satisfy the listed requirements, don't pad it out. Only set the fields listed for each message; every field listed is required and MUST be given a non-empty value, but never add fields beyond that list. For any field marked as a dropdown above, its value must be one of the listed choices, verbatim -- do not invent your own wording for it.\n")
 	return b.String()
 }
 
@@ -426,6 +440,33 @@ func matchChoice(value string, choices []string) (string, bool) {
 		}
 	}
 	return "", false
+}
+
+// missingRequiredFields returns the subset of specs marked Required whose
+// value in values is empty or absent -- i.e. required fields Claude's
+// response did not actually fill in, regardless of whether they affect
+// proword coverage.
+func missingRequiredFields(specs []FieldSpec, values map[string]string) []FieldSpec {
+	var missing []FieldSpec
+	for _, s := range specs {
+		if s.Required && strings.TrimSpace(values[s.Tag]) == "" {
+			missing = append(missing, s)
+		}
+	}
+	return missing
+}
+
+// fieldLabels returns the human-readable labels of specs, for reporting
+// which required fields a message is still missing.
+func fieldLabels(specs []FieldSpec) []string {
+	if len(specs) == 0 {
+		return nil
+	}
+	labels := make([]string, len(specs))
+	for i, s := range specs {
+		labels[i] = s.Label
+	}
+	return labels
 }
 
 // missingCategories returns the subset of cats that counts shows zero

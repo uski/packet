@@ -153,6 +153,9 @@ func cmdGentraining(args []string) (err error) {
 		if len(a.Result.InvalidFields) > 0 {
 			c.ErrorF("Warning: message %s had an unrecognized value for: %s; left at its default.  Review it before use.", a.ID, strings.Join(a.Result.InvalidFields, ", "))
 		}
+		if len(a.Result.MissingFields) > 0 {
+			c.ErrorF("Warning: message %s is missing a required value for: %s.  Review it before use.", a.ID, strings.Join(a.Result.MissingFields, ", "))
+		}
 	}
 	return nil
 }
