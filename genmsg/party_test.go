@@ -65,7 +65,7 @@ func TestBuildPromptIncludesFlowContext(t *testing.T) {
 	plans := []MessagePlan{{}, {}}
 	routedPerMsg := make([]map[prowords.Category]string, 2)
 
-	prompt := buildPrompt(req, specsPerMsg, results, pending, plans, routedPerMsg, make([]int, 2), false)
+	prompt := buildPrompt(req, "", specsPerMsg, results, pending, plans, routedPerMsg, make([]int, 2), false)
 
 	for _, want := range []string{
 		"Message 1", "Net Control (County EOC)", "All Stations",
@@ -100,7 +100,7 @@ func TestBuildPromptInjectsContextForNonPendingReplyTarget(t *testing.T) {
 	plans := []MessagePlan{{}}
 	routedPerMsg := make([]map[prowords.Category]string, 2)
 
-	prompt := buildPrompt(req, specsPerMsg, results, pending, plans, routedPerMsg, make([]int, 2), true)
+	prompt := buildPrompt(req, "", specsPerMsg, results, pending, plans, routedPerMsg, make([]int, 2), true)
 
 	if !strings.Contains(prompt, "How many beds are available") {
 		t.Errorf("expected the non-pending replied-to message's content to be injected as context\n--- prompt ---\n%s", prompt)

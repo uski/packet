@@ -3,6 +3,7 @@ package genmsg
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"slices"
 	"strings"
@@ -114,10 +115,12 @@ type Result struct {
 // just a cosmetic one.
 const DrillTrafficPhrase = "This is drill traffic"
 
-// maxRounds bounds how many times we'll call Claude for a batch: the
-// initial attempt plus up to two repair rounds for messages that didn't
-// satisfy their assigned categories.
+// maxRounds bounds how many times we'll call Claude for each message: the
+// initial attempt plus up to two retries for a response that was unusable,
+// too long, or missing required content.
 const maxRounds = 3
+
+const briefSystemPrompt = `You are helping a Santa Clara County ARES/RACES credential evaluator plan a short, realistic emergency-communications training exercise whose messages will be written one at a time from your plan. Respond with plain text only.`
 
 const systemPrompt = `You are helping a Santa Clara County ARES/RACES credential evaluator generate realistic, short, third-party emergency-communications training messages. A candidate being evaluated will read these messages aloud over amateur radio using proper message-passing procedure, so the written content must naturally require specific prowords when voiced correctly (for example, a message won't require the EMAIL ADDRESS proword unless it actually contains an email address). Some batches are a single coherent multi-party exchange (e.g. one message requesting a status update, answered by several reply messages) rather than independent messages -- when a message says it replies to another, its content must directly and consistently respond to that message, as a real reply would. Respond with ONLY a single JSON array (no markdown code fences, no commentary before or after) containing one object per requested message, each object mapping the given field tags to string values.`
 
@@ -182,79 +185,169 @@ func Generate(ctx context.Context, client *ClaudeClient, req Request) ([]Result,
 		results[i].Assigned = assigned[i]
 	}
 
-	// pending holds the indices into results/req.Messages/specsPerMsg
-	// still needing generation or repair, and pendingPlans holds the
-	// categories still to satisfy for each of them (all of them
-	// initially; only the missing ones on repair rounds).
-	pending := make([]int, count)
-	for i := range pending {
-		pending[i] = i
-	}
-	pendingPlans := plans
-
-	for round := 0; round < maxRounds && len(pending) > 0; round++ {
-		var label string
-		if round == 0 {
-			label = fmt.Sprintf("Asking Claude to draft %d message(s)", len(pending))
-		} else {
-			label = fmt.Sprintf("Asking Claude to revise %d message(s) that are too long or missing required content (attempt %d of %d)", len(pending), round+1, maxRounds)
-		}
+	// Asking for a whole batch in one response can outgrow the output
+	// limit, so messages are generated one call at a time; a brief
+	// planned up front keeps them consistent with each other.
+	var brief string
+	if count > 1 {
+		const label = "Planning a scenario shared by all the messages"
 		progress(label + "...")
-		prompt := buildPrompt(req, specsPerMsg, results, pending, pendingPlans, routedPerMsg, baseWords, round > 0)
-		maxTokens := maxTokensFor(len(pending))
-		text, err := completeWithHeartbeat(ctx, client, systemPrompt, prompt, maxTokens, progress, label)
-		if err != nil {
+		text, err := completeWithHeartbeat(ctx, client, briefSystemPrompt, buildBriefPrompt(req), maxOutputTokens, progress, label)
+		if err != nil && !errors.Is(err, ErrOutputCutOff) {
 			return nil, err
 		}
-		progress("Received a response; checking proword coverage...")
-		parsed, invalid, err := parseResponse(extractJSON(text), specsPerMsg, pending)
-		if err != nil {
+		brief = strings.TrimSpace(text)
+	}
+
+	g := &generation{ctx: ctx, client: client, req: req, brief: brief, specs: specsPerMsg,
+		routed: routedPerMsg, baseWords: baseWords, results: results, progress: progress}
+	for n, idx := range generationOrder(req.Messages) {
+		if err := g.generateMessage(idx, n+1, plans[idx]); err != nil {
 			return nil, err
 		}
-		var nextPending []int
-		var nextPlans []MessagePlan
-		for j, idx := range pending {
-			if j >= len(parsed) {
-				// The model returned fewer messages than
-				// asked; carry this one over to the next
-				// round with its full set of requirements.
-				nextPending = append(nextPending, idx)
-				nextPlans = append(nextPlans, pendingPlans[j])
-				continue
-			}
-			// Each response holds the message's complete values,
-			// replacing the previous round's, so content Claude drops
-			// to get under the word budget is really gone.
-			draft, err := buildDraft(req.Incident, req.Messages[idx], parsed[j])
-			if err != nil {
-				return nil, err
-			}
-			res := &results[idx]
-			res.Values = parsed[j]
-			res.InvalidFields = invalid[j]
-			res.Counts = prowords.CountFields(AllFieldValues(draft))
-			res.Missing = missingCategories(res.Assigned, res.Counts)
-			res.Words = messageWordCount(draft)
-			problems := problemSpecs(draft)
-			res.MissingFields = fieldLabels(problems)
-			for _, p := range problems {
-				if !slices.ContainsFunc(specsPerMsg[idx], func(s FieldSpec) bool { return s.Tag == p.Tag }) {
-					specsPerMsg[idx] = append(specsPerMsg[idx], p)
-				}
-			}
-			plan := MessagePlan{Categories: res.Missing, MissingFields: problems}
-			if res.Words > MaxWords+WordTolerance {
-				plan.Words = res.Words
-			}
-			if len(plan.Categories) > 0 || len(problems) > 0 || plan.Words > 0 {
-				nextPending = append(nextPending, idx)
-				nextPlans = append(nextPlans, plan)
-			}
-		}
-		pending, pendingPlans = nextPending, nextPlans
 	}
 	progress("Done generating messages.")
 	return results, nil
+}
+
+// generation holds the state shared while a batch's messages are generated
+// one at a time.
+type generation struct {
+	ctx       context.Context
+	client    *ClaudeClient
+	req       Request
+	brief     string
+	specs     [][]FieldSpec
+	routed    []map[prowords.Category]string
+	baseWords []int
+	results   []Result
+	progress  func(string)
+}
+
+// generateMessage generates message idx, the n-th in generation order, in
+// its own Claude call. It asks again, up to maxRounds times in all, while
+// the response is unusable (cut off or unparseable), too long, or missing
+// required fields or assigned proword categories. It fails only if no
+// usable response arrives at all.
+func (g *generation) generateMessage(idx, n int, plan MessagePlan) error {
+	count := len(g.req.Messages)
+	res := &g.results[idx]
+	var retryNote string
+	var lastErr error
+	for round := range maxRounds {
+		label := fmt.Sprintf("Drafting message %d of %d", n, count)
+		if round > 0 {
+			label = fmt.Sprintf("Revising message %d of %d (attempt %d of %d)", n, count, round+1, maxRounds)
+		}
+		g.progress(label + "...")
+		prompt := buildPrompt(g.req, g.brief, g.specs, g.results, []int{idx}, []MessagePlan{plan}, g.routed, g.baseWords, res.Values != nil) + retryNote
+		text, err := completeWithHeartbeat(g.ctx, g.client, systemPrompt, prompt, maxOutputTokens, g.progress, label)
+		if errors.Is(err, ErrOutputCutOff) {
+			lastErr = err
+			retryNote = "\nYour previous response was far too long and was cut off. Respond with ONLY the JSON array, keeping every value short.\n"
+			continue
+		} else if err != nil {
+			return err
+		}
+		parsed, invalid, err := parseResponse(extractJSON(text), g.specs, []int{idx})
+		if err == nil && len(parsed) == 0 {
+			err = errors.New("the response held no message object")
+		}
+		if err != nil {
+			lastErr = err
+			retryNote = fmt.Sprintf("\nYour previous response could not be used (%s). Respond with ONLY a JSON array holding one object that maps field tags to string values.\n", err)
+			continue
+		}
+		retryNote = ""
+		// Each response holds the message's complete values, replacing
+		// the previous round's, so content Claude drops to get under the
+		// word budget is really gone.
+		draft, err := buildDraft(g.req.Incident, g.req.Messages[idx], parsed[0])
+		if err != nil {
+			return err
+		}
+		res.Values = parsed[0]
+		res.InvalidFields = invalid[0]
+		res.Counts = prowords.CountFields(AllFieldValues(draft))
+		res.Missing = missingCategories(res.Assigned, res.Counts)
+		res.Words = messageWordCount(draft)
+		problems := problemSpecs(draft)
+		res.MissingFields = fieldLabels(problems)
+		for _, p := range problems {
+			if !slices.ContainsFunc(g.specs[idx], func(s FieldSpec) bool { return s.Tag == p.Tag }) {
+				g.specs[idx] = append(g.specs[idx], p)
+			}
+		}
+		plan = MessagePlan{Categories: res.Missing, MissingFields: problems}
+		if res.Words > MaxWords+WordTolerance {
+			plan.Words = res.Words
+		}
+		if len(plan.Categories) == 0 && len(problems) == 0 && plan.Words == 0 {
+			return nil
+		}
+	}
+	if res.Values == nil {
+		return fmt.Errorf("message %d: no usable response from Claude after %d attempts: %w", idx+1, maxRounds, lastErr)
+	}
+	return nil
+}
+
+// generationOrder returns the message indices in the order to generate
+// them: a message comes after the message it replies to, so its prompt can
+// include that message's actual content; otherwise original order is kept.
+func generationOrder(msgs []MessageSpec) []int {
+	order := make([]int, 0, len(msgs))
+	visited := make([]bool, len(msgs))
+	var visit func(i int)
+	visit = func(i int) {
+		if visited[i] {
+			return
+		}
+		visited[i] = true // set before recursing, so a reply cycle terminates
+		if r := msgs[i].ReplyTo; r > 0 {
+			visit(r - 1)
+		}
+		order = append(order, i)
+	}
+	for i := range msgs {
+		visit(i)
+	}
+	return order
+}
+
+// buildBriefPrompt asks Claude to plan the exercise every message in req
+// will be written from: the incident, the facts they must agree on, and
+// what each message says.
+func buildBriefPrompt(req Request) string {
+	var b strings.Builder
+	if req.Scenario != "" {
+		fmt.Fprintf(&b, "Scenario: %s\n\n", req.Scenario)
+	} else {
+		b.WriteString("No scenario was given: invent a plausible Santa Clara County emergency-response scenario (e.g. a downed power line, a fallen tree blocking a road, traffic congestion near a shelter, storm damage, a utility outage).\n\n")
+	}
+	fmt.Fprintf(&b, "The exercise has %d messages. Each will be written separately later, by someone who sees only your brief and that one message's details:\n", len(req.Messages))
+	for i, m := range req.Messages {
+		fmt.Fprintf(&b, "Message %d: %s", i+1, m.MsgType.Name())
+		if m.From != "" {
+			fmt.Fprintf(&b, ", from %s", partyLabel(m.From, m.FromLocation))
+		}
+		if m.To != "" {
+			fmt.Fprintf(&b, ", to %s", partyLabel(m.To, m.ToLocation))
+		}
+		if m.Purpose != "" {
+			fmt.Fprintf(&b, ", purpose: %s", m.Purpose)
+		}
+		if m.ReplyTo > 0 {
+			fmt.Fprintf(&b, ", replying to message %d", m.ReplyTo)
+		}
+		b.WriteString("\n")
+	}
+	b.WriteString("\nWrite a concise exercise brief of at most 250 words, in plain text:\n" +
+		"1. The incident: what happened, where, and when.\n" +
+		"2. Shared facts every message must agree on: names of people, places and addresses, quantities, times, amateur call signs. Use only the xanadu-city.org domain for any email or web address.\n" +
+		"3. One line per message saying specifically what it reports, requests, or answers, so each reply answers what was actually asked.\n" +
+		"Do not write the messages themselves. Each message will be at most about 50 words.\n")
+	return b.String()
 }
 
 // planByLevel groups req.Messages by their effective proword level (a
@@ -348,9 +441,11 @@ func completeWithHeartbeat(ctx context.Context, client *ClaudeClient, system, pr
 // SelectFields/ClassifyField), that field's tag -- so the prompt tells
 // Claude to put that content only there, rather than leaving it to be woven
 // into the free-text body, keeping the message shorter.
-func buildPrompt(req Request, specsPerMsg [][]FieldSpec, results []Result, pending []int, plans []MessagePlan, routedPerMsg []map[prowords.Category]string, baseWords []int, isRepair bool) string {
+func buildPrompt(req Request, brief string, specsPerMsg [][]FieldSpec, results []Result, pending []int, plans []MessagePlan, routedPerMsg []map[prowords.Category]string, baseWords []int, isRepair bool) string {
 	var b strings.Builder
-	if req.Scenario != "" {
+	if brief != "" {
+		fmt.Fprintf(&b, "This message belongs to a training exercise of %d messages, each written separately from the exercise brief below. Keep every name, place, number, and fact consistent with the brief, and write what the brief says this message is about.\n\nEXERCISE BRIEF:\n%s\n\n", len(req.Messages), brief)
+	} else if req.Scenario != "" {
 		fmt.Fprintf(&b, "Scenario to base all of the messages on: %s\n\n", req.Scenario)
 	} else {
 		b.WriteString("No specific scenario was given. Invent a plausible Santa Clara County emergency-response scenario (e.g. a downed power line, a fallen tree blocking a road, traffic congestion near a shelter, storm damage assessment, a utility outage) and use it consistently across all the messages in this batch.\n\n")
@@ -490,6 +585,9 @@ var shortNameField = map[string]bool{
 // field meant to hold one of a fixed set of choices, and the field's label
 // is reported in the corresponding entry of invalid.
 func parseResponse(text string, specsPerMsg [][]FieldSpec, pending []int) (values []map[string]string, invalid [][]string, err error) {
+	if strings.HasPrefix(text, "{") {
+		text = "[" + text + "]" // a single message sent as a bare object
+	}
 	var raw []map[string]any
 	if err := json.Unmarshal([]byte(text), &raw); err != nil {
 		return nil, nil, fmt.Errorf("parsing Claude's JSON response: %w", err)

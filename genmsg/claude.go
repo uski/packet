@@ -22,6 +22,14 @@ const (
 // ErrNoAPIKey is returned when no Anthropic API key is available.
 var ErrNoAPIKey = errors.New("no Anthropic API key found; set the ANTHROPIC_API_KEY environment variable")
 
+// ErrOutputCutOff is returned, wrapped, when Claude's response reached the
+// output token limit before it finished.
+var ErrOutputCutOff = errors.New("Claude's response was cut off at the output token limit")
+
+// maxOutputTokens is the output budget for one call: ample for a scenario
+// brief or one message's JSON, since messages are generated one at a time.
+const maxOutputTokens = 8192
+
 // ClaudeClient calls the Anthropic Messages API to generate training
 // message content. The zero value is usable: it reads its API key from the
 // ANTHROPIC_API_KEY environment variable and uses the default model and
@@ -99,9 +107,7 @@ type claudeResponse struct {
 // Complete sends system and prompt to Claude as a single-turn conversation,
 // allowing up to maxTokens tokens of output, and returns its text response.
 // If Claude's response is cut off before finishing (stop_reason
-// "max_tokens"), that's reported as an error rather than handing back
-// truncated, unparseable JSON -- see maxTokensFor, which sizes maxTokens to
-// the batch so this should only happen for an unusually large batch.
+// "max_tokens"), ErrOutputCutOff is returned rather than truncated text.
 func (c *ClaudeClient) Complete(ctx context.Context, system, prompt string, maxTokens int) (string, error) {
 	key := c.apiKey()
 	if key == "" {
@@ -151,7 +157,7 @@ func (c *ClaudeClient) Complete(ctx context.Context, system, prompt string, maxT
 		}
 	}
 	if cr.StopReason == "max_tokens" {
-		return "", fmt.Errorf("Claude's response was cut off after reaching the %d-token output limit before it finished; try generating fewer messages in one batch, or splitting a large \"each station\" fan-out into a smaller set of parties", maxTokens)
+		return "", fmt.Errorf("%w (%d tokens)", ErrOutputCutOff, maxTokens)
 	}
 	if text.Len() == 0 {
 		return "", fmt.Errorf("Claude API returned no text content")
@@ -159,36 +165,15 @@ func (c *ClaudeClient) Complete(ctx context.Context, system, prompt string, maxT
 	return text.String(), nil
 }
 
-// maxTokensFor sizes the output token budget for a batch of n messages:
-// enough for a single message's JSON at the existing default, plus a
-// generous per-message allowance for larger batches (a multi-party flow, or
-// an "each station" fan-out, can ask for many messages in one call), capped
-// well within the model's output limit.
-func maxTokensFor(n int) int {
-	const (
-		base        = 8192
-		perExtraMsg = 1500
-		maxCap      = 16000
-	)
-	if n <= 1 {
-		return base
-	}
-	tokens := base + perExtraMsg*(n-1)
-	if tokens > maxCap {
-		return maxCap
-	}
-	return tokens
-}
-
 // extractJSON strips leading/trailing markdown code fences (```json ... ```
 // or ``` ... ```) that models sometimes add despite instructions not to.
 func extractJSON(s string) string {
-	s = strings.TrimSpace(s)
-	if strings.HasPrefix(s, "```") {
-		s = strings.TrimPrefix(s, "```json")
-		s = strings.TrimPrefix(s, "```")
-		s = strings.TrimSuffix(s, "```")
-		s = strings.TrimSpace(s)
+	// Take the outermost JSON array or object, dropping any fences or
+	// commentary around it.
+	start := strings.IndexAny(s, "[{")
+	end := strings.LastIndexAny(s, "]}")
+	if start < 0 || end < start {
+		return strings.TrimSpace(s)
 	}
-	return s
+	return s[start : end+1]
 }

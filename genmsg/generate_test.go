@@ -84,10 +84,11 @@ func TestParseResponseRestrictedChoice(t *testing.T) {
 
 func TestExtractJSON(t *testing.T) {
 	cases := map[string]string{
-		`[1,2,3]`:               `[1,2,3]`,
-		"```json\n[1,2,3]\n```": `[1,2,3]`,
-		"```\n[1,2,3]\n```":     `[1,2,3]`,
-		"  [1,2,3]  ":           `[1,2,3]`,
+		`[1,2,3]`:                     `[1,2,3]`,
+		"```json\n[1,2,3]\n```":       `[1,2,3]`,
+		"```\n[1,2,3]\n```":           `[1,2,3]`,
+		"  [1,2,3]  ":                 `[1,2,3]`,
+		"Here it is:\n[1,2,3]\nDone.": `[1,2,3]`,
 	}
 	for in, want := range cases {
 		if got := extractJSON(in); got != want {

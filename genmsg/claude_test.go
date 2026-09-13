@@ -3,6 +3,7 @@ package genmsg
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -67,23 +68,8 @@ func TestClaudeClientMaxTokensCutOff(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected an error for a max_tokens stop reason, got nil")
 	}
-	if !strings.Contains(err.Error(), "cut off") || !strings.Contains(err.Error(), "123") {
+	if !errors.Is(err, ErrOutputCutOff) || !strings.Contains(err.Error(), "123") {
 		t.Errorf("expected a clear cut-off error mentioning the token limit, got %q", err.Error())
-	}
-}
-
-func TestMaxTokensFor(t *testing.T) {
-	if got := maxTokensFor(1); got != 8192 {
-		t.Errorf("maxTokensFor(1) = %d, want 8192", got)
-	}
-	if got := maxTokensFor(0); got != 8192 {
-		t.Errorf("maxTokensFor(0) = %d, want 8192", got)
-	}
-	if got := maxTokensFor(3); got <= 8192 {
-		t.Errorf("maxTokensFor(3) = %d, want more than the single-message base", got)
-	}
-	if got := maxTokensFor(100); got > 16000 {
-		t.Errorf("maxTokensFor(100) = %d, want it capped at 16000", got)
 	}
 }
 
