@@ -16,7 +16,7 @@ func TestParseResponse(t *testing.T) {
 	}
 	pending := []int{0, 1}
 	text := `[{"10.":"Road closure","12.":"Main St is closed near 5th."},{"body":"Body two.","bogus":"dropped"}]`
-	out, err := parseResponse(text, specsPerMsg, pending)
+	out, invalid, err := parseResponse(text, specsPerMsg, pending)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -32,11 +32,52 @@ func TestParseResponse(t *testing.T) {
 	if out[1]["body"] != "Body two." {
 		t.Errorf("unexpected value: %q", out[1]["body"])
 	}
+	if len(invalid[0]) != 0 || len(invalid[1]) != 0 {
+		t.Errorf("expected no invalid fields, got %v", invalid)
+	}
 }
 
 func TestParseResponseInvalidJSON(t *testing.T) {
-	if _, err := parseResponse("not json", nil, nil); err == nil {
+	if _, _, err := parseResponse("not json", nil, nil); err == nil {
 		t.Error("expected error for invalid JSON, got nil")
+	}
+}
+
+func TestParseResponseRestrictedChoice(t *testing.T) {
+	specsPerMsg := [][]FieldSpec{
+		{{Tag: "5.", Label: "Handling", Choices: []string{"ROUTINE", "PRIORITY", "IMMEDIATE"}}},
+	}
+	pending := []int{0}
+
+	// Exact match passes through unchanged.
+	out, invalid, err := parseResponse(`[{"5.":"PRIORITY"}]`, specsPerMsg, pending)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out[0]["5."] != "PRIORITY" || len(invalid[0]) != 0 {
+		t.Errorf("exact match: got value=%q invalid=%v", out[0]["5."], invalid[0])
+	}
+
+	// Case/whitespace-insensitive match is normalized to the canonical form.
+	out, invalid, err = parseResponse(`[{"5.": " priority "}]`, specsPerMsg, pending)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out[0]["5."] != "PRIORITY" || len(invalid[0]) != 0 {
+		t.Errorf("fuzzy match: got value=%q invalid=%v", out[0]["5."], invalid[0])
+	}
+
+	// A value outside the choices is dropped, not written verbatim, and
+	// reported as invalid.
+	out, invalid, err = parseResponse(`[{"5.":"Urgent"}]`, specsPerMsg, pending)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := out[0]["5."]; ok {
+		t.Errorf("expected field to be dropped for an out-of-choice value, got %q", out[0]["5."])
+	}
+	if len(invalid[0]) != 1 || invalid[0][0] != "Handling" {
+		t.Errorf("expected invalid=[Handling], got %v", invalid[0])
 	}
 }
 

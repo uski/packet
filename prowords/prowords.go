@@ -106,7 +106,7 @@ var catalog = map[Category]info{
 	},
 	EmailAddress: {
 		Proword: "EMAIL ADDRESS",
-		Prompt:  `Include a plausible email address (e.g. "harry@aol.com"), so the sender must use the EMAIL ADDRESS proword.`,
+		Prompt:  `Include a plausible email address, so the sender must use the EMAIL ADDRESS proword. ALWAYS use "@xanadu-city.org" as the domain (e.g. "harry@xanadu-city.org") -- never a real-world domain like gmail.com or aol.com.`,
 		re:      regexp.MustCompile(`\S+@\S+\.\S+`),
 	},
 	Punctuation: {
@@ -126,7 +126,7 @@ var catalog = map[Category]info{
 	},
 	InternetAddress: {
 		Proword: "INTERNET ADDRESS",
-		Prompt:  `Include a web address (e.g. "https://www.scc-ares-races.org" or "arrl.org/public-service"), so the sender must use the INTERNET ADDRESS proword.`,
+		Prompt:  `Include a web address, so the sender must use the INTERNET ADDRESS proword. ALWAYS use "xanadu-city.org" as the domain (e.g. "https://www.xanadu-city.org" or "xanadu-city.org/shelters") -- never a real-world domain.`,
 		re:      regexp.MustCompile(`https?://\S+|\bwww\.\S+\.\S+|\b[a-zA-Z0-9-]+\.(org|com|net|gov)/\S+`),
 	},
 	CaseSensitive: {

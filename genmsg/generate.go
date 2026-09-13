@@ -40,14 +40,27 @@ var heartbeatInterval = 4 * time.Second
 // Result is one generated message: field tag -> human-readable value, plus
 // bookkeeping about which proword categories it was asked to exercise, how
 // many times each proword category was actually detected in the final
-// values (see the prowords engine, prowords.CountFields), and which
-// assigned categories (if any) could not be confirmed after generation.
+// values (see the prowords engine, prowords.CountFields), which assigned
+// categories (if any) could not be confirmed after generation, and the
+// labels of any restricted (dropdown/choice) fields where Claude returned a
+// value outside the field's allowed choices (dropped rather than written
+// in, so the field keeps whatever default it already had).
 type Result struct {
-	Values   map[string]string
-	Assigned []prowords.Category
-	Counts   map[prowords.Category]int
-	Missing  []prowords.Category
+	Values        map[string]string
+	Assigned      []prowords.Category
+	Counts        map[prowords.Category]int
+	Missing       []prowords.Category
+	InvalidFields []string
 }
+
+// DrillTrafficPhrase is the fixed marker every generated message must
+// contain somewhere in its content, so it's unmistakably training/exercise
+// traffic rather than a real report. Apply guarantees its presence
+// deterministically (see ensureDrillTraffic), rather than only asking for
+// it in the prompt: a plain, fixed literal like this doesn't need an LLM's
+// creativity, and guessing wrong here would be a training-safety issue, not
+// just a cosmetic one.
+const DrillTrafficPhrase = "This is drill traffic"
 
 // maxRounds bounds how many times we'll call Claude for a batch: the
 // initial attempt plus up to two repair rounds for messages that didn't
@@ -125,7 +138,7 @@ func Generate(ctx context.Context, client *ClaudeClient, req Request) ([]Result,
 			return nil, err
 		}
 		progress("Received a response; checking proword coverage...")
-		parsed, err := parseResponse(extractJSON(text), specsPerMsg, pending)
+		parsed, invalid, err := parseResponse(extractJSON(text), specsPerMsg, pending)
 		if err != nil {
 			return nil, err
 		}
@@ -149,6 +162,7 @@ func Generate(ctx context.Context, client *ClaudeClient, req Request) ([]Result,
 			for tag, val := range parsed[j] {
 				results[idx].Values[tag] = val
 			}
+			results[idx].InvalidFields = append(results[idx].InvalidFields, invalid[j]...)
 			results[idx].Counts = prowords.CountFields(results[idx].Values)
 			results[idx].Missing = missingCategories(results[idx].Assigned, results[idx].Counts)
 			if len(results[idx].Missing) > 0 {
@@ -207,10 +221,13 @@ func buildPrompt(req Request, specsPerMsg [][]FieldSpec, pending []int, plans []
 				fmt.Fprintf(&b, " -- %s", s.Help)
 			}
 			if len(s.Choices) > 0 {
-				fmt.Fprintf(&b, " (choose exactly one of: %s)", strings.Join(s.Choices, ", "))
+				fmt.Fprintf(&b, " (this is a dropdown: the value MUST be EXACTLY one of these, verbatim, character for character -- never free-form text: %s)", strings.Join(s.Choices, ", "))
 			}
 			if s.Multiline {
 				b.WriteString(" [this is a free-text body field; it may span multiple sentences]")
+			}
+			if shortNameField[s.Common] {
+				b.WriteString(" [keep this SHORT: at most 3 words, ideally 2, e.g. \"EOC Net Control\" or \"Command Post\", not a full sentence]")
 			}
 			b.WriteString("\n")
 		}
@@ -223,41 +240,83 @@ func buildPrompt(req Request, specsPerMsg [][]FieldSpec, pending []int, plans []
 	if isRepair {
 		b.WriteString("The previous attempt did not clearly satisfy all of the requirements above for these messages. Revise them so every requirement is unambiguously satisfied, and return the complete field values again (not just the changed ones).\n\n")
 	}
-	b.WriteString("Respond with ONLY a JSON array of exactly that many objects, in the same order as listed above, each mapping THAT message's own field tags to their string values. Keep every message SHORT: real emergency radio traffic is deliberately terse to save airtime, so free-text fields should be one to three short sentences, not a full paragraph -- include only what's needed to satisfy the listed requirements, don't pad it out. Only set the fields listed for each message; every field listed is one you should fill in, but never add fields beyond that list.\n")
+	fmt.Fprintf(&b, "Every message must also include the exact phrase %q somewhere in its content, to clearly mark it as training/exercise traffic rather than a real report.\n\n", DrillTrafficPhrase)
+	b.WriteString("Respond with ONLY a JSON array of exactly that many objects, in the same order as listed above, each mapping THAT message's own field tags to their string values. Keep every message SHORT: real emergency radio traffic is deliberately terse to save airtime, so free-text fields should be one to three short sentences, not a full paragraph -- include only what's needed to satisfy the listed requirements, don't pad it out. Only set the fields listed for each message; every field listed is one you should fill in, but never add fields beyond that list. For any field marked as a dropdown above, its value must be one of the listed choices, verbatim -- do not invent your own wording for it.\n")
 	return b.String()
+}
+
+// shortNameField lists common field names for ICS position and location
+// fields, which should be kept short (a role or place name, not a
+// sentence) to read naturally over voice and fit real-world form fields.
+var shortNameField = map[string]bool{
+	"toICSPosition":   true,
+	"fromICSPosition": true,
+	"toLocation":      true,
+	"fromLocation":    true,
 }
 
 // parseResponse parses Claude's JSON array response, validating each
 // object's keys against the field tags of the corresponding pending
-// message (by position).
-func parseResponse(text string, specsPerMsg [][]FieldSpec, pending []int) ([]map[string]string, error) {
+// message (by position). For a restricted (dropdown) field, the value must
+// match one of the field's Choices (case/whitespace-insensitively); if it
+// doesn't, the value is dropped (the field is left unset, so whatever
+// default it already had stands) rather than writing free-form text into a
+// field meant to hold one of a fixed set of choices, and the field's label
+// is reported in the corresponding entry of invalid.
+func parseResponse(text string, specsPerMsg [][]FieldSpec, pending []int) (values []map[string]string, invalid [][]string, err error) {
 	var raw []map[string]any
 	if err := json.Unmarshal([]byte(text), &raw); err != nil {
-		return nil, fmt.Errorf("parsing Claude's JSON response: %w", err)
+		return nil, nil, fmt.Errorf("parsing Claude's JSON response: %w", err)
 	}
-	out := make([]map[string]string, 0, len(raw))
+	values = make([]map[string]string, 0, len(raw))
+	invalid = make([][]string, 0, len(raw))
 	for pos, obj := range raw {
 		if pos >= len(pending) {
 			break // extra objects beyond what we asked for are ignored
 		}
-		valid := make(map[string]bool, len(specsPerMsg[pending[pos]]))
+		specByTag := make(map[string]FieldSpec, len(specsPerMsg[pending[pos]]))
 		for _, s := range specsPerMsg[pending[pos]] {
-			valid[s.Tag] = true
+			specByTag[s.Tag] = s
 		}
-		values := make(map[string]string, len(obj))
+		vals := make(map[string]string, len(obj))
+		var bad []string
 		for k, v := range obj {
-			if !valid[k] {
+			spec, ok := specByTag[k]
+			if !ok {
 				continue
 			}
+			var sval string
 			if s, ok := v.(string); ok {
-				values[k] = s
+				sval = s
 			} else {
-				values[k] = fmt.Sprint(v)
+				sval = fmt.Sprint(v)
 			}
+			if len(spec.Choices) > 0 {
+				canon, ok := matchChoice(sval, spec.Choices)
+				if !ok {
+					bad = append(bad, spec.Label)
+					continue
+				}
+				sval = canon
+			}
+			vals[k] = sval
 		}
-		out = append(out, values)
+		values = append(values, vals)
+		invalid = append(invalid, bad)
 	}
-	return out, nil
+	return values, invalid, nil
+}
+
+// matchChoice returns the canonical form (as declared in choices) matching
+// value case- and whitespace-insensitively, if any.
+func matchChoice(value string, choices []string) (string, bool) {
+	trimmed := strings.TrimSpace(value)
+	for _, c := range choices {
+		if strings.EqualFold(strings.TrimSpace(c), trimmed) {
+			return c, true
+		}
+	}
+	return "", false
 }
 
 // missingCategories returns the subset of cats that counts shows zero
