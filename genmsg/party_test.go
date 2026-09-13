@@ -7,6 +7,7 @@ import (
 	"github.com/rothskeller/packet/v4/form/formdefs"
 	"github.com/rothskeller/packet/v4/incident"
 	"github.com/rothskeller/packet/v4/message"
+	"github.com/rothskeller/packet/v4/prowords"
 )
 
 func TestApplyPartyFieldsSetsAndExcludesFromLLMFill(t *testing.T) {
@@ -62,8 +63,9 @@ func TestBuildPromptIncludesFlowContext(t *testing.T) {
 	results := make([]Result, 2)
 	pending := []int{0, 1}
 	plans := []MessagePlan{{}, {}}
+	routedPerMsg := make([]map[prowords.Category]string, 2)
 
-	prompt := buildPrompt(req, specsPerMsg, results, pending, plans, false)
+	prompt := buildPrompt(req, specsPerMsg, results, pending, plans, routedPerMsg, false)
 
 	for _, want := range []string{
 		"Message 1", "Net Control (County EOC)", "All Stations",
@@ -96,8 +98,9 @@ func TestBuildPromptInjectsContextForNonPendingReplyTarget(t *testing.T) {
 	}
 	pending := []int{1}
 	plans := []MessagePlan{{}}
+	routedPerMsg := make([]map[prowords.Category]string, 2)
 
-	prompt := buildPrompt(req, specsPerMsg, results, pending, plans, true)
+	prompt := buildPrompt(req, specsPerMsg, results, pending, plans, routedPerMsg, true)
 
 	if !strings.Contains(prompt, "How many beds are available") {
 		t.Errorf("expected the non-pending replied-to message's content to be injected as context\n--- prompt ---\n%s", prompt)

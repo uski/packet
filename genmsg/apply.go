@@ -44,14 +44,7 @@ func Apply(inc *incident.Incident, specs []MessageSpec, results []Result) ([]App
 		}
 		inc.ApplyDefaults(newmsg)
 		applyPartyFields(newmsg, spec)
-		for key, v := range res.Values {
-			if v == "" {
-				continue
-			}
-			if f := FindField(newmsg, key); f != nil {
-				f.SetValue(newmsg, f.FromHuman(newmsg, v))
-			}
-		}
+		setFieldValues(newmsg, res.Values)
 		ensureDrillTraffic(newmsg)
 		le, addErr := inc.AddDraftMessage(newmsg)
 		if addErr != nil {

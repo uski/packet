@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -150,6 +151,17 @@ func Generate(ctx context.Context, client *ClaudeClient, req Request) ([]Result,
 
 	progress(fmt.Sprintf("Preparing %d message(s)...", count))
 	specsPerMsg := make([][]FieldSpec, count)
+	// drafts holds each message's working draft (defaults and party
+	// fields already applied), kept in sync with the latest generated
+	// values round by round so AllFieldValues can measure proword
+	// coverage across the WHOLE message, not just the fields the LLM was
+	// asked to fill in. routedPerMsg records, for each message, which
+	// field (if any) was given as the dedicated home for an assigned
+	// category (see SelectFields/ClassifyField), so buildPrompt can send
+	// content there instead of into the free-text body.
+	drafts := make([]*message.DraftMessage, count)
+	routedPerMsg := make([]map[prowords.Category]string, count)
+	assigned := make([][]prowords.Category, count)
 	for i, m := range req.Messages {
 		draft, ok := m.MsgType.NewDraft().(*message.DraftMessage)
 		if !ok {
@@ -157,16 +169,23 @@ func Generate(ctx context.Context, client *ClaudeClient, req Request) ([]Result,
 		}
 		req.Incident.ApplyDefaults(draft)
 		applyPartyFields(draft, m)
-		specs := Generatable(Describe(draft))
+		drafts[i] = draft
+		// Categories the pre-filled fields already cover don't need to
+		// be asked for again; Assigned keeps the full list so coverage
+		// is still reported against it.
+		assigned[i] = plans[i].Categories
+		plans[i].Categories = missingCategories(plans[i].Categories, prowords.CountFields(AllFieldValues(draft)))
+		specs, routed := SelectFields(Describe(draft), plans[i].Categories)
 		if len(specs) == 0 {
 			return nil, fmt.Errorf("message type %q has no editable fields to generate", m.MsgType.Tag())
 		}
 		specsPerMsg[i] = specs
+		routedPerMsg[i] = routed
 	}
 
 	results := make([]Result, count)
 	for i := range results {
-		results[i].Assigned = plans[i].Categories
+		results[i].Assigned = assigned[i]
 	}
 
 	// pending holds the indices into results/req.Messages/specsPerMsg
@@ -187,7 +206,7 @@ func Generate(ctx context.Context, client *ClaudeClient, req Request) ([]Result,
 			label = fmt.Sprintf("Asking Claude to revise %d message(s) still missing required content (attempt %d of %d)", len(pending), round+1, maxRounds)
 		}
 		progress(label + "...")
-		prompt := buildPrompt(req, specsPerMsg, results, pending, pendingPlans, round > 0)
+		prompt := buildPrompt(req, specsPerMsg, results, pending, pendingPlans, routedPerMsg, round > 0)
 		maxTokens := maxTokensFor(len(pending))
 		text, err := completeWithHeartbeat(ctx, client, systemPrompt, prompt, maxTokens, progress, label)
 		if err != nil {
@@ -219,7 +238,8 @@ func Generate(ctx context.Context, client *ClaudeClient, req Request) ([]Result,
 				results[idx].Values[tag] = val
 			}
 			results[idx].InvalidFields = append(results[idx].InvalidFields, invalid[j]...)
-			results[idx].Counts = prowords.CountFields(results[idx].Values)
+			setFieldValues(drafts[idx], parsed[j])
+			results[idx].Counts = prowords.CountFields(AllFieldValues(drafts[idx]))
 			results[idx].Missing = missingCategories(results[idx].Assigned, results[idx].Counts)
 			missingFields := missingRequiredFields(specsPerMsg[idx], results[idx].Values)
 			results[idx].MissingFields = fieldLabels(missingFields)
@@ -320,14 +340,19 @@ func completeWithHeartbeat(ctx context.Context, client *ClaudeClient, system, pr
 // multi-party batch. results holds whatever has already been generated in
 // prior rounds, used to give a reply message the content of the message
 // it's replying to even when that message isn't itself pending this round.
-func buildPrompt(req Request, specsPerMsg [][]FieldSpec, results []Result, pending []int, plans []MessagePlan, isRepair bool) string {
+// routedPerMsg (indexed the same way as specsPerMsg, by absolute message
+// index) names, for a category with a dedicated field to hold it (see
+// SelectFields/ClassifyField), that field's tag -- so the prompt tells
+// Claude to put that content only there, rather than leaving it to be woven
+// into the free-text body, keeping the message shorter.
+func buildPrompt(req Request, specsPerMsg [][]FieldSpec, results []Result, pending []int, plans []MessagePlan, routedPerMsg []map[prowords.Category]string, isRepair bool) string {
 	var b strings.Builder
 	if req.Scenario != "" {
 		fmt.Fprintf(&b, "Scenario to base all of the messages on: %s\n\n", req.Scenario)
 	} else {
 		b.WriteString("No specific scenario was given. Invent a plausible Santa Clara County emergency-response scenario (e.g. a downed power line, a fallen tree blocking a road, traffic congestion near a shelter, storm damage assessment, a utility outage) and use it consistently across all the messages in this batch.\n\n")
 	}
-	fmt.Fprintf(&b, "Generate exactly %d message(s), described below in order. They may be different form types with different fields (a training session can mix, for example, an ICS-213, a plain text message, and a Road Closure form). Weave each message's listed requirements naturally into that message's own field values -- they must fit the scenario and read like real, professional emergency radio traffic, not like a checklist.\n\n", len(pending))
+	fmt.Fprintf(&b, "Generate exactly %d message(s), described below in order. They may be different form types with different fields (a training session can mix, for example, an ICS-213, a plain text message, and a Road Closure form). Weave each message's listed requirements naturally into that message's own field values -- they must fit the scenario and read like real, professional emergency radio traffic, not like a checklist. Proword content in ANY field counts, so each requirement only needs to be met ONCE, in the single field that suits it best (a person's name in a name field, an email address or phone number in a contact field) -- never repeat it in another field, and never add a sentence to the free-text body just to carry it (e.g. not \"Contact Jane Doe at jane@xanadu-city.org for logistics.\" when there are name and contact fields to hold them). Requirements already satisfied by pre-filled fields have been left out.\n\n", len(pending))
 	pendingSet := make(map[int]bool, len(pending))
 	for _, idx := range pending {
 		pendingSet[idx] = true
@@ -361,6 +386,7 @@ func buildPrompt(req Request, specsPerMsg [][]FieldSpec, results []Result, pendi
 				}
 			}
 		}
+		routed := routedPerMsg[idx]
 		b.WriteString("Fields to fill in (JSON key is the field tag in quotes below):\n")
 		for _, s := range specsPerMsg[idx] {
 			fmt.Fprintf(&b, "  - %q: %s", s.Tag, s.Label)
@@ -376,11 +402,18 @@ func buildPrompt(req Request, specsPerMsg [][]FieldSpec, results []Result, pendi
 			if shortNameField[s.Common] {
 				b.WriteString(" [keep this SHORT: at most 3 words, ideally 2, e.g. \"EOC Net Control\" or \"Command Post\", not a full sentence]")
 			}
+			if names := routedForTag(routed, s.Tag); len(names) > 0 {
+				fmt.Fprintf(&b, " [put the %s content here -- do NOT also add it to the free-text body]", strings.Join(names, "/"))
+			}
 			b.WriteString("\n")
 		}
 		b.WriteString("Requirements for this message:\n")
 		for _, cat := range plans[pos].Categories {
-			fmt.Fprintf(&b, "  - %s\n", prowords.Prompt(cat))
+			if tag, ok := routed[cat]; ok {
+				fmt.Fprintf(&b, "  - %s (put this ONLY in the %q field above, not in the free-text body)\n", prowords.Prompt(cat), tag)
+			} else {
+				fmt.Fprintf(&b, "  - %s\n", prowords.Prompt(cat))
+			}
 		}
 		if len(plans[pos].MissingFields) > 0 {
 			b.WriteString("Your previous response left the following REQUIRED fields empty or missing entirely. You MUST provide a non-empty value for every one of them this time:\n")
@@ -400,6 +433,22 @@ func buildPrompt(req Request, specsPerMsg [][]FieldSpec, results []Result, pendi
 	fmt.Fprintf(&b, "Every message must also include the exact phrase %q somewhere in its content, to clearly mark it as training/exercise traffic rather than a real report.\n\n", DrillTrafficPhrase)
 	b.WriteString("Respond with ONLY a JSON array of exactly that many objects, in the same order as listed above, each mapping THAT message's own field tags to their string values. Keep every message SHORT: real emergency radio traffic is deliberately terse to save airtime, so free-text fields should be one to three short sentences, not a full paragraph -- include only what's needed to satisfy the listed requirements, don't pad it out. Only set the fields listed for each message; every field listed is required and MUST be given a non-empty value, but never add fields beyond that list. For any field marked as a dropdown above, its value must be one of the listed choices, verbatim -- do not invent your own wording for it.\n")
 	return b.String()
+}
+
+// routedForTag returns the (sorted, for deterministic prompt text) proword
+// names of the categories routed to the field with the given tag, if any.
+func routedForTag(routed map[prowords.Category]string, tag string) []string {
+	if len(routed) == 0 {
+		return nil
+	}
+	var names []string
+	for cat, t := range routed {
+		if t == tag {
+			names = append(names, prowords.ProwordName(cat))
+		}
+	}
+	slices.Sort(names)
+	return names
 }
 
 // partyLabel formats a From/To party for the prompt, e.g. "Net Control

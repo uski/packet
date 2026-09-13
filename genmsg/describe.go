@@ -127,6 +127,57 @@ func FindFieldByCommon(msg message.Message, common string) field.Field {
 	return nil
 }
 
+// AllFieldValues returns the current value of every field of msg that has
+// an addressable key (as computed by Describe: its PIFO tag, or its Common
+// name if it has none), regardless of whether the field is editable or was
+// ever asked of the LLM. Unlike Describe, which only looks at what the LLM
+// might need to fill in, this is for measuring what the message actually
+// contains once finished -- the incident's own defaults (message ID, date,
+// operator name and call, etc.) and the deterministic party fields are just
+// as much a part of what a candidate reads aloud as the LLM-generated
+// content, so a proword category already satisfied by one of them doesn't
+// need to be redundantly woven into the free-text body too.
+func AllFieldValues(msg message.Message) map[string]string {
+	values := make(map[string]string)
+	for f := range msg.Fields() {
+		// Administrative fields (dates, times, operator and envelope
+		// data) aren't message content, and ICS position/location role
+		// names like "Shelter Manager" would falsely read as I SPELL
+		// names, so neither counts toward proword coverage.
+		if skipCommon[f.Common()] || shortNameField[f.Common()] {
+			continue
+		}
+		key := f.Tag()
+		if key == "" {
+			key = f.Common()
+		}
+		if key == "" {
+			continue
+		}
+		if v := f.Value(msg); v != "" {
+			values[key] = v
+		}
+	}
+	return values
+}
+
+// setFieldValues writes each non-empty entry of values onto msg, keyed the
+// same way as Describe (PIFO tag, or Common name if a field has none);
+// entries with no matching field, or an empty value, are ignored. This is
+// shared by Generate (to keep its working draft in sync with what's been
+// generated so far, for AllFieldValues-based coverage checks) and Apply (to
+// build the final message).
+func setFieldValues(msg *message.DraftMessage, values map[string]string) {
+	for key, v := range values {
+		if v == "" {
+			continue
+		}
+		if f := FindField(msg, key); f != nil {
+			f.SetValue(msg, f.FromHuman(msg, v))
+		}
+	}
+}
+
 // alwaysInclude lists common fields worth asking the LLM to fill even when
 // they aren't strictly required, because a message without them would look
 // obviously unfinished. Different message types use different common names
