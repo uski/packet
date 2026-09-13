@@ -42,6 +42,40 @@ func TestCountEmpty(t *testing.T) {
 	}
 }
 
+// TestCountMixedGroupsInRealisticText covers mixed groups the way Claude
+// actually writes them, each of which used to go uncounted (or be counted
+// as something else) and send a message back for revision.
+func TestCountMixedGroupsInRealisticText(t *testing.T) {
+	cases := []struct {
+		text string
+		want Category
+	}{
+		{"2kW generator", MixedGroupFigures},
+		{"Unit 12-B", MixedGroupFigures},
+		{"Bay 4/C", MixedGroupFigures},
+		{"146.52MHz", MixedGroupFigures},
+		{"temps near 28°F", MixedGroupFigures},
+		{"low of -5°F", MixedGroupSymbols},
+		{"+5 volunteers", MixedGroupSymbols},
+		{"cost $1,500", MixedGroupSymbols},
+	}
+	for _, c := range cases {
+		counts := Count(c.text)
+		if counts[c.want] != 1 {
+			t.Errorf("Count(%q) = %v, want one %s", c.text, counts, c.want)
+		}
+		if counts[GPSCoordinates] != 0 || counts[CaseSensitive] != 0 {
+			t.Errorf("Count(%q) = %v, should not see GPS coordinates or case-sensitive text", c.text, counts)
+		}
+	}
+	if Count("37°20' N")[GPSCoordinates] != 1 {
+		t.Error("degree-minute coordinates should still be GPS COORDINATES")
+	}
+	if Count("PackItForms")[CaseSensitive] == 0 {
+		t.Error("a mixed-case word should still be UPPERCASE/LOWERCASE")
+	}
+}
+
 func TestCountFieldsNoMatchAcrossFields(t *testing.T) {
 	// Each word alone is not an I SPELL name; only joined across the two
 	// fields would they look like one.

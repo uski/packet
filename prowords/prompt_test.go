@@ -13,7 +13,7 @@ func TestPromptExamplesAreDetected(t *testing.T) {
 	examples := map[Category][]string{
 		ISpell:               {"Diego Marchetti", "Kaczmarek Street"},
 		MixedGroup:           {"abc-123", "W6XRL4/VA"},
-		MixedGroupFigures:    {"146.595", "14,135", "2C"},
+		MixedGroupFigures:    {"146.595", "5kW", "28°F", "12-B"},
 		MixedGroupSymbols:    {"-10 degrees", "$32"},
 		Initials:             {"EOC", "ARRL"},
 		Symbols:              {"gate #4", "50%"},

@@ -76,15 +76,15 @@ var catalog = map[Category]info{
 	},
 	MixedGroupFigures: {
 		Proword: "MIXED GROUP FIGURE(S)",
-		Prompt:  `Include at least one alphanumeric group that STARTS WITH A DIGIT and mixes numbers with letters and/or symbols (e.g. a repeater frequency like "146.595", a quantity like "14,135", or an address like "2C"), so the sender must use the MIXED GROUP FIGURE(S) proword.`,
-		re:      regexp.MustCompile(`\b\d+[A-Za-z]\w*\b|\b\d+\.\d+\b|\b\d{1,3},\d{3}\b`),
+		Prompt:  `Include at least one group that STARTS WITH A DIGIT and mixes numbers with letters and/or symbols (e.g. a frequency like "146.595", a rating like "5kW", a temperature like "28°F", or a unit or room like "12-B"), so the sender must use the MIXED GROUP FIGURE(S) proword.`,
+		re:      regexp.MustCompile(`\b\d+\.\d+[A-Za-z]\w*\b|\b\d+(?:\.\d+)?°[A-Za-z]?|\b\d+[-/][A-Za-z]\w*\b|\b\d+[A-Za-z]\w*\b|\b\d+\.\d+\b|\b\d{1,3}(?:,\d{3})+\b`),
 	},
 	MixedGroupSymbols: {
 		Proword: "MIXED GROUP SYMBOL(S)",
 		Prompt:  `Include at least one alphanumeric group that STARTS WITH A SYMBOL (e.g. a negative temperature like "-10 degrees" or a dollar amount like "$32"), so the sender must use the MIXED GROUP SYMBOL(S) proword.`,
 		// \B: the symbol must start the group, so the "-123" in "abc-123"
 		// is left for MIXED GROUP.
-		re: regexp.MustCompile(`\B[-$%][0-9]+(\.[0-9]+)?`),
+		re: regexp.MustCompile(`\B[-+$%][0-9]+(,[0-9]{3})*(\.[0-9]+)?`),
 	},
 	Initials: {
 		Proword: "INITIAL(S)",
@@ -119,7 +119,7 @@ var catalog = map[Category]info{
 	GPSCoordinates: {
 		Proword: "GPS COORDINATES",
 		Prompt:  `Include a set of GPS coordinates with degree/minute/second or N/S/E/W markers (e.g. "37.336 N, 121.890 W" or "37 20.16', 121 53.40'"), so the sender must use the GPS COORDINATES proword.`,
-		re:      regexp.MustCompile(`\d+(\.\d+)?\s*(°|deg\b)|\b\d{1,3}\.\d+\s*[NSEW]\b|\b\d{1,3}\s+\d{1,2}\.\d+['’]`),
+		re:      regexp.MustCompile(`\d+(\.\d+)?\s*(°|deg\b)\s*(\d|[NSEW]\b)|\b\d{1,3}\.\d+\s*[NSEW]\b|\b\d{1,3}\s+\d{1,2}\.\d+['’]`),
 	},
 	PacketAddress: {
 		Proword: "PACKET ADDRESS",

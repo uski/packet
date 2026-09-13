@@ -25,10 +25,12 @@ var categoryPriority = []Category{
 	TelephoneFigures,
 	AmateurCall,
 	SubscriptSuperscript,
-	CaseSensitive,
+	// Mixed groups before CaseSensitive, so the "kW" in "5kW" doesn't
+	// take a MIXED GROUP FIGURE(S) away.
 	MixedGroupSymbols,
 	MixedGroupFigures,
 	MixedGroup,
+	CaseSensitive,
 	Initials,
 	Symbols,
 	Figures,
