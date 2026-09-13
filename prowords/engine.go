@@ -1,7 +1,5 @@
 package prowords
 
-import "strings"
-
 // This file implements the "proword engine": given arbitrary message text,
 // it reports which prowords a sending station would need to use to voice
 // it correctly, and how many times each would be used. It is a best-effort
@@ -25,14 +23,15 @@ var categoryPriority = []Category{
 	TelephoneFigures,
 	AmateurCall,
 	SubscriptSuperscript,
-	// Mixed groups before CaseSensitive, so the "kW" in "5kW" doesn't
-	// take a MIXED GROUP FIGURE(S) away.
-	MixedGroupSymbols,
-	MixedGroupFigures,
-	MixedGroup,
+}
+
+// wordCategories claim what's left after groups are classified (see
+// classifyGroup). SYMBOL(S) and the MIXED GROUP kinds describe a whole
+// group, so they're settled before CaseSensitive or FIGURE(S) could take
+// part of one, such as the "kW" in "5kW".
+var wordCategories = []Category{
 	CaseSensitive,
 	Initials,
-	Symbols,
 	Figures,
 	Punctuation,
 	ISpell,
@@ -54,35 +53,43 @@ func Count(text string) map[Category]int {
 		return false
 	}
 	counts := map[Category]int{}
-	for _, cat := range categoryPriority {
-		re := catalog[cat].re
-		if re == nil {
+	claimPatterns := func(cats []Category) {
+		for _, cat := range cats {
+			for _, loc := range catalog[cat].re.FindAllStringIndex(text, -1) {
+				if overlaps(loc[0], loc[1]) {
+					continue
+				}
+				claimed = append(claimed, span{loc[0], loc[1]})
+				counts[cat]++
+			}
+		}
+	}
+	claimPatterns(categoryPriority)
+	for _, loc := range groupRE.FindAllStringIndex(text, -1) {
+		if overlaps(loc[0], loc[1]) {
 			continue
 		}
-		for _, loc := range re.FindAllStringIndex(text, -1) {
-			if overlaps(loc[0], loc[1]) {
-				continue
-			}
-			claimed = append(claimed, span{loc[0], loc[1]})
+		if cat, s, e, ok := classifyGroup(text[loc[0]:loc[1]]); ok {
+			claimed = append(claimed, span{loc[0] + s, loc[0] + e})
 			counts[cat]++
 		}
 	}
+	claimPatterns(wordCategories)
 	return counts
 }
 
-// CountFields is a convenience wrapper that concatenates the given field
-// values (e.g. a message's Subject and Message body) before counting, for
-// analyzing a whole message at once.
+// CountFields counts each of the given field values (e.g. a message's
+// Subject and Message body) and adds up the results, for analyzing a whole
+// message at once. Counting fields separately keeps a pattern from matching
+// across two of them.
 func CountFields(values map[string]string) map[Category]int {
-	var b strings.Builder
+	counts := map[Category]int{}
 	for _, v := range values {
-		b.WriteString(v)
-		// A bare newline would let a pattern match across two fields
-		// (e.g. "Shelter" ending one field and "Manager" starting the
-		// next reading as an I SPELL name); "|" matches no category.
-		b.WriteString("\n|\n")
+		for cat, n := range Count(v) {
+			counts[cat] += n
+		}
 	}
-	return Count(b.String())
+	return counts
 }
 
 // Total returns the sum of all category counts, i.e. the total number of

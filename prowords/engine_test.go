@@ -58,6 +58,16 @@ func TestCountMixedGroupsInRealisticText(t *testing.T) {
 		{"low of -5°F", MixedGroupSymbols},
 		{"+5 volunteers", MixedGroupSymbols},
 		{"cost $1,500", MixedGroupSymbols},
+		{"gate #4", MixedGroupSymbols},
+		{"shelter 50% full", MixedGroupFigures},
+		{"units 3-4 ready", MixedGroupFigures},
+		{"Replace all ? with a value", Symbols},
+	}
+	for _, text := range []string{"well-being", "they're closed", "Call me at noon, please."} {
+		counts := Count(text)
+		if counts[MixedGroup]+counts[MixedGroupFigures]+counts[MixedGroupSymbols]+counts[Symbols] != 0 {
+			t.Errorf("Count(%q) = %v: ordinary words and sentence punctuation are not groups", text, counts)
+		}
 	}
 	for _, c := range cases {
 		counts := Count(c.text)

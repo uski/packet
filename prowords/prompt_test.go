@@ -12,11 +12,12 @@ import (
 func TestPromptExamplesAreDetected(t *testing.T) {
 	examples := map[Category][]string{
 		ISpell:               {"Diego Marchetti", "Kaczmarek Street"},
-		MixedGroup:           {"abc-123", "W6XRL4/VA"},
-		MixedGroupFigures:    {"146.595", "5kW", "28°F", "12-B"},
-		MixedGroupSymbols:    {"-10 degrees", "$32"},
+		Figures:              {"100 containers"},
+		MixedGroup:           {"F150", "W6XRL4/VA", "abc-123"},
+		MixedGroupFigures:    {"2C", "146.595", "5kW", "28°F", "50%"},
+		MixedGroupSymbols:    {"-10 degrees", "$32", "#4", "-32°F"},
 		Initials:             {"EOC", "ARRL"},
-		Symbols:              {"gate #4", "50%"},
+		Symbols:              {"Replace all ? with a value", "This != that", "Smith & Jones"},
 		TelephoneFigures:     {"408-555-1212"},
 		AmateurCall:          {"W6XSC", "KJ6ABC"},
 		EmailAddress:         {"harry@xanadu-city.org"},

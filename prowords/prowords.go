@@ -66,25 +66,20 @@ var catalog = map[Category]info{
 	},
 	Figures: {
 		Proword: "FIGURE(S)",
-		Prompt:  `Include at least one standalone number (a quantity, count, age, or similar) that is not part of a phone number, address, or other special format, so the sender must use the FIGURE(S) proword.`,
+		Prompt:  `Include at least one number written with digits only, standing alone (e.g. "100 containers"), so the sender must use the FIGURE(S) proword.`,
 		re:      regexp.MustCompile(`\d`),
 	},
 	MixedGroup: {
 		Proword: "MIXED GROUP",
-		Prompt:  `Include at least one alphanumeric group that STARTS WITH A LETTER and mixes letters with numbers and/or symbols (e.g. a hyphenated model number like "abc-123", or a callsign-like group with a slash such as "W6XRL4/VA"), so the sender must use the MIXED GROUP proword.`,
-		re:      regexp.MustCompile(`\b[A-Za-z]+[-/][A-Za-z0-9]+\b|\b[A-Za-z]+\d[A-Za-z0-9]*\b`),
+		Prompt:  `Include at least one group that STARTS WITH A LETTER and also holds numbers or symbols (e.g. a truck model like "F150", a call sign with a slash like "W6XRL4/VA", or "abc-123"), so the sender must use the MIXED GROUP proword.`,
 	},
 	MixedGroupFigures: {
 		Proword: "MIXED GROUP FIGURE(S)",
-		Prompt:  `Include at least one group that STARTS WITH A DIGIT and mixes numbers with letters and/or symbols (e.g. a frequency like "146.595", a rating like "5kW", a temperature like "28°F", or a unit or room like "12-B"), so the sender must use the MIXED GROUP FIGURE(S) proword.`,
-		re:      regexp.MustCompile(`\b\d+\.\d+[A-Za-z]\w*\b|\b\d+(?:\.\d+)?°[A-Za-z]?|\b\d+[-/][A-Za-z]\w*\b|\b\d+[A-Za-z]\w*\b|\b\d+\.\d+\b|\b\d{1,3}(?:,\d{3})+\b`),
+		Prompt:  `Include at least one group that STARTS WITH A DIGIT and also holds letters or symbols (e.g. "2C", a frequency like "146.595", a rating like "5kW", a temperature like "28°F", or "50%"), so the sender must use the MIXED GROUP FIGURE(S) proword.`,
 	},
 	MixedGroupSymbols: {
 		Proword: "MIXED GROUP SYMBOL(S)",
-		Prompt:  `Include at least one alphanumeric group that STARTS WITH A SYMBOL (e.g. a negative temperature like "-10 degrees" or a dollar amount like "$32"), so the sender must use the MIXED GROUP SYMBOL(S) proword.`,
-		// \B: the symbol must start the group, so the "-123" in "abc-123"
-		// is left for MIXED GROUP.
-		re: regexp.MustCompile(`\B[-+$%][0-9]+(,[0-9]{3})*(\.[0-9]+)?`),
+		Prompt:  `Include at least one group that STARTS WITH A SYMBOL and also holds numbers or letters (e.g. "-10 degrees", "$32", "#4", or "-32°F"), so the sender must use the MIXED GROUP SYMBOL(S) proword.`,
 	},
 	Initials: {
 		Proword: "INITIAL(S)",
@@ -93,8 +88,7 @@ var catalog = map[Category]info{
 	},
 	Symbols: {
 		Proword: "SYMBOL(S)",
-		Prompt:  `Include at least one of these symbols, used as a symbol rather than sentence punctuation: # % & * = < > (e.g. "gate #4", "50%"), so the sender must use the SYMBOL(S) proword.`,
-		re:      regexp.MustCompile(`[#%&*<>=~^]`),
+		Prompt:  `Include a symbol standing alone, apart from any word or number (e.g. "Replace all ? with a value", "This != that", "Smith & Jones"), so the sender must use the SYMBOL(S) proword.`,
 	},
 	TelephoneFigures: {
 		Proword: "TELEPHONE FIGURES",
@@ -197,9 +191,5 @@ func ProwordName(cat Category) string { return catalog[cat].Proword }
 // is a best-effort heuristic check (used to decide whether to retry
 // generation), not a substitute for the evaluator's own judgment.
 func Validate(cat Category, text string) bool {
-	i, ok := catalog[cat]
-	if !ok || i.re == nil {
-		return true
-	}
-	return i.re.MatchString(text)
+	return Count(text)[cat] > 0
 }
