@@ -26,7 +26,7 @@ func TestGenerateRepairsOmittedRequiredField(t *testing.T) {
 	// "subjectSummary" field.
 	const body = `Please call KJ6ABC at 408-555-1212 or email kj6abc@xanadu-city.org ` +
 		`about the Kaczmarek Street closure near model A123, use channel #4 at 146.595 MHz; ` +
-		`confirm ETA by 1500, initials J.R. Total 5 units, cost is $250. This is drill traffic.`
+		`confirm ETA by 1500 & initials J.R. Total 5 units, cost is $250. This is drill traffic.`
 
 	var calls atomic.Int32
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

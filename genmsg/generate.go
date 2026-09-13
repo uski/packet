@@ -174,6 +174,7 @@ func Generate(ctx context.Context, client *ClaudeClient, req Request) ([]Result,
 		assigned[i] = plans[i].Categories
 		plans[i].Categories = missingCategories(plans[i].Categories, prowords.CountFields(AllFieldValues(draft)))
 		specs, routed := PromptFields(draft, plans[i].Categories)
+		plans[i].CheckOne = countCheckboxes(specs) >= manyCheckboxes
 		if len(specs) == 0 {
 			return nil, fmt.Errorf("message type %q has no editable fields to generate", m.MsgType.Tag())
 		}
@@ -233,7 +234,7 @@ type generation struct {
 func (g *generation) generateMessage(idx, n int, plan MessagePlan) error {
 	count := len(g.req.Messages)
 	res := &g.results[idx]
-	wanted := plan.Categories
+	wanted, checkOne := plan.Categories, plan.CheckOne
 	var best Result
 	bestScore := -1
 	var retryNote, reason string
@@ -279,7 +280,8 @@ func (g *generation) generateMessage(idx, n int, plan MessagePlan) error {
 		res.MissingFields = fieldLabels(problems)
 		for _, p := range problems {
 			if i := slices.IndexFunc(g.specs[idx], func(s FieldSpec) bool { return s.Tag == p.Tag }); i >= 0 {
-				g.specs[idx][i].Optional = false // e.g. Item 2's quantity, required once Item 2 is named
+				// e.g. Item 2's quantity, required once Item 2 is named
+				g.specs[idx][i].Optional, g.specs[idx][i].Group = false, p.Group
 			} else {
 				g.specs[idx] = append(g.specs[idx], p)
 			}
@@ -288,6 +290,10 @@ func (g *generation) generateMessage(idx, n int, plan MessagePlan) error {
 		score := 100*len(problems) + len(res.Missing)
 		if over {
 			score += 10
+		}
+		needCheck := checkOne && !anyChecked(draft, g.specs[idx])
+		if needCheck {
+			score++
 		}
 		if bestScore >= 0 && score >= bestScore {
 			break // the revision didn't improve on the best version so far
@@ -298,11 +304,11 @@ func (g *generation) generateMessage(idx, n int, plan MessagePlan) error {
 		}
 		// The revision sees every requirement, with the unmet ones
 		// flagged, so fixing one doesn't lose another.
-		plan = MessagePlan{Categories: wanted, Unmet: res.Missing, MissingFields: problems}
+		plan = MessagePlan{Categories: wanted, Unmet: res.Missing, MissingFields: problems, CheckOne: checkOne, CheckOneUnmet: needCheck}
 		if over {
 			plan.Words = res.Words
 		}
-		reason = revisionReason(res, problems, over)
+		reason = revisionReason(res, problems, over, needCheck)
 		slog.Info("revising generated training message", "message", idx+1, "reason", reason, "values", res.Values)
 	}
 	if bestScore < 0 {
@@ -314,8 +320,11 @@ func (g *generation) generateMessage(idx, n int, plan MessagePlan) error {
 
 // revisionReason describes, for the progress display, why a message is
 // being sent back to Claude.
-func revisionReason(res *Result, problems []FieldSpec, over bool) string {
+func revisionReason(res *Result, problems []FieldSpec, over, needCheck bool) string {
 	var parts []string
+	if needCheck {
+		parts = append(parts, "checking a checkbox")
+	}
 	if len(problems) > 0 {
 		parts = append(parts, "fixing "+strings.Join(fieldLabels(problems), ", "))
 	}
@@ -526,15 +535,31 @@ func buildPrompt(req Request, brief string, specsPerMsg [][]FieldSpec, results [
 		}
 		routed := routedPerMsg[idx]
 		b.WriteString("Fields you MUST fill in (the JSON key is the field tag in quotes):\n")
+		shownGroups := map[string]bool{}
 		for _, s := range specsPerMsg[idx] {
 			if s.Optional {
+				continue
+			}
+			if s.Group != "" {
+				if !shownGroups[s.Group] {
+					shownGroups[s.Group] = true
+					fmt.Fprintf(&b, "  - %q: check AT LEAST ONE of these checkboxes by giving it the value \"checked\", leaving the others out:", s.Group)
+					for _, c := range specsPerMsg[idx] {
+						if c.Group == s.Group {
+							fmt.Fprintf(&b, " %q (%s);", c.Tag, c.Label)
+						}
+					}
+					b.WriteString("\n")
+				}
 				continue
 			}
 			fmt.Fprintf(&b, "  - %q: %s", s.Tag, s.Label)
 			if s.Help != "" {
 				fmt.Fprintf(&b, " -- %s", s.Help)
 			}
-			if len(s.Choices) > 0 {
+			if isCheckbox(s) {
+				b.WriteString(` [checkbox: give "checked" to check it]`)
+			} else if len(s.Choices) > 0 {
 				fmt.Fprintf(&b, " (this is a dropdown: the value MUST be EXACTLY one of these, verbatim, character for character -- never free-form text: %s)", strings.Join(s.Choices, ", "))
 			}
 			if s.Multiline {
@@ -558,7 +583,9 @@ func buildPrompt(req Request, brief string, specsPerMsg [][]FieldSpec, results [
 			b.WriteString("Other fields on this form, in form order. Fill one ONLY when this message has information that belongs in it, and leave the rest out:\n")
 			for _, s := range optional {
 				fmt.Fprintf(&b, "  - %q: %s", s.Tag, s.Label)
-				if len(s.Choices) > 0 {
+				if isCheckbox(s) {
+					b.WriteString(` [checkbox: give "checked" to check it]`)
+				} else if len(s.Choices) > 0 {
 					fmt.Fprintf(&b, " (dropdown: exactly one of: %s)", strings.Join(s.Choices, ", "))
 				}
 				b.WriteString("\n")
@@ -576,6 +603,13 @@ func buildPrompt(req Request, brief string, specsPerMsg [][]FieldSpec, results [
 				fmt.Fprintf(&b, "  - %s\n", text)
 			}
 		}
+		if plans[pos].CheckOne {
+			text := `Check at least one checkbox on this form that fits the message, by giving it the value "checked", so the sender and receiver must handle a checked box.`
+			if plans[pos].CheckOneUnmet {
+				text = "NOT MET IN YOUR PREVIOUS VERSION: " + text
+			}
+			fmt.Fprintf(&b, "  - %s\n", text)
+		}
 		budget := max(MaxWords-baseWords[idx], minValueWords)
 		fmt.Fprintf(&b, "Word budget: this whole message must total about %d words or fewer across ALL of its fields. Its pre-filled fields already use %d, so the values you give for it must total at most %d words (a phone number, email address, call sign, or other group without spaces counts as one word). Optional fields may stay empty; leave them out rather than go over.\n", MaxWords, baseWords[idx], budget)
 		if plans[pos].Words > 0 {
@@ -588,7 +622,15 @@ func buildPrompt(req Request, brief string, specsPerMsg [][]FieldSpec, results [
 		}
 		if len(plans[pos].MissingFields) > 0 {
 			b.WriteString("The following REQUIRED fields are empty or invalid. You MUST give every one of them a valid, non-empty value this time:\n")
+			reported := map[string]bool{}
 			for _, s := range plans[pos].MissingFields {
+				if s.Group != "" {
+					if !reported[s.Group] {
+						reported[s.Group] = true
+						fmt.Fprintf(&b, "  - %q: check at least one of its checkboxes -- problem: %s\n", s.Group, s.Problem)
+					}
+					continue
+				}
 				fmt.Fprintf(&b, "  - %q: %s", s.Tag, s.Label)
 				if s.Problem != "" {
 					fmt.Fprintf(&b, " -- problem: %s", s.Problem)
@@ -683,6 +725,14 @@ func parseResponse(text string, specsPerMsg [][]FieldSpec, pending []int) (value
 			} else {
 				sval = fmt.Sprint(v)
 			}
+			if isCheckbox(spec) {
+				switch strings.ToLower(strings.TrimSpace(sval)) {
+				case "true", "yes", "x", "1", "on":
+					sval = "checked"
+				case "", "false", "no", "unchecked", "0", "off":
+					continue
+				}
+			}
 			if len(spec.Choices) > 0 {
 				canon, ok := matchChoice(sval, spec.Choices)
 				if !ok {
@@ -699,6 +749,11 @@ func parseResponse(text string, specsPerMsg [][]FieldSpec, pending []int) (value
 	return values, invalid, nil
 }
 
+// isCheckbox reports whether s is a checkbox, whose only value is "checked".
+func isCheckbox(s FieldSpec) bool {
+	return len(s.Choices) == 1 && s.Choices[0] == "checked"
+}
+
 // matchChoice returns the canonical form (as declared in choices) matching
 // value case- and whitespace-insensitively, if any.
 func matchChoice(value string, choices []string) (string, bool) {
@@ -712,14 +767,20 @@ func matchChoice(value string, choices []string) (string, bool) {
 }
 
 // fieldLabels returns the human-readable labels of specs, for reporting
-// which required fields a message is still missing.
+// which required fields a message is still missing; a checkbox group is
+// reported once, by its own label.
 func fieldLabels(specs []FieldSpec) []string {
-	if len(specs) == 0 {
-		return nil
-	}
-	labels := make([]string, len(specs))
-	for i, s := range specs {
-		labels[i] = s.Label
+	var labels []string
+	seen := map[string]bool{}
+	for _, s := range specs {
+		label := s.Label
+		if s.Group != "" {
+			label = s.Group
+		}
+		if !seen[label] {
+			seen[label] = true
+			labels = append(labels, label)
+		}
 	}
 	return labels
 }

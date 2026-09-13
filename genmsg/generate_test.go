@@ -82,6 +82,27 @@ func TestParseResponseRestrictedChoice(t *testing.T) {
 	}
 }
 
+func TestParseResponseCheckbox(t *testing.T) {
+	specsPerMsg := [][]FieldSpec{{
+		{Tag: "a", Label: "A", Choices: []string{"checked"}},
+		{Tag: "b", Label: "B", Choices: []string{"checked"}},
+		{Tag: "c", Label: "C", Choices: []string{"checked"}},
+	}}
+	out, invalid, err := parseResponse(`[{"a": true, "b": "Yes", "c": false}]`, specsPerMsg, []int{0})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out[0]["a"] != "checked" || out[0]["b"] != "checked" {
+		t.Errorf("true and \"Yes\" should check a checkbox, got %v", out[0])
+	}
+	if _, ok := out[0]["c"]; ok {
+		t.Errorf("false should leave a checkbox unchecked, got %v", out[0])
+	}
+	if len(invalid[0]) != 0 {
+		t.Errorf("checkbox answers should not be reported invalid, got %v", invalid[0])
+	}
+}
+
 func TestExtractJSON(t *testing.T) {
 	cases := map[string]string{
 		`[1,2,3]`:                     `[1,2,3]`,

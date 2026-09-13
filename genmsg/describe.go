@@ -25,6 +25,7 @@ type FieldSpec struct {
 	Required  bool     // true if the field currently has no value and fails validation without one
 	Problem   string   // on a repair round, why the field's current value fails validation
 	Optional  bool     // offered to Claude to fill only if the message has information that belongs in it
+	Group     string   // label of the required checkbox group this checkbox belongs to, of which at least one must be checked
 }
 
 // Describe returns the settable, addressable fields of msg (which should be

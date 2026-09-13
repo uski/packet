@@ -18,7 +18,7 @@ import (
 // 40 words, so a plain message using it needs no repair round.
 const f3Body = `Please call KJ6ABC at 408-555-1212 or email kj6abc@xanadu-city.org ` +
 	`about the Kaczmarek Street closure near model A123, use channel #4 at 146.595 MHz; ` +
-	`confirm ETA by 1500, initials J.R. Total 5 units, cost is $250. This is drill traffic.`
+	`confirm ETA by 1500 & initials J.R. Total 5 units, cost is $250. This is drill traffic.`
 
 const f3PlainJSON = `[{"subjectHandling":"ROUTINE","subjectSummary":"Road closure","defaultBody":"` + f3Body + `"}]`
 

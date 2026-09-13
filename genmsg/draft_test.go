@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -70,6 +71,87 @@ func TestPromptFieldsResourceRequestOffersEveryItemRow(t *testing.T) {
 		if _, ok := byTag[tag]; ok {
 			t.Errorf("tool-filled field %q should not be offered to Claude", tag)
 		}
+	}
+}
+
+func TestShelterRequiredCheckboxGroupIsSurfaced(t *testing.T) {
+	mt := formType(t, "Shelter")
+	inc := draftTestIncident(t)
+	spec := MessageSpec{MsgType: mt}
+	draft, err := buildDraft(inc, spec, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	specs, _ := PromptFields(draft, nil)
+	var group []FieldSpec
+	for _, s := range specs {
+		if s.Group == "24. Type" {
+			group = append(group, s)
+		}
+	}
+	if len(group) != 5 {
+		t.Fatalf("expected the 5 checkboxes of the required \"24. Type\" group to be marked, got %+v", group)
+	}
+	for _, s := range group {
+		if s.Optional {
+			t.Errorf("checkbox %q of a required group should not be optional", s.Tag)
+		}
+	}
+	if labels := fieldLabels(problemSpecs(draft)); !slices.Contains(labels, "24. Type") {
+		t.Errorf("the unchecked required group should be reported once by its label, got %v", labels)
+	}
+	prompt := buildPrompt(Request{Messages: []MessageSpec{spec}}, "", [][]FieldSpec{specs}, make([]Result, 1), []int{0}, []MessagePlan{{}}, make([]map[prowords.Category]string, 1), make([]int, 1), false)
+	if !strings.Contains(prompt, `"24. Type": check AT LEAST ONE of these checkboxes`) {
+		t.Errorf("prompt should ask for at least one checkbox of the group:\n%s", prompt)
+	}
+
+	draft, err = buildDraft(inc, spec, map[string]string{group[0].Tag: "checked"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if labels := fieldLabels(problemSpecs(draft)); slices.Contains(labels, "24. Type") {
+		t.Errorf("checking one checkbox should satisfy the group, still reported: %v", labels)
+	}
+}
+
+func TestLongFormMustCheckOneCheckbox(t *testing.T) {
+	mt := formType(t, "CPODSite")
+	inc := draftTestIncident(t)
+	spec := MessageSpec{MsgType: mt}
+	draft, err := buildDraft(inc, spec, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	specs, _ := PromptFields(draft, nil)
+	if n := countCheckboxes(specs); n < manyCheckboxes {
+		t.Fatalf("CPOD site form has %d checkboxes, want at least %d", n, manyCheckboxes)
+	}
+	if anyChecked(draft, specs) {
+		t.Fatal("a new draft should have no checkbox checked")
+	}
+	checked := false
+	for _, s := range specs {
+		if !isCheckbox(s) {
+			continue
+		}
+		d, err := buildDraft(inc, spec, map[string]string{s.Tag: "checked"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if anyChecked(d, specs) {
+			checked = true
+			break
+		}
+	}
+	if !checked {
+		t.Error("checking a checkbox should be detected")
+	}
+	prompt := buildPrompt(Request{Messages: []MessageSpec{spec}}, "", [][]FieldSpec{specs}, make([]Result, 1), []int{0}, []MessagePlan{{CheckOne: true, CheckOneUnmet: true}}, make([]map[prowords.Category]string, 1), make([]int, 1), true)
+	if !strings.Contains(prompt, "NOT MET IN YOUR PREVIOUS VERSION: Check at least one checkbox") {
+		t.Errorf("revision prompt should flag the unchecked checkbox requirement:\n%s", prompt)
+	}
+	if !strings.Contains(prompt, `[checkbox: give "checked" to check it]`) {
+		t.Errorf("checkboxes should be described as checkboxes, not dropdowns:\n%s", prompt)
 	}
 }
 
@@ -210,7 +292,7 @@ func TestGenerateTrimsOverBudgetMessage(t *testing.T) {
 	// Satisfies every f3-profile category on its own, in about 40 words.
 	const body = `Please call KJ6ABC at 408-555-1212 or email kj6abc@xanadu-city.org ` +
 		`about the Kaczmarek Street closure near model A123, use channel #4 at 146.595 MHz; ` +
-		`confirm ETA by 1500, initials J.R. Total 5 units, cost is $250. This is drill traffic.`
+		`confirm ETA by 1500 & initials J.R. Total 5 units, cost is $250. This is drill traffic.`
 	padding := strings.Repeat(" more", 40)
 
 	var calls atomic.Int32

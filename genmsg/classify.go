@@ -129,5 +129,12 @@ func PromptFields(msg message.Message, categories []prowords.Category) (specs []
 		}
 		specs = append(specs, s)
 	}
+	for _, g := range failingCheckboxGroups(msg) {
+		for i := range specs {
+			if slices.Contains(g.keys, specs[i].Tag) {
+				specs[i].Optional, specs[i].Group = false, g.label
+			}
+		}
+	}
 	return specs, routed
 }

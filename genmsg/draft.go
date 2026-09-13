@@ -2,6 +2,7 @@ package genmsg
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -79,7 +80,83 @@ func problemSpecs(msg message.Message) []FieldSpec {
 			specs = append(specs, s)
 		}
 	}
+	for _, g := range failingCheckboxGroups(msg) {
+		for _, key := range g.keys {
+			if slices.ContainsFunc(specs, func(s FieldSpec) bool { return s.Tag == key }) {
+				continue
+			}
+			if f := FindField(msg, key); f != nil {
+				s := newFieldSpec(msg, f, key)
+				s.Required, s.Problem, s.Group = true, g.err.Error(), g.label
+				specs = append(specs, s)
+			}
+		}
+	}
 	return specs
+}
+
+// manyCheckboxes is how many checkboxes make a form long enough that a
+// generated message must check at least one, so the sender and receiver
+// have to handle a checked box.
+const manyCheckboxes = 4
+
+type checkboxGroup struct {
+	label string
+	err   error
+	keys  []string
+}
+
+// failingCheckboxGroups returns the checkbox groups of msg that fail
+// validation, such as a required group with nothing checked. A group has no
+// key of its own, so otherwise Claude would see only its checkboxes, each
+// looking optional, and the group would never be reported.
+func failingCheckboxGroups(msg message.Message) []checkboxGroup {
+	var groups []checkboxGroup
+	for f := range msg.Fields() {
+		kids := f.Children()
+		if len(kids) == 0 {
+			continue
+		}
+		var keys []string
+		for _, c := range kids {
+			cs := c.Choices(msg)
+			if len(cs) != 1 || cs[0].Human != "checked" || fieldKey(c) == "" {
+				keys = nil // not a checkbox group (e.g. a date/time pair)
+				break
+			}
+			keys = append(keys, fieldKey(c))
+		}
+		if len(keys) == 0 {
+			continue
+		}
+		if err := f.Validate(msg, f, 0); err != nil {
+			groups = append(groups, checkboxGroup{label: f.Label(), err: err, keys: keys})
+		}
+	}
+	return groups
+}
+
+func countCheckboxes(specs []FieldSpec) int {
+	var n int
+	for _, s := range specs {
+		if isCheckbox(s) {
+			n++
+		}
+	}
+	return n
+}
+
+// anyChecked reports whether any checkbox among specs is checked in msg.
+func anyChecked(msg message.Message, specs []FieldSpec) bool {
+	for _, s := range specs {
+		if !isCheckbox(s) {
+			continue
+		}
+		if f := FindField(msg, s.Tag); f != nil && f.Value(msg) != "" {
+			return true
+		}
+	}
+	return false
 }
 
 // messageWordCount returns the total number of words across msg's content
