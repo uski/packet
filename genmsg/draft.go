@@ -37,9 +37,9 @@ func buildDraft(inc *incident.Incident, m MessageSpec, values map[string]string)
 	if f := FindFieldByCommon(draft, "defaultBody"); f != nil {
 		f.SetValue(draft, "")
 	}
-	if m.ClearOperator {
-		clearOperatorFields(draft)
-	}
+	// A training message is handed to the candidates, whose own radio
+	// operators fill in its Radio Operator section.
+	clearOperatorFields(draft)
 	applyPartyFields(draft, m)
 	setFieldValues(draft, values)
 	// After the values, since they can make further dates/times required.

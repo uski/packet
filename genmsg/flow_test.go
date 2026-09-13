@@ -37,9 +37,6 @@ func TestResolveFlowBasic(t *testing.T) {
 	if specs[1].ReplyTo != 1 {
 		t.Errorf("message 2 replyTo: got %d, want 1", specs[1].ReplyTo)
 	}
-	if !specs[0].ClearOperator || !specs[1].ClearOperator {
-		t.Error("multi-party messages should leave the Radio Operator section empty")
-	}
 	if specs[0].MsgType != message.PlainMessage || specs[1].MsgType != message.PlainMessage {
 		t.Errorf("expected both messages resolved to PlainMessage")
 	}

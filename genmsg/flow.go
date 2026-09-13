@@ -168,15 +168,14 @@ func ResolveFlow(fl Flow) ([]MessageSpec, error) {
 		}
 		for _, p := range partyIndices[i] {
 			spec := MessageSpec{
-				From:          fl.Parties[p].Role,
-				FromLocation:  fl.Parties[p].Location,
-				FromPrefix:    fl.Parties[p].Prefix,
-				To:            to.Role,
-				ToLocation:    to.Location,
-				ToPrefix:      to.Prefix,
-				Purpose:       strings.TrimSpace(fm.Purpose),
-				Level:         partyLevel(fl.Parties[p]),
-				ClearOperator: true,
+				From:         fl.Parties[p].Role,
+				FromLocation: fl.Parties[p].Location,
+				FromPrefix:   fl.Parties[p].Prefix,
+				To:           to.Role,
+				ToLocation:   to.Location,
+				ToPrefix:     to.Prefix,
+				Purpose:      strings.TrimSpace(fm.Purpose),
+				Level:        partyLevel(fl.Parties[p]),
 			}
 			spec.MsgType, _ = FindMsgType(fm.MsgType) // already validated above
 			origToNew[i] = append(origToNew[i], len(specs))

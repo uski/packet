@@ -45,11 +45,6 @@ type MessageSpec struct {
 	FromPrefix string
 	ToPrefix   string
 
-	// ClearOperator leaves the form's Radio Operator section empty rather
-	// than filled with the incident's own operator, for a multi-party flow
-	// whose messages will be handled by the parties' own operators.
-	ClearOperator bool
-
 	// Purpose, if non-empty, is a short hint of what this specific
 	// message is about (e.g. "request shelter capacity status"). Leave
 	// empty to let Claude infer it from the scenario and its place in
