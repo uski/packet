@@ -1,0 +1,483 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <script> // Generate Multi-Party Training Messages Dialog
+    const mpMessageTypeData = '{{MTYPES}}'
+    let mpMessageTypes = []
+
+    function mpSetOptions(select, options) {
+      const prev = select.value
+      select.innerHTML = ''
+      options.forEach(o => {
+        const opt = document.createElement('option')
+        opt.value = o.value
+        opt.textContent = o.label
+        select.appendChild(opt)
+      })
+      if (options.some(o => o.value === prev)) select.value = prev
+    }
+
+    function mpPartyOptions() {
+      return [...document.querySelectorAll('#mpparties .mprow')].map((row, i) => {
+        const role = row.querySelector('.mp-role').value.trim() || `Party ${i + 1}`
+        const loc = row.querySelector('.mp-location').value.trim()
+        return { value: String(i), label: loc ? `${role} (${loc})` : role }
+      })
+    }
+
+    // mpSyncOptions rebuilds every message row's From/To/Replying-to
+    // dropdowns from the current parties and messages, preserving each
+    // select's current choice where it's still valid. Called whenever a
+    // party or message row is added, removed, or (for type, which affects
+    // the "Replying to" labels) edited.
+    function mpSyncOptions() {
+      const partyOptions = mpPartyOptions()
+      const msgRows = [...document.querySelectorAll('#mpmessages .mprow')]
+      msgRows.forEach((row, i) => {
+        mpSetOptions(row.querySelector('.mp-from'), partyOptions)
+        mpSetOptions(row.querySelector('.mp-to'), [
+          { value: '-1', label: 'All Stations' },
+          ...partyOptions,
+          { value: 'custom', label: 'Other (specify at right)…' },
+        ])
+        const replyOptions = [{ value: '0', label: '(none)' }]
+        msgRows.forEach((r2, j) => {
+          if (j === i) return
+          const typeLabel = r2.querySelector('.mp-type').selectedOptions[0]?.textContent || '?'
+          replyOptions.push({ value: String(j + 1), label: `Message ${j + 1} (${typeLabel})` })
+        })
+        mpSetOptions(row.querySelector('.mp-replyto'), replyOptions)
+      })
+    }
+
+    function mpAddPartyRow(role, location) {
+      const tmpl = document.getElementById('mppartytmpl')
+      const row = document.importNode(tmpl.content, true).firstElementChild
+      row.querySelector('.mp-role').value = role || ''
+      row.querySelector('.mp-location').value = location || ''
+      row.querySelector('.mpremove').addEventListener('click', () => {
+        if (document.querySelectorAll('#mpparties .mprow').length > 1) {
+          row.remove()
+          mpSyncOptions()
+        }
+      })
+      document.getElementById('mpparties').appendChild(row)
+      mpSyncOptions()
+    }
+
+    function mpAddMessageRow() {
+      const tmpl = document.getElementById('mpmsgtmpl')
+      const row = document.importNode(tmpl.content, true).firstElementChild
+      const typeSel = row.querySelector('.mp-type')
+      mpMessageTypes.forEach(mt => {
+        const opt = document.createElement('option')
+        opt.value = mt.tag
+        opt.textContent = mt.name
+        typeSel.appendChild(opt)
+      })
+      typeSel.addEventListener('change', mpSyncOptions)
+      row.querySelector('.mpremove').addEventListener('click', () => {
+        if (document.querySelectorAll('#mpmessages .mprow').length > 1) {
+          row.remove()
+          mpSyncOptions()
+        }
+      })
+      document.getElementById('mpmessages').appendChild(row)
+      mpSyncOptions()
+    }
+
+    // mpBuildFlow reads the current parties/messages rows into the JSON
+    // shape genmsg.Flow expects.
+    function mpBuildFlow() {
+      const parties = [...document.querySelectorAll('#mpparties .mprow')].map(row => ({
+        role: row.querySelector('.mp-role').value.trim(),
+        location: row.querySelector('.mp-location').value.trim(),
+      }))
+      const messages = [...document.querySelectorAll('#mpmessages .mprow')].map(row => {
+        const toVal = row.querySelector('.mp-to').value
+        const msg = {
+          msgType: row.querySelector('.mp-type').value,
+          from: parseInt(row.querySelector('.mp-from').value, 10),
+          purpose: row.querySelector('.mp-purpose').value.trim(),
+          replyTo: parseInt(row.querySelector('.mp-replyto').value, 10),
+        }
+        if (toVal === '-1') {
+          msg.to = -1
+          msg.toLabel = 'All Stations'
+        } else if (toVal === 'custom') {
+          msg.to = -1
+          msg.toLabel = row.querySelector('.mp-to-custom').value.trim() || 'Other'
+        } else {
+          msg.to = parseInt(toVal, 10)
+        }
+        return msg
+      })
+      return { parties, messages }
+    }
+
+    function mpShowProgress(msg) {
+      document.getElementById('mpform').hidden = true
+      document.getElementById('mpresults').hidden = true
+      document.getElementById('mpsubrow').hidden = true
+      document.getElementById('mpdonerow').hidden = true
+      document.getElementById('mpprogress').hidden = false
+      document.getElementById('mpprogmsg').textContent = msg
+    }
+    function mpShowError(msg) {
+      document.getElementById('mpprogress').hidden = true
+      document.getElementById('mpform').hidden = false
+      document.getElementById('mpsubrow').hidden = false
+      document.getElementById('mperr').textContent = msg
+    }
+    function mpShowResults(data) {
+      const div = document.getElementById('mpresults')
+      div.innerHTML = ''
+      data.messages.forEach(msg => {
+        const h = document.createElement('h2')
+        h.textContent = `${msg.id} — ${msg.type}`
+        div.appendChild(h)
+        if (msg.missing && msg.missing.length) {
+          const warn = document.createElement('p')
+          warn.className = 'mpwarn'
+          warn.textContent = `May be missing: ${msg.missing.join(', ')}. Review before use.`
+          div.appendChild(warn)
+        }
+        if (msg.invalid && msg.invalid.length) {
+          const warn = document.createElement('p')
+          warn.className = 'mpwarn'
+          warn.textContent = `Unrecognized value for: ${msg.invalid.join(', ')}; left at default. Review before use.`
+          div.appendChild(warn)
+        }
+        if (!msg.prowords || !msg.prowords.length) {
+          const none = document.createElement('p')
+          none.textContent = '(no prowords detected)'
+          div.appendChild(none)
+          return
+        }
+        const table = document.createElement('table')
+        table.className = 'mpptable'
+        const thead = table.createTHead().insertRow()
+        for (const label of ['Proword', 'Count']) {
+          const th = document.createElement('th')
+          th.textContent = label
+          thead.appendChild(th)
+        }
+        const tbody = table.createTBody()
+        msg.prowords.forEach(pw => {
+          const row = tbody.insertRow()
+          row.insertCell().textContent = pw.name
+          row.insertCell().textContent = pw.count
+        })
+        div.appendChild(table)
+      })
+      document.getElementById('mpform').hidden = true
+      document.getElementById('mpprogress').hidden = true
+      div.hidden = false
+      document.getElementById('mpsubrow').hidden = true
+      document.getElementById('mpdonerow').hidden = false
+    }
+    async function mpPoll(dir, seq) {
+      const params = new URLSearchParams({ dir, seq })
+      let resp
+      try {
+        resp = await fetch2('/gentrain-progress?' + params.toString())
+      } catch (e) {
+        mpShowError('Lost contact with the server while generating: ' + e)
+        return
+      }
+      if (resp.status === 410) {
+        mpShowError('The generation job ended unexpectedly. Please try again.')
+        return
+      }
+      if (!resp.ok) {
+        mpShowError((await resp.text()) || resp.statusText)
+        return
+      }
+      const update = await resp.json()
+      if (update.done) {
+        if (update.error) mpShowError(update.error)
+        else mpShowResults(update.result)
+        return
+      }
+      mpShowProgress(update.progress || 'Working…')
+      mpPoll(dir, update.seq)
+    }
+
+    function setupGenTrainingFlowDialog() {
+      mpMessageTypeData.split(';').forEach(triplet => {
+        const [tag, key, name] = triplet.split(':', 3)
+        if (tag) mpMessageTypes.push({ tag, key, name })
+      })
+      document.getElementById('mppartyadd').addEventListener('click', () => mpAddPartyRow())
+      document.getElementById('mpmsgadd').addEventListener('click', () => mpAddMessageRow())
+      document.getElementById('mpparties').addEventListener('input', mpSyncOptions)
+      document.getElementById('mpcan').addEventListener('click', () => {
+        document.getElementById('mpdlg').close()
+      })
+      document.getElementById('mpdone').addEventListener('click', () => {
+        document.getElementById('mpdlg').close()
+      })
+      document.getElementById('mpform').addEventListener('submit', async evt => {
+        evt.preventDefault()
+        const dir = document.body.dataset.dir
+        const flow = mpBuildFlow()
+        const body = JSON.stringify({
+          dir,
+          level: document.querySelector('input[name=mplevel]:checked').value,
+          scenario: document.getElementById('mpscenario').value,
+          parties: flow.parties,
+          messages: flow.messages,
+        })
+        const sub = document.getElementById('mpsub')
+        sub.disabled = true
+        try {
+          const resp = await fetch2('/gentrain-flow', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body })
+          if (resp.status === 204) {
+            mpShowProgress('Starting…')
+            mpPoll(dir, 0)
+            return
+          }
+          document.getElementById('mperr').textContent = (await resp.text()) || resp.statusText
+        } catch (e) {
+          document.getElementById('mperr').textContent = 'Request failed: ' + e
+        } finally {
+          sub.disabled = false
+        }
+      })
+    }
+
+    function openGenTrainingFlowDialog() {
+      document.getElementById('mperr').textContent = ''
+      document.getElementById('mpscenario').value = ''
+      document.getElementById('mpparties').innerHTML = ''
+      document.getElementById('mpmessages').innerHTML = ''
+      mpAddPartyRow('Net Control', 'County EOC')
+      mpAddPartyRow('Shelter Manager', '')
+      mpAddMessageRow()
+      mpAddMessageRow()
+      // Give the example a sensible starting shape: message 1 from party 0
+      // broadcasting a request, message 2 from party 1 replying to it.
+      const rows = document.querySelectorAll('#mpmessages .mprow')
+      if (rows.length === 2) {
+        rows[0].querySelector('.mp-purpose').value = 'Request a status update'
+        rows[1].querySelector('.mp-from').value = '1'
+        rows[1].querySelector('.mp-purpose').value = 'Reply with current status'
+        mpSyncOptions()
+        rows[1].querySelector('.mp-to').value = '0'
+        rows[1].querySelector('.mp-replyto').value = '1'
+      }
+      document.getElementById('mpform').hidden = false
+      document.getElementById('mpprogress').hidden = true
+      document.getElementById('mpresults').hidden = true
+      document.getElementById('mpsubrow').hidden = false
+      document.getElementById('mpdonerow').hidden = true
+      document.getElementById('mpdlg').showModal()
+    }
+  </script>
+  <style>
+    #mpdlg {
+      max-width: 44rem;
+      width: 95vw;
+      margin: 2rem auto;
+      padding: 0 0.75rem 0.75rem;
+      z-index: 2;
+      max-height: 90vh;
+      overflow-y: auto;
+    }
+
+    #mpdlg h1 {
+      background-color: #a8e8a8;
+      margin: 0 -0.75rem;
+      padding: 0.5rem 0.75rem;
+      font-size: 1.5rem;
+      position: sticky;
+      top: 0;
+    }
+
+    #mpform {
+      display: flex;
+      flex-direction: column;
+    }
+
+    .mprow {
+      display: grid;
+      grid-template-columns: 1fr 1fr auto;
+      gap: 0.4rem;
+      align-items: center;
+      margin-top: 0.35rem;
+      padding: 0.4rem;
+      background-color: #f4f4f8;
+      border-radius: 0.25rem;
+    }
+
+    #mpmessages .mprow {
+      grid-template-columns: 1fr 1fr;
+    }
+
+    #mpmessages .mprow .mpremove {
+      justify-self: end;
+    }
+
+    .mpfield {
+      display: flex;
+      flex-direction: column;
+      font-size: 0.85em;
+      gap: 0.15rem;
+    }
+
+    .mpfield.mpwide {
+      grid-column: 1 / -1;
+    }
+
+    #mpadd,
+    #mppartyadd,
+    #mpmsgadd {
+      margin-top: 0.5rem;
+      align-self: start;
+    }
+
+    #mplevels {
+      display: flex;
+      gap: 1.5rem;
+      margin-top: 0.5rem;
+    }
+
+    #mpscenario {
+      margin-top: 0.5rem;
+      width: 100%;
+      box-sizing: border-box;
+    }
+
+    #mperr:not(:empty) {
+      margin-top: 1.5rem;
+      color: red;
+    }
+
+    #mpprogress {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      padding: 2rem 0;
+    }
+
+    #mpspinner {
+      width: 1.25rem;
+      height: 1.25rem;
+      flex: none;
+      border: 0.2rem solid #ccc;
+      border-top-color: #2a8;
+      border-radius: 50%;
+      animation: mpspin 0.8s linear infinite;
+    }
+
+    @keyframes mpspin {
+      to {
+        transform: rotate(360deg);
+      }
+    }
+
+    #mpresults h2 {
+      font-size: 1rem;
+      margin: 1rem 0 0.25rem;
+    }
+
+    .mpwarn {
+      color: #a15c00;
+      margin: 0 0 0.25rem;
+    }
+
+    .mpptable {
+      border-collapse: collapse;
+      width: 100%;
+      margin-bottom: 0.5rem;
+    }
+
+    .mpptable th,
+    .mpptable td {
+      border: 1px solid #ccc;
+      padding: 0.15rem 0.5rem;
+      text-align: left;
+    }
+
+    .mpptable td:last-child,
+    .mpptable th:last-child {
+      text-align: right;
+    }
+
+    #mpsubrow,
+    #mpdonerow {
+      margin-top: 1.5rem;
+      display: flex;
+      justify-content: end;
+      gap: 0.75rem;
+    }
+
+    #mpcan,
+    #mpsub,
+    #mpdone {
+      border-radius: 0.25rem;
+    }
+
+    #mpsub,
+    #mpdone {
+      background-color: #a8e8a8;
+    }
+  </style>
+</head>
+
+<body>
+  <dialog id=mpdlg>
+    <h1>Generate Multi-Party Training Messages</h1>
+    <form id=mpform>
+      <p>Parties in this exchange:</p>
+      <div id=mpparties></div>
+      <template id=mppartytmpl>
+        <div class=mprow>
+          <label class=mpfield>Role<input type=text class=mp-role placeholder="e.g. Net Control"></label>
+          <label class=mpfield>Location<input type=text class=mp-location placeholder="e.g. County EOC (optional)"></label>
+          <button type=button class=mpremove title="Remove this party">&times;</button>
+        </div>
+      </template>
+      <button type=button id=mppartyadd>+ Add party</button>
+
+      <p>Messages, in order:</p>
+      <div id=mpmessages></div>
+      <template id=mpmsgtmpl>
+        <div class=mprow>
+          <label class=mpfield>Type<select class=mp-type></select></label>
+          <label class=mpfield>From<select class=mp-from></select></label>
+          <label class=mpfield>To<select class=mp-to></select></label>
+          <label class=mpfield>If "Other" above<input type=text class=mp-to-custom placeholder="Custom recipient"></label>
+          <label class="mpfield mpwide">Purpose (optional)<input type=text class=mp-purpose placeholder="e.g. request shelter capacity status"></label>
+          <label class=mpfield>Replying to<select class=mp-replyto></select></label>
+          <button type=button class=mpremove title="Remove this message">&times;</button>
+        </div>
+      </template>
+      <button type=button id=mpmsgadd>+ Add message</button>
+
+      <p>Proword level:</p>
+      <div id=mplevels>
+        <label><input type=radio name=mplevel value=full checked> Full list (F2/F1, all Net Control/Packet/Shadow tiers)</label>
+        <label><input type=radio name=mplevel value=f3> F3 reduced list</label>
+      </div>
+      <p>Overall scenario (optional):</p>
+      <textarea id=mpscenario rows=2 placeholder="e.g. a magnitude 5.4 earthquake has just occurred (leave blank for a generic scenario)"></textarea>
+      <div id=mperr></div>
+      <div id=mpsubrow>
+        <button id=mpcan type=button>Cancel</button>
+        <input id=mpsub type=submit value="Generate Messages">
+      </div>
+    </form>
+    <div id=mpprogress hidden>
+      <div id=mpspinner></div>
+      <p id=mpprogmsg></p>
+    </div>
+    <div id=mpresults hidden></div>
+    <div id=mpdonerow hidden>
+      <button id=mpdone type=button>Done</button>
+    </div>
+  </dialog>
+</body>
+
+</html>
