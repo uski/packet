@@ -55,8 +55,9 @@ type Match struct {
 // No two matches overlap.
 func Find(text string) []Match {
 	var matches []Match
+	var plain []Match // text calling for no proword, such as times and dates
 	overlaps := func(s, e int) bool {
-		for _, m := range matches {
+		for _, m := range slices.Concat(matches, plain) {
 			if s < m.End && e > m.Start {
 				return true
 			}
@@ -81,7 +82,12 @@ func Find(text string) []Match {
 		if overlaps(loc[0], loc[1]) {
 			continue
 		}
-		if cat, s, e, ok := classifyGroup(text[loc[0]:loc[1]]); ok {
+		g := text[loc[0]:loc[1]]
+		if s, e := groupBody(g); timeOrDateRE.MatchString(g[s:e]) {
+			plain = append(plain, Match{Start: loc[0] + s, End: loc[0] + e})
+			continue
+		}
+		if cat, s, e, ok := classifyGroup(g); ok {
 			matches = append(matches, Match{loc[0] + s, loc[0] + e, cat})
 		}
 	}

@@ -29,21 +29,7 @@ func classifyGroup(g string) (cat Category, start, end int, ok bool) {
 	if !strings.ContainsFunc(g, isAlnum) {
 		return Symbols, 0, len(g), true
 	}
-	start, end = 0, len(g)
-	for start < end {
-		r, n := utf8.DecodeRuneInString(g[start:end])
-		if !strings.ContainsRune(groupLeadTrim, r) {
-			break
-		}
-		start += n
-	}
-	for end > start {
-		r, n := utf8.DecodeLastRuneInString(g[start:end])
-		if !strings.ContainsRune(groupTrailTrim, r) {
-			break
-		}
-		end -= n
-	}
+	start, end = groupBody(g)
 	body := g[start:end]
 	var letters, digits, symbols, wordSymbols bool
 	for _, r := range body {
@@ -72,3 +58,29 @@ func classifyGroup(g string) (cat Category, start, end int, ok bool) {
 }
 
 func isAlnum(r rune) bool { return unicode.IsLetter(r) || unicode.IsDigit(r) }
+
+// groupBody returns the part of group g without the brackets and sentence
+// punctuation around it.
+func groupBody(g string) (start, end int) {
+	start, end = 0, len(g)
+	for start < end {
+		r, n := utf8.DecodeRuneInString(g[start:end])
+		if !strings.ContainsRune(groupLeadTrim, r) {
+			break
+		}
+		start += n
+	}
+	for end > start {
+		r, n := utf8.DecodeLastRuneInString(g[start:end])
+		if !strings.ContainsRune(groupTrailTrim, r) {
+			break
+		}
+		end -= n
+	}
+	return start, end
+}
+
+// timeOrDateRE matches a time (16:41, 16:41:05, 4:30pm) or a date
+// (09/16/2026, 9/16/26, 2026-09-16). These are voiced digit by digit with no
+// proword.
+var timeOrDateRE = regexp.MustCompile(`(?i)^(?:(?:[01]?\d|2[0-4]):[0-5]\d(?::[0-5]\d)?(?:[ap]m)?|\d{1,2}/\d{1,2}/(?:\d{2}|\d{4})|\d{4}-\d{2}-\d{2})$`)

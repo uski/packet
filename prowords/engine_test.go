@@ -86,6 +86,25 @@ func TestCountMixedGroupsInRealisticText(t *testing.T) {
 	}
 }
 
+// TestCountTimesAndDates checks that times and dates, which are voiced
+// digit by digit, call for no proword.
+func TestCountTimesAndDates(t *testing.T) {
+	for _, text := range []string{"16:41", "16:41:05", "4:30pm", "09/16/2026", "9/16/26", "2026-09-16", "(16:41)"} {
+		if counts := Count(text); len(counts) != 0 {
+			t.Errorf("Count(%q) = %v, want no proword", text, counts)
+		}
+	}
+	counts := Count("Arrived at 16:41 on 09/16/2026.")
+	if counts[MixedGroupFigures] != 0 || counts[Figures] != 0 || counts[Punctuation] != 1 {
+		t.Errorf("Count = %v, want only the final period", counts)
+	}
+	for text, want := range map[string]Category{"24/7": MixedGroupFigures, "12-B": MixedGroupFigures, "25:99": MixedGroupFigures} {
+		if Count(text)[want] != 1 {
+			t.Errorf("Count(%q) = %v, want one %s", text, Count(text), want)
+		}
+	}
+}
+
 func TestCountCallSigns(t *testing.T) {
 	for text, want := range map[string]Category{
 		"call W6XRL4 now": AmateurCall,
