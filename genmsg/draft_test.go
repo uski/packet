@@ -187,7 +187,7 @@ func TestGenerateShortensLongSubject(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var req claudeRequest
 		json.NewDecoder(r.Body).Decode(&req)
-		prompts = append(prompts, req.Messages[0].Content)
+		prompts = append(prompts, req.Messages[0].Text())
 		if calls.Add(1) == 1 {
 			writeClaudeText(w, `[{"subjectHandling":"ROUTINE","subjectSummary":"`+longSubject+`","defaultBody":"`+f3Body+`"}]`)
 			return
@@ -392,7 +392,7 @@ func TestGenerateTrimsOverBudgetMessage(t *testing.T) {
 		if calls.Add(1) == 1 {
 			text += padding
 		} else {
-			repairPrompt = req.Messages[0].Content
+			repairPrompt = req.Messages[0].Text()
 		}
 		resp := claudeResponse{}
 		resp.Content = []struct {

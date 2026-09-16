@@ -35,7 +35,7 @@ func TestGenerateRepairsOmittedRequiredField(t *testing.T) {
 			Messages []claudeMessage `json:"messages"`
 		}
 		json.NewDecoder(r.Body).Decode(&reqBody)
-		prompt := reqBody.Messages[0].Content
+		prompt := reqBody.Messages[0].Text()
 
 		var text string
 		if n == 1 {

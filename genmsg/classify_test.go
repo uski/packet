@@ -180,7 +180,7 @@ func TestGenerateRoutesEmailAndNameToDedicatedFields(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var req claudeRequest
 		json.NewDecoder(r.Body).Decode(&req)
-		capturedPrompt = req.Messages[0].Content
+		capturedPrompt = req.Messages[0].Text()
 		resp := claudeResponse{}
 		resp.Content = []struct {
 			Type string `json:"type"`

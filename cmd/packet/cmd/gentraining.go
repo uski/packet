@@ -57,7 +57,7 @@ Each party's "f3" (boolean, default false) selects which proword list that party
 
 If --scenario is given, its text is used to steer the emergency-response scenario the messages are based on (e.g. "a downed power line on Almaden Expressway"). If omitted, a generic SCCo emergency-response scenario is invented (utility outage, fallen tree, road closure, traffic congestion, etc.).
 
-Generating messages requires the ANTHROPIC_API_KEY environment variable to be set to a valid Anthropic API key.
+Generating messages requires the ANTHROPIC_API_KEY environment variable to be set to a valid Anthropic API key. Messages are drafted several at a time, sharing a cached prompt, with Claude's reasoning effort set to "low" for speed; set PACKET_CLAUDE_EFFORT (e.g. to "medium") to change it, or PACKET_CLAUDE_MODEL to use another model.
 
 The new messages are created as unsent draft messages in the current incident, exactly as "packet new" would create them. For each one, its local message ID and a table of which prowords its final content exercises (and how many times) are printed, so you can spot-check coverage before handing it to a candidate. Review and edit the messages themselves (see "packet help edit") as needed.
 `

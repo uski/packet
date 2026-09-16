@@ -32,12 +32,54 @@ func TestClaudeClientComplete(t *testing.T) {
 	defer srv.Close()
 
 	c := &ClaudeClient{APIKey: "test-key", URL: srv.URL}
-	text, err := c.Complete(context.Background(), "system", "prompt", 8192)
+	text, err := c.Complete(context.Background(), "system", "", "prompt", 8192)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if text != `[{"a":"b"}]` {
 		t.Errorf("got %q", text)
+	}
+}
+
+func TestClaudeClientCachesSharedPrefixAndSetsEffort(t *testing.T) {
+	var req claudeRequest
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var got claudeRequest
+		json.NewDecoder(r.Body).Decode(&got)
+		req = got
+		writeClaudeText(w, "ok")
+	}))
+	defer srv.Close()
+
+	t.Setenv("PACKET_CLAUDE_EFFORT", "")
+	c := &ClaudeClient{APIKey: "test-key", URL: srv.URL}
+	if _, err := c.Complete(context.Background(), "system", "shared rules", "this message", 8192); err != nil {
+		t.Fatal(err)
+	}
+	blocks := req.Messages[0].Content
+	if len(blocks) != 2 || blocks[0].Text != "shared rules" || blocks[0].CacheControl == nil || blocks[0].CacheControl.Type != "ephemeral" {
+		t.Errorf("want a cached shared block first, got %+v", blocks)
+	}
+	if blocks[1].Text != "this message" || blocks[1].CacheControl != nil {
+		t.Errorf("want an uncached message block after it, got %+v", blocks[1])
+	}
+	if req.OutputConfig == nil || req.OutputConfig.Effort != "low" {
+		t.Errorf("want low effort by default, got %+v", req.OutputConfig)
+	}
+
+	if _, err := c.Complete(context.Background(), "system", "", "alone", 8192); err != nil {
+		t.Fatal(err)
+	}
+	if blocks := req.Messages[0].Content; len(blocks) != 1 || blocks[0].CacheControl != nil {
+		t.Errorf("without a shared prefix, want one uncached block, got %+v", blocks)
+	}
+
+	t.Setenv("PACKET_CLAUDE_EFFORT", "medium")
+	if _, err := c.Complete(context.Background(), "system", "", "p", 8192); err != nil {
+		t.Fatal(err)
+	}
+	if req.OutputConfig.Effort != "medium" {
+		t.Errorf("PACKET_CLAUDE_EFFORT should override the effort, got %q", req.OutputConfig.Effort)
 	}
 }
 
@@ -47,7 +89,7 @@ func TestClaudeClientNoAPIKey(t *testing.T) {
 	if c.HasAPIKey() {
 		t.Fatal("expected no API key")
 	}
-	if _, err := c.Complete(context.Background(), "s", "p", 8192); err != ErrNoAPIKey {
+	if _, err := c.Complete(context.Background(), "s", "", "p", 8192); err != ErrNoAPIKey {
 		t.Errorf("got err %v, want ErrNoAPIKey", err)
 	}
 }
@@ -64,7 +106,7 @@ func TestClaudeClientMaxTokensCutOff(t *testing.T) {
 	defer srv.Close()
 
 	c := &ClaudeClient{APIKey: "test-key", URL: srv.URL}
-	_, err := c.Complete(context.Background(), "system", "prompt", 123)
+	_, err := c.Complete(context.Background(), "system", "", "prompt", 123)
 	if err == nil {
 		t.Fatal("expected an error for a max_tokens stop reason, got nil")
 	}
@@ -83,7 +125,7 @@ func TestClaudeClientAPIError(t *testing.T) {
 	defer srv.Close()
 
 	c := &ClaudeClient{APIKey: "k", URL: srv.URL}
-	if _, err := c.Complete(context.Background(), "s", "p", 8192); err == nil {
+	if _, err := c.Complete(context.Background(), "s", "", "p", 8192); err == nil {
 		t.Error("expected error from API error response, got nil")
 	}
 }

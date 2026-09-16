@@ -47,16 +47,27 @@ func TestGenerationOrderPutsRepliesAfterTheirTargets(t *testing.T) {
 func TestGenerateBatchPlansScenarioThenEachMessage(t *testing.T) {
 	const brief = "BRIEF: Kaczmarek Street closure."
 	var mu sync.Mutex
-	var systems, prompts []string
+	var systems, prompts, prewarms []string
 	var maxTokens []int
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var req claudeRequest
 		json.NewDecoder(r.Body).Decode(&req)
 		mu.Lock()
+		defer mu.Unlock()
+		if req.MaxTokens == 0 {
+			if len(prompts) != 1 {
+				t.Errorf("the cache should be prewarmed after the brief and before any message, after %d calls", len(prompts))
+			}
+			if blocks := req.Messages[0].Content; blocks[0].CacheControl != nil {
+				prewarms = append(prewarms, blocks[0].Text)
+			}
+			resp := claudeResponse{StopReason: "max_tokens"}
+			json.NewEncoder(w).Encode(resp)
+			return
+		}
 		systems = append(systems, req.System)
-		prompts = append(prompts, req.Messages[0].Content)
+		prompts = append(prompts, req.Messages[0].Text())
 		maxTokens = append(maxTokens, req.MaxTokens)
-		mu.Unlock()
 		if req.System == briefSystemPrompt {
 			writeClaudeText(w, brief)
 		} else {
@@ -81,6 +92,9 @@ func TestGenerateBatchPlansScenarioThenEachMessage(t *testing.T) {
 
 	if len(prompts) != 4 {
 		t.Fatalf("expected 4 Claude calls (brief, then one per message), got %d", len(prompts))
+	}
+	if len(prewarms) != 1 || !strings.Contains(prewarms[0], brief) || !strings.HasPrefix(prompts[1], prewarms[0]) {
+		t.Errorf("expected one prewarm of exactly the shared prefix the messages start with, got %d", len(prewarms))
 	}
 	if systems[0] != briefSystemPrompt || !strings.Contains(prompts[0], "replying to message 1") {
 		t.Errorf("first call should plan the brief from the whole flow, got system=%q prompt:\n%s", systems[0], prompts[0])
@@ -115,7 +129,7 @@ func TestGenerateRetriesCutOffResponse(t *testing.T) {
 			json.NewEncoder(w).Encode(resp)
 			return
 		}
-		retryPrompt = req.Messages[0].Content
+		retryPrompt = req.Messages[0].Text()
 		writeClaudeText(w, "Here is the message:\n"+f3PlainJSON)
 	}))
 	defer srv.Close()
@@ -154,7 +168,7 @@ func TestGenerateRevisionShowsPreviousVersionAndUnmetRequirement(t *testing.T) {
 			writeClaudeText(w, f3PlainJSONNoEmail)
 			return
 		}
-		revisionPrompt = req.Messages[0].Content
+		revisionPrompt = req.Messages[0].Text()
 		writeClaudeText(w, f3PlainJSON)
 	}))
 	defer srv.Close()
@@ -173,7 +187,7 @@ func TestGenerateRevisionShowsPreviousVersionAndUnmetRequirement(t *testing.T) {
 	if !strings.Contains(revisionPrompt, "Your previous version") || !strings.Contains(revisionPrompt, "Kaczmarek Street") {
 		t.Errorf("revision prompt should include the previous version to edit:\n%s", revisionPrompt)
 	}
-	if !strings.Contains(revisionPrompt, "NOT MET IN YOUR PREVIOUS VERSION: Include a plausible email address") {
+	if !strings.Contains(revisionPrompt, "NOT MET IN YOUR PREVIOUS VERSION: EMAIL ADDRESS") {
 		t.Errorf("revision prompt should flag the unmet EMAIL ADDRESS requirement:\n%s", revisionPrompt)
 	}
 	if !strings.Contains(revisionPrompt, "TELEPHONE FIGURES") {
