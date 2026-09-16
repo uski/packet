@@ -118,6 +118,7 @@
           from: parseInt(row.querySelector('.mp-from').value, 10),
           purpose: row.querySelector('.mp-purpose').value.trim(),
           replyTo: parseInt(row.querySelector('.mp-replyto').value, 10),
+          opToOp: row.querySelector('.mp-optoop').checked,
         }
         if (toVal === '-1') {
           msg.to = -1
@@ -203,6 +204,7 @@
           row.querySelector('.mp-to').value = String(m.to)
         }
         row.querySelector('.mp-purpose').value = m.purpose || ''
+        row.querySelector('.mp-optoop').checked = !!m.opToOp
         row.querySelector('.mp-replyto').value = String(m.replyTo || 0)
       })
       if (data.scenario !== undefined) document.getElementById('mpscenario').value = data.scenario
@@ -776,6 +778,7 @@
           <label class=mpfield>If "Other" above<input type=text class=mp-to-custom placeholder="Custom recipient"></label>
           <label class="mpfield mpwide">Purpose (optional)<input type=text class=mp-purpose placeholder="e.g. request shelter capacity status"></label>
           <label class=mpfield>Replying to<select class=mp-replyto></select></label>
+          <label class="mpfield mpcheck" title="Traffic between the radio operators, such as a status report, rather than a served agency's message. Plain text, check-in, and check-out messages always are."><input type=checkbox class=mp-optoop><span>Operator-to-operator</span></label>
           <button type=button class=mpremove title="Remove this message">&times;</button>
         </div>
       </template>

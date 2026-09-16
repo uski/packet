@@ -50,19 +50,25 @@ var (
 )
 
 const (
-	// Check-in and check-out messages are only operator details, which
-	// generated messages leave empty, so they aren't used.
-	autoOpToOpType     = "plain"
-	autoOpToOpPurpose  = "operator-to-operator traffic, such as a health and welfare or status report"
+	// Operator-to-operator traffic is added as ICS-213s marked OpToOp, not
+	// plain text; check-in and check-out messages hold only the operator
+	// details that generated messages leave empty.
+	autoOpToOpType     = "ICS213"
 	autoRequestPurpose = "a request or instructions from the served agency"
 	autoReportPurpose  = "a report or request from the station's served agency"
 )
 
-// isOpToOp reports whether messages of the given type are counted as
+// isOpToOp reports whether messages of the given type are always counted as
 // operator-to-operator traffic.
 func isOpToOp(msgType string) bool {
 	mt, ok := FindMsgType(msgType)
 	return ok && opToOpTypes[strings.ToLower(mt.CreateTag())]
+}
+
+// isOpToOpMessage reports whether fm is counted as operator-to-operator
+// traffic: marked so, or of a type that always is.
+func isOpToOpMessage(fm FlowMessage) bool {
+	return fm.OpToOp || isOpToOp(fm.MsgType)
 }
 
 // isAllStations reports whether a message whose To is -1 goes to every
@@ -102,7 +108,7 @@ func CheckFlow(fl Flow) ([]PartyCompliance, error) {
 		report[i] = PartyCompliance{Party: i, Role: p.Role, Credential: p.Credential, Need: credentialNeeds[p.Credential]}
 	}
 	for i, fm := range fl.Messages {
-		opToOp := isOpToOp(fm.MsgType)
+		opToOp := isOpToOpMessage(fm)
 		for _, s := range senders[i] {
 			countTraffic(&report[s].Sent, opToOp)
 			for _, r := range flowRecipients(fl, fm, s) {
@@ -184,7 +190,8 @@ func shortfall(c PartyCompliance, opToOp, received bool) int {
 // a station sends to Net Control, alternating between new messages and
 // replies to unanswered Net Control messages of the same kind. Net Control's messages are added first, so the
 // stations' replies can follow them. 3rd party messages rotate through
-// several form types; operator-to-operator messages are plain text.
+// several form types; operator-to-operator messages are ICS-213s marked
+// OpToOp. No plain text messages are added.
 func CompleteFlow(fl Flow) (Flow, int, error) {
 	if len(fl.Parties) < 2 {
 		return fl, 0, errors.New("at least two parties are needed to exchange messages")
@@ -223,6 +230,7 @@ func CompleteFlow(fl Flow) (Flow, int, error) {
 			}
 		}
 		msg.MsgType, msg.Purpose = autoType(fl, msg.From == nc, opToOp, msg.ReplyTo > 0)
+		msg.OpToOp = opToOp
 		if msg.MsgType == "" {
 			return fl, added, errors.New("none of the form types used for auto-added traffic are available")
 		}
@@ -307,7 +315,7 @@ func unanswered(fl Flow, nc, s int, opToOp bool) (int, error) {
 		}
 	}
 	for i, m := range fl.Messages {
-		if m.From == nc && !answered[i+1] && isOpToOp(m.MsgType) == opToOp &&
+		if m.From == nc && !answered[i+1] && isOpToOpMessage(m) == opToOp &&
 			(m.To == s || m.To < 0 && isAllStations(m.ToLabel)) {
 			return i + 1, nil
 		}
@@ -315,12 +323,16 @@ func unanswered(fl Flow, nc, s int, opToOp bool) (int, error) {
 	return 0, nil
 }
 
-// autoType picks the type and purpose of an added message: plain text for
-// operator-to-operator traffic, otherwise the form in the sender's pool used
-// least so far in fl. A reply gets no purpose, since it answers its target.
+// autoType picks the type and purpose of an added message: an ICS-213 for
+// operator-to-operator traffic (whose purpose comes from its OpToOp mark),
+// otherwise the form in the sender's pool used least so far in fl. A reply
+// gets no purpose, since it answers its target.
 func autoType(fl Flow, fromNetControl, opToOp, reply bool) (msgType, purpose string) {
 	if opToOp {
-		return autoOpToOpType, autoOpToOpPurpose
+		if mt, ok := FindMsgType(autoOpToOpType); ok {
+			return mt.CreateTag(), ""
+		}
+		return "", ""
 	}
 	pool, purpose := autoStationForms, autoReportPurpose
 	if fromNetControl {

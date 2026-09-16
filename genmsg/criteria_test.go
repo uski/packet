@@ -81,7 +81,7 @@ func TestCompleteFlowMeetsCriteria(t *testing.T) {
 				if m.ReplyTo >= n || target.From != 0 || !(target.To == m.From || target.To == -1) {
 					t.Errorf("added message %d replies to message %d, which isn't an earlier Net Control message to that station", n, m.ReplyTo)
 				}
-				if isOpToOp(target.MsgType) != isOpToOp(m.MsgType) {
+				if isOpToOpMessage(target) != isOpToOpMessage(m) {
 					t.Errorf("added message %d replies to a different kind of message", n)
 				}
 			} else {
@@ -90,8 +90,11 @@ func TestCompleteFlowMeetsCriteria(t *testing.T) {
 		default:
 			t.Errorf("added message %d goes from party %d to %d, not between Net Control and a station", n, m.From, m.To)
 		}
-		if !isOpToOp(m.MsgType) {
+		if !m.OpToOp {
 			types[m.MsgType] = true
+		}
+		if isOpToOp(m.MsgType) {
+			t.Errorf("added message %d is a %s message; auto-added traffic should be forms", n, m.MsgType)
 		}
 	}
 	if replies == 0 || fresh == 0 {
@@ -116,6 +119,30 @@ func TestCompleteFlowMeetsCriteria(t *testing.T) {
 	}
 	if again, n, _ := CompleteFlow(out); n != 0 || len(again.Messages) != len(out.Messages) {
 		t.Errorf("completing an already compliant flow added %d messages", n)
+	}
+}
+
+func TestOpToOpMarking(t *testing.T) {
+	formType(t, "ICS213")
+	fl := Flow{
+		Parties: criteriaTestParties(),
+		Messages: []FlowMessage{
+			{MsgType: "ICS213", From: 1, To: 0, OpToOp: true, Purpose: "shelter power status"},
+		},
+	}
+	report, err := CheckFlow(fl)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report[1].Sent != (Traffic{OpToOp: 1}) {
+		t.Errorf("a marked ICS-213 should count as operator-to-operator, got %+v", report[1].Sent)
+	}
+	specs, err := ResolveFlow(fl)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasPrefix(specs[0].Purpose, opToOpPurpose) || !strings.HasSuffix(specs[0].Purpose, "shelter power status") {
+		t.Errorf("purpose = %q, want it to say the message is operator-to-operator", specs[0].Purpose)
 	}
 }
 

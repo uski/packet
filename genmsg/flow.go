@@ -51,6 +51,25 @@ type FlowMessage struct {
 	ToLabel string `json:"toLabel"` // used when To is -1, e.g. "All Stations"; ignored otherwise
 	Purpose string `json:"purpose"` // optional hint of what this specific message is about
 	ReplyTo int    `json:"replyTo"` // 1-based index into Flow.Messages this replies to, or 0 for none
+	// OpToOp marks the message as operator-to-operator traffic, such as a
+	// status report between radio operators, rather than a served agency's
+	// message. Plain text, check-in, and check-out messages always are.
+	OpToOp bool `json:"opToOp,omitempty"`
+}
+
+// opToOpPurpose describes operator-to-operator traffic to Claude.
+const opToOpPurpose = "operator-to-operator traffic between the radio operators themselves, such as a status report or health and welfare message, not a served agency's message"
+
+// flowPurpose returns the purpose to give Claude for fm.
+func flowPurpose(fm FlowMessage) string {
+	purpose := strings.TrimSpace(fm.Purpose)
+	if !fm.OpToOp {
+		return purpose
+	}
+	if purpose == "" {
+		return opToOpPurpose
+	}
+	return opToOpPurpose + ": " + purpose
 }
 
 // Flow is a multi-party message-flow specification: the parties involved
@@ -204,7 +223,7 @@ func ResolveFlow(fl Flow) ([]MessageSpec, error) {
 				To:           to.Role,
 				ToLocation:   to.Location,
 				ToPrefix:     to.Prefix,
-				Purpose:      strings.TrimSpace(fm.Purpose),
+				Purpose:      flowPurpose(fm),
 				Level:        partyLevel(fl.Parties[p]),
 			}
 			spec.MsgType, _ = FindMsgType(fm.MsgType) // already validated above
