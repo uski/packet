@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"maps"
 	"net/http"
 	"slices"
@@ -208,6 +209,53 @@ func (s *Server) servePostGenTrainingFlow(w http.ResponseWriter, r *http.Request
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// servePostGenTrainingFlowCheck handles POST /gentrain-flow-check requests,
+// whose JSON body is a genmsg.Flow. It responds with how each party's
+// traffic compares with its credential's minimums (see genmsg.CheckFlow).
+func (s *Server) servePostGenTrainingFlowCheck(w http.ResponseWriter, r *http.Request) {
+	var fl genmsg.Flow
+	if err := json.NewDecoder(r.Body).Decode(&fl); err != nil {
+		http.Error(w, "invalid JSON body: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	report, err := genmsg.CheckFlow(fl)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	writeJSON(w, map[string]any{"parties": report})
+}
+
+// servePostGenTrainingFlowComplete handles POST /gentrain-flow-complete
+// requests, whose JSON body is a genmsg.Flow. It responds with the flow
+// with messages added so every party meets its credential's minimums (see
+// genmsg.CompleteFlow), how many were added, and the resulting compliance.
+func (s *Server) servePostGenTrainingFlowComplete(w http.ResponseWriter, r *http.Request) {
+	var fl genmsg.Flow
+	if err := json.NewDecoder(r.Body).Decode(&fl); err != nil {
+		http.Error(w, "invalid JSON body: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	out, added, err := genmsg.CompleteFlow(fl)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	report, err := genmsg.CheckFlow(out)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	writeJSON(w, map[string]any{"flow": out, "added": added, "parties": report})
+}
+
+func writeJSON(w http.ResponseWriter, v any) {
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	if err := json.NewEncoder(w).Encode(v); err != nil {
+		slog.Error("encode JSON response", "err", err)
+	}
 }
 
 // runGenTraining does the actual generation work for job, in its own

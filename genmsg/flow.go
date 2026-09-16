@@ -26,6 +26,10 @@ type FlowParty struct {
 	// Prefix is the party's three-character message number prefix, e.g.
 	// "S24" for Shelter 24 (see MessageSpec.FromPrefix).
 	Prefix string `json:"prefix,omitempty"`
+	// Credential is the credential the party is being evaluated for (see
+	// CheckFlow), or empty if it isn't being evaluated. "F3" also selects
+	// the reduced proword list, as F3 does.
+	Credential string `json:"credential,omitempty"`
 }
 
 // stationPrefixRE matches a station's message number prefix.
@@ -74,10 +78,69 @@ func FindMsgType(tag string) (message.EditableMType, bool) {
 // evaluated at: the reduced F3 list if the party is marked F3, else the
 // full list.
 func partyLevel(p FlowParty) string {
-	if p.F3 {
+	if p.F3 || p.Credential == "F3" {
 		return prowords.LevelF3
 	}
 	return prowords.LevelFull
+}
+
+// normalizeParties replaces fl's parties with a validated copy, with
+// message number prefixes in upper case.
+func normalizeParties(fl *Flow) error {
+	fl.Parties = slices.Clone(fl.Parties)
+	for i := range fl.Parties {
+		p := strings.ToUpper(strings.TrimSpace(fl.Parties[i].Prefix))
+		if p != "" && !stationPrefixRE.MatchString(p) {
+			return fmt.Errorf("party %d: invalid message number prefix %q (use three characters, e.g. S24)", i+1, fl.Parties[i].Prefix)
+		}
+		fl.Parties[i].Prefix = p
+		if _, ok := credentialNeeds[fl.Parties[i].Credential]; !ok {
+			return fmt.Errorf("party %d: unknown credential %q", i+1, fl.Parties[i].Credential)
+		}
+	}
+	return nil
+}
+
+// flowSenders validates fl's messages against its parties and returns, for
+// each message, the indices of the parties that send it: its From party,
+// or for an "each station" message every party except its recipient and
+// the sender of the message it replies to.
+func flowSenders(fl Flow) ([][]int, error) {
+	senders := make([][]int, len(fl.Messages))
+	for i, fm := range fl.Messages {
+		if _, ok := FindMsgType(fm.MsgType); !ok {
+			return nil, fmt.Errorf("message %d: no such message type %q", i+1, fm.MsgType)
+		}
+		if fm.ReplyTo < 0 || fm.ReplyTo > len(fl.Messages) || fm.ReplyTo == i+1 {
+			return nil, fmt.Errorf("message %d: invalid \"replyTo\" %d", i+1, fm.ReplyTo)
+		}
+		if fm.To >= len(fl.Parties) {
+			return nil, fmt.Errorf("message %d: invalid \"to\" party index %d", i+1, fm.To)
+		}
+		if fm.From == fromEachStation {
+			excluded := map[int]bool{fm.To: true}
+			if fm.ReplyTo > 0 {
+				excluded[fl.Messages[fm.ReplyTo-1].From] = true
+			}
+			var idxs []int
+			for p := range fl.Parties {
+				if !excluded[p] {
+					idxs = append(idxs, p)
+				}
+			}
+			if len(idxs) == 0 {
+				return nil, fmt.Errorf("message %d: \"from each station\" has no parties left once its recipient and the sender of the message it replies to are excluded", i+1)
+			}
+			senders[i] = idxs
+		} else if fm.From < 0 || fm.From >= len(fl.Parties) {
+			return nil, fmt.Errorf("message %d: invalid \"from\" party index %d", i+1, fm.From)
+		} else if fm.From == fm.To {
+			return nil, fmt.Errorf("message %d: %s can't send a message to itself", i+1, fl.Parties[fm.From].Role)
+		} else {
+			senders[i] = []int{fm.From}
+		}
+	}
+	return senders, nil
 }
 
 // resolveTo resolves a FlowMessage's To/ToLabel against parties into the
@@ -111,48 +174,12 @@ func ResolveFlow(fl Flow) ([]MessageSpec, error) {
 	if len(fl.Messages) == 0 {
 		return nil, fmt.Errorf("at least one message is required")
 	}
-	fl.Parties = slices.Clone(fl.Parties)
-	for i := range fl.Parties {
-		p := strings.ToUpper(strings.TrimSpace(fl.Parties[i].Prefix))
-		if p != "" && !stationPrefixRE.MatchString(p) {
-			return nil, fmt.Errorf("party %d: invalid message number prefix %q (use three characters, e.g. S24)", i+1, fl.Parties[i].Prefix)
-		}
-		fl.Parties[i].Prefix = p
+	if err := normalizeParties(&fl); err != nil {
+		return nil, err
 	}
-	// First pass: structural validation against the *original* message
-	// list, and figuring out which parties each entry expands to.
-	partyIndices := make([][]int, len(fl.Messages)) // per original message, the party indices it produces a spec for
-	for i, fm := range fl.Messages {
-		if _, ok := FindMsgType(fm.MsgType); !ok {
-			return nil, fmt.Errorf("message %d: no such message type %q", i+1, fm.MsgType)
-		}
-		if fm.ReplyTo < 0 || fm.ReplyTo > len(fl.Messages) || fm.ReplyTo == i+1 {
-			return nil, fmt.Errorf("message %d: invalid \"replyTo\" %d", i+1, fm.ReplyTo)
-		}
-		if fm.From == fromEachStation {
-			// No station sends to itself: leave out the recipient, and
-			// the sender of the message being answered.
-			excluded := map[int]bool{fm.To: true}
-			if fm.ReplyTo > 0 {
-				excluded[fl.Messages[fm.ReplyTo-1].From] = true
-			}
-			var idxs []int
-			for p := range fl.Parties {
-				if !excluded[p] {
-					idxs = append(idxs, p)
-				}
-			}
-			if len(idxs) == 0 {
-				return nil, fmt.Errorf("message %d: \"from each station\" has no parties left once its recipient and the sender of the message it replies to are excluded", i+1)
-			}
-			partyIndices[i] = idxs
-		} else if fm.From < 0 || fm.From >= len(fl.Parties) {
-			return nil, fmt.Errorf("message %d: invalid \"from\" party index %d", i+1, fm.From)
-		} else if fm.From == fm.To {
-			return nil, fmt.Errorf("message %d: %s can't send a message to itself", i+1, fl.Parties[fm.From].Role)
-		} else {
-			partyIndices[i] = []int{fm.From}
-		}
+	partyIndices, err := flowSenders(fl)
+	if err != nil {
+		return nil, err
 	}
 
 	// Second pass: build the expanded spec list, and record where each

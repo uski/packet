@@ -22,11 +22,11 @@
       return [...document.querySelectorAll('#mpparties .mprow')].map((row, i) => {
         const role = row.querySelector('.mp-role').value.trim() || `Party ${i + 1}`
         const loc = row.querySelector('.mp-location').value.trim()
-        const f3 = row.querySelector('.mp-f3').checked
+        const cred = row.querySelector('.mp-cred').value
         const prefix = row.querySelector('.mp-prefix').value.trim().toUpperCase()
         let label = loc ? `${role} (${loc})` : role
         if (prefix) label += ` ${prefix}`
-        if (f3) label += ' [F3]'
+        if (cred) label += ` [${cred}]`
         return { value: String(i), label }
       })
     }
@@ -107,7 +107,8 @@
       const parties = [...document.querySelectorAll('#mpparties .mprow')].map(row => ({
         role: row.querySelector('.mp-role').value.trim(),
         location: row.querySelector('.mp-location').value.trim(),
-        f3: row.querySelector('.mp-f3').checked,
+        credential: row.querySelector('.mp-cred').value,
+        f3: row.querySelector('.mp-cred').value === 'F3',
         prefix: row.querySelector('.mp-prefix').value.trim().toUpperCase(),
       }))
       const messages = [...document.querySelectorAll('#mpmessages .mprow')].map(row => {
@@ -150,30 +151,35 @@
     async function mpLoadScenario(file) {
       const err = document.getElementById('mperr')
       err.textContent = ''
-      let data
       try {
-        data = JSON.parse(await file.text())
+        mpApplyScenario(JSON.parse(await file.text()), file.name)
       } catch (e) {
         err.textContent = `${file.name} is not a valid scenario file: ${e.message}`
-        return
       }
+    }
+
+    // mpApplyScenario fills the dialog from scenario data (see
+    // mpSaveScenario); source names it in error messages.
+    function mpApplyScenario(data, source) {
+      const err = document.getElementById('mperr')
       const parties = Array.isArray(data.parties) ? data.parties : []
       const messages = Array.isArray(data.messages) ? data.messages : []
       if (!parties.length || !messages.length) {
-        err.textContent = `${file.name} has no parties or no messages.`
+        err.textContent = `${source} has no parties or no messages.`
         return
       }
       const unknown = messages.map(m => m.msgType).filter(t => !mpMessageTypes.some(mt => mt.tag === t))
       if (unknown.length) {
-        err.textContent = `${file.name} uses message types this program doesn't have: ${[...new Set(unknown)].join(', ')}.`
+        err.textContent = `${source} uses message types this program doesn't have: ${[...new Set(unknown)].join(', ')}.`
         return
       }
       document.getElementById('mpparties').innerHTML = ''
       document.getElementById('mpmessages').innerHTML = ''
+      document.getElementById('mpcheck').innerHTML = ''
       parties.forEach(p => {
         mpAddPartyRow(p.role || '', p.location || '')
         const row = document.querySelector('#mpparties .mprow:last-child')
-        row.querySelector('.mp-f3').checked = !!p.f3
+        row.querySelector('.mp-cred').value = p.credential || (p.f3 ? 'F3' : '')
         row.querySelector('.mp-prefix').value = p.prefix || ''
       })
       messages.forEach(() => mpAddMessageRow())
@@ -199,7 +205,63 @@
         row.querySelector('.mp-purpose').value = m.purpose || ''
         row.querySelector('.mp-replyto').value = String(m.replyTo || 0)
       })
-      document.getElementById('mpscenario').value = data.scenario || ''
+      if (data.scenario !== undefined) document.getElementById('mpscenario').value = data.scenario
+    }
+
+    // mpPostFlow sends the dialog's flow to url and returns the parsed JSON
+    // response, or null after showing the error.
+    async function mpPostFlow(url) {
+      const err = document.getElementById('mperr')
+      err.textContent = ''
+      const resp = await fetch2(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(mpBuildFlow()) })
+      if (!resp.ok) {
+        err.textContent = (await resp.text()) || resp.statusText
+        return null
+      }
+      return resp.json()
+    }
+
+    // mpShowCheck shows each party's traffic against its credential's
+    // minimums.
+    function mpShowCheck(parties, note) {
+      const div = document.getElementById('mpcheck')
+      div.innerHTML = ''
+      const p = document.createElement('p')
+      const failing = parties.filter(c => c.problems && c.problems.length).length
+      p.textContent = (note ? note + ' ' : '') + (failing ? `${failing} party(ies) fall short of their credential criteria.` : 'Every party meets its credential criteria.')
+      p.className = failing ? 'mp-bad' : 'mp-good'
+      div.appendChild(p)
+      const table = document.createElement('table')
+      table.className = 'mpptable'
+      const head = table.createTHead().insertRow()
+      for (const label of ['Party', 'Credential', 'Sent 3rd party', 'Sent op-to-op', 'Rcvd 3rd party', 'Rcvd op-to-op', 'Status']) {
+        const th = document.createElement('th')
+        th.textContent = label
+        head.appendChild(th)
+      }
+      const body = table.createTBody()
+      const cell = (have, need) => need ? `${have} / ${need}` : String(have)
+      parties.forEach(c => {
+        const row = body.insertRow()
+        row.insertCell().textContent = c.role || `Party ${c.party + 1}`
+        row.insertCell().textContent = c.credential || 'not evaluated'
+        row.insertCell().textContent = cell(c.sent.thirdParty, c.need.thirdParty)
+        row.insertCell().textContent = cell(c.sent.opToOp, c.need.opToOp)
+        row.insertCell().textContent = cell(c.received.thirdParty, c.need.thirdParty)
+        row.insertCell().textContent = cell(c.received.opToOp, c.need.opToOp)
+        const status = row.insertCell()
+        if (c.problems && c.problems.length) {
+          status.textContent = c.problems.join('; ')
+          status.className = 'mp-bad'
+        } else {
+          status.textContent = c.need.thirdParty || c.need.opToOp ? 'OK' : '—'
+          status.className = 'mp-good'
+        }
+      })
+      const scroll = document.createElement('div')
+      scroll.className = 'mpscroll'
+      scroll.appendChild(table)
+      div.appendChild(scroll)
     }
 
     function mpShowProgress(msg) {
@@ -375,6 +437,16 @@
       document.getElementById('mpmsgadd').addEventListener('click', () => mpAddMessageRow())
       document.getElementById('mpparties').addEventListener('input', mpSyncOptions)
       document.getElementById('mpsave').addEventListener('click', mpSaveScenario)
+      document.getElementById('mpcheckbtn').addEventListener('click', async () => {
+        const data = await mpPostFlow('/gentrain-flow-check')
+        if (data) mpShowCheck(data.parties)
+      })
+      document.getElementById('mpautobtn').addEventListener('click', async () => {
+        const data = await mpPostFlow('/gentrain-flow-complete')
+        if (!data) return
+        if (data.added) mpApplyScenario(data.flow, 'The completed scenario')
+        mpShowCheck(data.parties, data.added ? `Added ${data.added} message(s).` : 'No messages needed to be added.')
+      })
       const loadFile = document.getElementById('mploadfile')
       document.getElementById('mpload').addEventListener('click', () => loadFile.click())
       loadFile.addEventListener('change', () => {
@@ -420,6 +492,7 @@
       document.getElementById('mpscenario').value = ''
       document.getElementById('mpparties').innerHTML = ''
       document.getElementById('mpmessages').innerHTML = ''
+      document.getElementById('mpcheck').innerHTML = ''
       mpAddPartyRow('Net Control', 'County EOC')
       mpAddPartyRow('Shelter Manager', '')
       mpAddMessageRow()
@@ -518,6 +591,20 @@
     #mpmsgadd {
       margin-top: 0.5rem;
       align-self: start;
+    }
+
+    #mpcritrow {
+      display: flex;
+      gap: 0.5rem;
+      margin-top: 0.75rem;
+    }
+
+    .mp-good {
+      color: #070;
+    }
+
+    .mp-bad {
+      color: #c00;
     }
 
     #mpfilerow {
@@ -658,7 +745,21 @@
           <label class=mpfield>Role<input type=text class=mp-role placeholder="e.g. Net Control"></label>
           <label class=mpfield>Location<input type=text class=mp-location placeholder="e.g. County EOC (optional)"></label>
           <label class=mpfield>Msg # prefix<input type=text class=mp-prefix maxlength=3 placeholder="e.g. S24" autocapitalize=characters></label>
-          <label class="mpfield mpcheck"><input type=checkbox class=mp-f3><span>F3 (limited prowords)</span></label>
+          <label class=mpfield>Credential<select class=mp-cred>
+              <option value="">Not evaluated</option>
+              <option value=F3>Field III (F3, limited prowords)</option>
+              <option value=F2>Field II</option>
+              <option value=F1>Field I</option>
+              <option value=S3>Shadow III</option>
+              <option value=S2>Shadow II</option>
+              <option value=S1>Shadow I</option>
+              <option value=P3>Packet III</option>
+              <option value=P2>Packet II</option>
+              <option value=P1>Packet I</option>
+              <option value=N3>Net Control III</option>
+              <option value=N2>Net Control II</option>
+              <option value=N1>Net Control I</option>
+            </select></label>
           <button type=button class=mpremove title="Remove this party">&times;</button>
         </div>
       </template>
@@ -679,6 +780,11 @@
         </div>
       </template>
       <button type=button id=mpmsgadd>+ Add message</button>
+      <div id=mpcritrow>
+        <button type=button id=mpcheckbtn>Check credential criteria</button>
+        <button type=button id=mpautobtn>Auto-add traffic to meet criteria</button>
+      </div>
+      <div id=mpcheck></div>
 
       <p>Overall scenario (optional):</p>
       <textarea id=mpscenario rows=2 placeholder="e.g. a magnitude 5.4 earthquake has just occurred (leave blank for a generic scenario)"></textarea>

@@ -1,6 +1,7 @@
 package server
 
 import (
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -10,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/rothskeller/packet/v4/form/formdefs"
 	"github.com/rothskeller/packet/v4/genmsg"
 	"github.com/rothskeller/packet/v4/incident"
 	"github.com/rothskeller/packet/v4/message"
@@ -121,6 +123,46 @@ func TestBuildGenTrainingResultPartiesAndProwords(t *testing.T) {
 	}
 	if !seenFull || !res.Prowords[0].F3 {
 		t.Error("expected F3 prowords first, then complete-list-only ones")
+	}
+}
+
+func TestServePostGenTrainingFlowCheckAndComplete(t *testing.T) {
+	if err := formdefs.RegisterForms(); err != nil {
+		t.Fatal(err)
+	}
+	if message.FindCreateTag("ICS213") == nil {
+		t.Skip("ICS213 not registered (build without -tags sccopifo?)")
+	}
+	body := `{"parties":[{"role":"Net Control"},{"role":"Shelter A","credential":"F3"}],` +
+		`"messages":[{"msgType":"ICS213","from":0,"to":-1,"toLabel":"All Stations"}]}`
+	s := &Server{stop: make(chan struct{})}
+
+	rr := httptest.NewRecorder()
+	s.servePostGenTrainingFlowCheck(rr, httptest.NewRequest(http.MethodPost, "/gentrain-flow-check", strings.NewReader(body)))
+	if rr.Code != http.StatusOK || !strings.Contains(rr.Body.String(), `"problems"`) {
+		t.Errorf("check: status %d, body %s", rr.Code, rr.Body)
+	}
+
+	rr = httptest.NewRecorder()
+	s.servePostGenTrainingFlowComplete(rr, httptest.NewRequest(http.MethodPost, "/gentrain-flow-complete", strings.NewReader(body)))
+	var resp struct {
+		Flow    genmsg.Flow              `json:"flow"`
+		Added   int                      `json:"added"`
+		Parties []genmsg.PartyCompliance `json:"parties"`
+	}
+	if rr.Code != http.StatusOK {
+		t.Fatalf("complete: status %d, body %s", rr.Code, rr.Body)
+	}
+	if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
+		t.Fatal(err)
+	}
+	if resp.Added == 0 || len(resp.Flow.Messages) != 1+resp.Added || resp.Flow.Parties[1].Credential != "F3" {
+		t.Errorf("complete: added %d, flow %+v", resp.Added, resp.Flow)
+	}
+	for _, p := range resp.Parties {
+		if len(p.Problems) != 0 {
+			t.Errorf("%s still has problems: %v", p.Role, p.Problems)
+		}
 	}
 }
 
