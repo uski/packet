@@ -27,6 +27,8 @@ type genTrainingProwordCount struct {
 // genTrainingMessage describes one generated message in the JSON response.
 type genTrainingMessage struct {
 	Ident         int                       `json:"ident"`
+	From          string                    `json:"from"` // the sending party, empty if none
+	F3            bool                      `json:"f3"`   // the sender is evaluated on the reduced F3 list
 	ID            string                    `json:"id"`
 	Type          string                    `json:"type"`
 	Prowords      []genTrainingProwordCount `json:"prowords"`
@@ -41,6 +43,14 @@ type genTrainingMessage struct {
 // messages, or an error.
 type genTrainingResult struct {
 	Messages []genTrainingMessage `json:"messages"`
+	// Prowords lists every proword of the complete list, in handbook order
+	// (the reduced F3 list first), for the per-party table.
+	Prowords []genTrainingProwordRow `json:"prowords"`
+}
+
+type genTrainingProwordRow struct {
+	Name string `json:"name"`
+	F3   bool   `json:"f3"` // on the reduced F3 list
 }
 
 // genTrainingJob tracks one in-progress (or just-finished) call to
@@ -220,7 +230,7 @@ func runGenTraining(job *genTrainingJob, dir string, client *genmsg.ClaudeClient
 		if err != nil {
 			return err
 		}
-		result = buildGenTrainingResult(applied)
+		result = buildGenTrainingResult(applied, specs)
 		return nil
 	})
 	if err != nil {
@@ -232,11 +242,18 @@ func runGenTraining(job *genTrainingJob, dir string, client *genmsg.ClaudeClient
 
 // buildGenTrainingResult turns the low-level genmsg.Applied results into the
 // JSON shape the dialog renders as a table.
-func buildGenTrainingResult(applied []genmsg.Applied) genTrainingResult {
+func buildGenTrainingResult(applied []genmsg.Applied, specs []genmsg.MessageSpec) genTrainingResult {
 	var result genTrainingResult
+	full, _ := prowords.Profile(prowords.LevelFull)
+	f3, _ := prowords.Profile(prowords.LevelF3)
+	for _, cat := range full {
+		result.Prowords = append(result.Prowords, genTrainingProwordRow{Name: prowords.ProwordName(cat), F3: slices.Contains(f3, cat)})
+	}
 	result.Messages = make([]genTrainingMessage, len(applied))
 	for j, a := range applied {
 		gm := genTrainingMessage{Ident: a.Ident, ID: a.ID, Type: a.MsgType.Name()}
+		gm.From = strings.TrimSpace(specs[j].From + " " + specs[j].FromPrefix)
+		gm.F3 = specs[j].Level == prowords.LevelF3
 		cats := slices.Collect(maps.Keys(a.Result.Counts))
 		slices.SortFunc(cats, func(x, y prowords.Category) int {
 			return cmp.Compare(prowords.ProwordName(x), prowords.ProwordName(y))

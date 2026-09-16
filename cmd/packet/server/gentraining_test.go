@@ -10,7 +10,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/rothskeller/packet/v4/genmsg"
 	"github.com/rothskeller/packet/v4/incident"
+	"github.com/rothskeller/packet/v4/message"
+	"github.com/rothskeller/packet/v4/prowords"
 )
 
 // These tests call the HTTP handlers directly (httptest.NewRecorder /
@@ -85,6 +88,39 @@ func TestServePostGenTrainingFlowInvalidFlow(t *testing.T) {
 	}
 	if !strings.Contains(rr.Body.String(), `"from"`) {
 		t.Errorf("expected error to mention the invalid \"from\" index, got %q", rr.Body.String())
+	}
+}
+
+func TestBuildGenTrainingResultPartiesAndProwords(t *testing.T) {
+	applied := []genmsg.Applied{
+		{MsgType: message.PlainMessage, Result: genmsg.Result{Counts: map[prowords.Category]int{prowords.Figures: 2}}},
+		{MsgType: message.PlainMessage},
+	}
+	specs := []genmsg.MessageSpec{
+		{From: "Shelter A", FromPrefix: "S24", Level: prowords.LevelF3},
+		{From: "Net Control", Level: prowords.LevelFull},
+	}
+	res := buildGenTrainingResult(applied, specs)
+	if m := res.Messages[0]; m.From != "Shelter A S24" || !m.F3 {
+		t.Errorf("message 1 party = %q, f3 = %v; want Shelter A S24, true", m.From, m.F3)
+	}
+	if m := res.Messages[1]; m.From != "Net Control" || m.F3 {
+		t.Errorf("message 2 party = %q, f3 = %v; want Net Control, false", m.From, m.F3)
+	}
+	full, _ := prowords.Profile(prowords.LevelFull)
+	if len(res.Prowords) != len(full) {
+		t.Fatalf("got %d proword rows, want %d", len(res.Prowords), len(full))
+	}
+	seenFull := false
+	for _, row := range res.Prowords {
+		if !row.F3 {
+			seenFull = true
+		} else if seenFull {
+			t.Errorf("F3 proword %q listed after a complete-list-only one", row.Name)
+		}
+	}
+	if !seenFull || !res.Prowords[0].F3 {
+		t.Error("expected F3 prowords first, then complete-list-only ones")
 	}
 }
 

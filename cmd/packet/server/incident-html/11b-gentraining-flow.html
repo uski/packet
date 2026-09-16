@@ -145,9 +145,64 @@
       document.getElementById('mpsubrow').hidden = false
       document.getElementById('mperr').textContent = msg
     }
+    // mpPartyTable builds a table of how many times each party sent each
+    // proword: F3 prowords on top, complete-list-only prowords below.
+    function mpPartyTable(data) {
+      const parties = [], counts = {}
+      data.messages.forEach(msg => {
+        const key = msg.from || '(no party)'
+        if (!counts[key]) {
+          counts[key] = {}
+          parties.push({ key, f3: msg.f3 })
+        }
+        ;(msg.prowords || []).forEach(pw => { counts[key][pw.name] = (counts[key][pw.name] || 0) + pw.count })
+      })
+      const wrap = document.createElement('div')
+      const h = document.createElement('h2')
+      h.textContent = 'Prowords sent by each party'
+      wrap.appendChild(h)
+      const legend = document.createElement('p')
+      legend.className = 'mplegend'
+      legend.innerHTML = '<span class=mp-f3row>F3 list</span> <span class=mp-fullrow>complete list only</span> <span class=mp-missing>0</span> = required but not sent; – = not required for that party'
+      wrap.appendChild(legend)
+      const scroll = document.createElement('div')
+      scroll.className = 'mpscroll'
+      const table = document.createElement('table')
+      table.className = 'mpptable mppartytable'
+      const head = table.createTHead().insertRow()
+      const corner = document.createElement('th')
+      corner.textContent = 'Proword'
+      head.appendChild(corner)
+      parties.forEach(p => {
+        const th = document.createElement('th')
+        th.textContent = p.f3 ? `${p.key} (F3)` : p.key
+        head.appendChild(th)
+      })
+      const body = table.createTBody()
+      data.prowords.forEach(pw => {
+        const row = body.insertRow()
+        row.className = pw.f3 ? 'mp-f3row' : 'mp-fullrow'
+        row.insertCell().textContent = pw.name
+        parties.forEach(p => {
+          const cell = row.insertCell()
+          const n = counts[p.key][pw.name] || 0
+          if (p.f3 && !pw.f3 && n === 0) {
+            cell.textContent = '–'
+          } else {
+            cell.textContent = n
+            if (n === 0) cell.className = 'mp-missing'
+          }
+        })
+      })
+      scroll.appendChild(table)
+      wrap.appendChild(scroll)
+      return wrap
+    }
+
     function mpShowResults(data) {
       const div = document.getElementById('mpresults')
       div.innerHTML = ''
+      if (data.prowords && data.prowords.length) div.appendChild(mpPartyTable(data))
       data.messages.forEach(msg => {
         const h = document.createElement('h2')
         h.textContent = `${msg.id} — ${msg.type} — ${msg.words} words `
@@ -385,6 +440,33 @@
     #mpmsgadd {
       margin-top: 0.5rem;
       align-self: start;
+    }
+
+    .mpscroll {
+      overflow-x: auto;
+    }
+
+    .mp-f3row {
+      background-color: #e3eeff;
+    }
+
+    .mp-fullrow {
+      background-color: #fff1d6;
+    }
+
+    .mppartytable td:not(:first-child),
+    .mppartytable th:not(:first-child) {
+      text-align: center;
+    }
+
+    .mp-missing {
+      color: #c00;
+      font-weight: bold;
+    }
+
+    .mplegend span {
+      padding: 0 0.3rem;
+      margin-right: 0.3rem;
     }
 
     .mphint {
