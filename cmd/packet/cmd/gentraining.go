@@ -45,6 +45,8 @@ For a coherent multi-party exchange -- e.g. one message asking all stations for 
     ]
   }
 
+An optional top-level "scenario" gives the scenario text, used when --scenario isn't given. The "Save scenario…" button of the GUI's Generate Multi-Party Training Messages dialog writes a file in this format, and its "Load scenario…" button reads one.
+
 "parties" are referenced by 0-based index from each message's "from"/"to". A party's optional "prefix" is its three-character message number prefix (e.g. "S24" for Shelter 24): its messages are numbered with it (e.g. "S24-101P", continuing after the highest such number already in the incident) and addressed to the receiving party's prefix, and a reply's Reference field gets the number of the message it answers. Use "to": -1 with "toLabel" for a broadcast recipient that isn't one of the defined parties (e.g. "All Stations"). "replyTo" is the 1-based index of another message in the same file that this one replies to; Claude is given that message's content so the reply is directly consistent with it, not just generated independently. The From/To ICS Position and Location on each message are set directly from the parties (never left for Claude to invent), so they stay perfectly consistent across the whole flow.
 
 Use "from": -1 to fan a single message entry out into one message from EVERY party, e.g. so several field stations can each independently reply to one "All Stations" broadcast without listing each reply by hand. The fan-out leaves out the recipient party, and the sender of the message it replies to (via "replyTo"), since no station sends a message to itself or replies to its own broadcast. An ordinary message's "from" and "to" must be different parties. A message may not itself reply to a "from": -1 entry, since there is no single message to point at.
@@ -96,12 +98,18 @@ func cmdGentraining(args []string) (err error) {
 			c.ErrorF(`Can't read flow file: %s.`, err)
 			return usage(gentrainingHelp)
 		}
-		var fl genmsg.Flow
+		var fl struct {
+			genmsg.Flow
+			Scenario string `json:"scenario"`
+		}
 		if err := json.Unmarshal(data, &fl); err != nil {
 			c.ErrorF(`%s does not contain valid JSON: %s.`, flowFile, err)
 			return usage(gentrainingHelp)
 		}
-		if specs, err = genmsg.ResolveFlow(fl); err != nil {
+		if scenario == "" {
+			scenario = fl.Scenario
+		}
+		if specs, err = genmsg.ResolveFlow(fl.Flow); err != nil {
 			c.ErrorF(`%s: %s.`, flowFile, err)
 			return usage(gentrainingHelp)
 		}

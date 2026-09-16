@@ -132,6 +132,76 @@
       return { parties, messages }
     }
 
+    // mpSaveScenario downloads the dialog's parties, messages, and scenario
+    // as a JSON file (the same format "packet gentrain --flow" reads).
+    function mpSaveScenario() {
+      const data = { scenario: document.getElementById('mpscenario').value, ...mpBuildFlow() }
+      const blob = new Blob([JSON.stringify(data, null, 2) + '\n'], { type: 'application/json' })
+      const a = document.createElement('a')
+      a.href = URL.createObjectURL(blob)
+      a.download = 'scenario.json'
+      document.body.appendChild(a)
+      a.click()
+      a.remove()
+      setTimeout(() => URL.revokeObjectURL(a.href), 1000)
+    }
+
+    // mpLoadScenario fills the dialog from a file saved by mpSaveScenario.
+    async function mpLoadScenario(file) {
+      const err = document.getElementById('mperr')
+      err.textContent = ''
+      let data
+      try {
+        data = JSON.parse(await file.text())
+      } catch (e) {
+        err.textContent = `${file.name} is not a valid scenario file: ${e.message}`
+        return
+      }
+      const parties = Array.isArray(data.parties) ? data.parties : []
+      const messages = Array.isArray(data.messages) ? data.messages : []
+      if (!parties.length || !messages.length) {
+        err.textContent = `${file.name} has no parties or no messages.`
+        return
+      }
+      const unknown = messages.map(m => m.msgType).filter(t => !mpMessageTypes.some(mt => mt.tag === t))
+      if (unknown.length) {
+        err.textContent = `${file.name} uses message types this program doesn't have: ${[...new Set(unknown)].join(', ')}.`
+        return
+      }
+      document.getElementById('mpparties').innerHTML = ''
+      document.getElementById('mpmessages').innerHTML = ''
+      parties.forEach(p => {
+        mpAddPartyRow(p.role || '', p.location || '')
+        const row = document.querySelector('#mpparties .mprow:last-child')
+        row.querySelector('.mp-f3').checked = !!p.f3
+        row.querySelector('.mp-prefix').value = p.prefix || ''
+      })
+      messages.forEach(() => mpAddMessageRow())
+      const rows = [...document.querySelectorAll('#mpmessages .mprow')]
+      // Type and From first: the To and Replying-to choices depend on them.
+      rows.forEach((row, i) => {
+        row.querySelector('.mp-type').value = messages[i].msgType
+        row.querySelector('.mp-from').value = String(messages[i].from ?? 0)
+      })
+      mpSyncOptions()
+      rows.forEach((row, i) => {
+        const m = messages[i]
+        if (m.to === -1 || m.to === undefined) {
+          if (!m.toLabel || m.toLabel === 'All Stations') {
+            row.querySelector('.mp-to').value = '-1'
+          } else {
+            row.querySelector('.mp-to').value = 'custom'
+            row.querySelector('.mp-to-custom').value = m.toLabel
+          }
+        } else {
+          row.querySelector('.mp-to').value = String(m.to)
+        }
+        row.querySelector('.mp-purpose').value = m.purpose || ''
+        row.querySelector('.mp-replyto').value = String(m.replyTo || 0)
+      })
+      document.getElementById('mpscenario').value = data.scenario || ''
+    }
+
     function mpShowProgress(msg) {
       document.getElementById('mpform').hidden = true
       document.getElementById('mpresults').hidden = true
@@ -304,6 +374,13 @@
       document.getElementById('mppartyadd').addEventListener('click', () => mpAddPartyRow())
       document.getElementById('mpmsgadd').addEventListener('click', () => mpAddMessageRow())
       document.getElementById('mpparties').addEventListener('input', mpSyncOptions)
+      document.getElementById('mpsave').addEventListener('click', mpSaveScenario)
+      const loadFile = document.getElementById('mploadfile')
+      document.getElementById('mpload').addEventListener('click', () => loadFile.click())
+      loadFile.addEventListener('change', () => {
+        if (loadFile.files.length) mpLoadScenario(loadFile.files[0])
+        loadFile.value = '' // so loading the same file again still triggers change
+      })
       document.getElementById('mpcan').addEventListener('click', () => {
         document.getElementById('mpdlg').close()
       })
@@ -443,6 +520,12 @@
       align-self: start;
     }
 
+    #mpfilerow {
+      display: flex;
+      gap: 0.5rem;
+      margin-top: 0.75rem;
+    }
+
     .mpscroll {
       overflow-x: auto;
     }
@@ -563,6 +646,11 @@
   <dialog id=mpdlg>
     <h1>Generate Multi-Party Training Messages</h1>
     <form id=mpform>
+      <div id=mpfilerow>
+        <button type=button id=mpload>Load scenario…</button>
+        <button type=button id=mpsave>Save scenario…</button>
+        <input type=file id=mploadfile accept=".json,application/json" hidden>
+      </div>
       <p>Parties in this exchange:</p>
       <div id=mpparties></div>
       <template id=mppartytmpl>
