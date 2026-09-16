@@ -387,6 +387,12 @@
       align-self: start;
     }
 
+    .mphint {
+      color: #666;
+      margin: 0.25rem 0 0;
+      font-size: 0.85em;
+    }
+
     #mpscenario {
       margin-top: 0.5rem;
       width: 100%;
@@ -488,6 +494,7 @@
       <button type=button id=mppartyadd>+ Add party</button>
 
       <p>Messages, in order: (choose "Each Station" as From to generate one reply from every party at once, e.g. answering a broadcast request)</p>
+      <p class=mphint>Each party's own messages exercise its whole proword list, since a candidate is evaluated on what they transmit. Give every party at least two messages (three for Field Type II and Shadow Type II).</p>
       <div id=mpmessages></div>
       <template id=mpmsgtmpl>
         <div class=mprow>

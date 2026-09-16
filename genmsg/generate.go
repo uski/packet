@@ -156,7 +156,7 @@ func Generate(ctx context.Context, client *ClaudeClient, req Request) ([]Result,
 			return nil, fmt.Errorf("message %d: invalid replyTo %d", i+1, m.ReplyTo)
 		}
 	}
-	plans, err := planByLevel(req)
+	plans, err := planByParty(req)
 	if err != nil {
 		return nil, err
 	}
@@ -414,27 +414,34 @@ func buildBriefPrompt(req Request) string {
 	return b.String()
 }
 
-// planByLevel groups req.Messages by their effective proword level (a
+// planByParty groups req.Messages by sender and effective proword level (a
 // message's own Level if set, else req.Level) and runs Plan independently
 // within each group, so that messages from parties evaluated at different
 // credential levels each only draw proword requirements from their own
 // level's profile -- an F3 party's messages never get saddled with a
 // full-list-only category, and a full-list party's messages aren't limited
-// to the reduced list just because they share a batch with an F3 party. The
-// returned slice is in req.Messages order.
-func planByLevel(req Request) ([]MessagePlan, error) {
+// to the reduced list just because they share a batch with an F3 party.
+//
+// Grouping by sender matters because each candidate is evaluated on what
+// that candidate transmits: the Credentialing Program Handbook requires
+// each credential's whole proword list, so a party's own messages have to
+// cover it rather than the batch covering it between them. The returned
+// slice is in req.Messages order.
+func planByParty(req Request) ([]MessagePlan, error) {
+	type party struct{ level, from, prefix string }
 	count := len(req.Messages)
-	groups := map[string][]int{}
+	groups := map[party][]int{}
 	for i, m := range req.Messages {
 		lvl := m.Level
 		if lvl == "" {
 			lvl = req.Level
 		}
-		groups[lvl] = append(groups[lvl], i)
+		p := party{lvl, m.From, m.FromPrefix}
+		groups[p] = append(groups[p], i)
 	}
 	plans := make([]MessagePlan, count)
-	for lvl, idxs := range groups {
-		profile, err := prowords.Profile(lvl)
+	for p, idxs := range groups {
+		profile, err := prowords.Profile(p.level)
 		if err != nil {
 			return nil, err
 		}

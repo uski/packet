@@ -1,6 +1,7 @@
 package genmsg
 
 import (
+	"slices"
 	"testing"
 
 	"github.com/rothskeller/packet/v4/message"
@@ -142,7 +143,7 @@ func TestPlanByLevelGroupsMessagesByTheirOwnLevel(t *testing.T) {
 			{MsgType: message.PlainMessage, Level: prowords.LevelFull},
 		},
 	}
-	plans, err := planByLevel(req)
+	plans, err := planByParty(req)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -171,12 +172,47 @@ func TestPlanByLevelGroupsMessagesByTheirOwnLevel(t *testing.T) {
 	}
 }
 
+// TestPlanByPartyCoversEachSendersOwnList checks what the Credentialing
+// Program Handbook requires: a candidate is evaluated on what that candidate
+// transmits, so each party's own messages must exercise its whole list.
+func TestPlanByPartyCoversEachSendersOwnList(t *testing.T) {
+	req := Request{Messages: []MessageSpec{
+		{MsgType: message.PlainMessage, From: "Net Control", Level: prowords.LevelFull},
+		{MsgType: message.PlainMessage, From: "Shelter A", Level: prowords.LevelF3},
+		{MsgType: message.PlainMessage, From: "Net Control", Level: prowords.LevelFull},
+		{MsgType: message.PlainMessage, From: "Shelter A", Level: prowords.LevelF3},
+	}}
+	plans, err := planByParty(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	netControl := append(slices.Clone(plans[0].Categories), plans[2].Categories...)
+	shelter := append(slices.Clone(plans[1].Categories), plans[3].Categories...)
+	full, _ := prowords.Profile(prowords.LevelFull)
+	f3, _ := prowords.Profile(prowords.LevelF3)
+	for _, cat := range full {
+		if !slices.Contains(netControl, cat) {
+			t.Errorf("Net Control's own messages never exercise %s", cat)
+		}
+	}
+	for _, cat := range f3 {
+		if !slices.Contains(shelter, cat) {
+			t.Errorf("Shelter A's own messages never exercise %s", cat)
+		}
+	}
+	for _, cat := range shelter {
+		if !slices.Contains(f3, cat) {
+			t.Errorf("the F3 party was assigned %s, outside its reduced list", cat)
+		}
+	}
+}
+
 func TestPlanByLevelFallsBackToRequestLevel(t *testing.T) {
 	req := Request{
 		Level:    prowords.LevelF3,
 		Messages: []MessageSpec{{MsgType: message.PlainMessage}},
 	}
-	plans, err := planByLevel(req)
+	plans, err := planByParty(req)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -187,7 +223,7 @@ func TestPlanByLevelFallsBackToRequestLevel(t *testing.T) {
 
 func TestPlanByLevelInvalidLevel(t *testing.T) {
 	req := Request{Messages: []MessageSpec{{MsgType: message.PlainMessage, Level: "bogus"}}}
-	if _, err := planByLevel(req); err == nil {
+	if _, err := planByParty(req); err == nil {
 		t.Error("expected an error for an unknown level")
 	}
 }
