@@ -90,6 +90,14 @@
         id: 'm-inc-ics-309',
         clicked: () => { openSignICS309Dialog() }
       })
+      // Incident: Prowords by Party
+      setupMenuItem({
+        id: 'm-inc-prowords',
+        clicked: () => {
+          const params = new URLSearchParams({ dir: document.body.dataset.dir })
+          window.open('/prowords-by-party?' + params.toString(), 'prowordsbyparty')
+        }
+      })
       // Incident: Archive
       // TODO:
       // Message: New

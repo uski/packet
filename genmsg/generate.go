@@ -46,6 +46,10 @@ type MessageSpec struct {
 	FromPrefix string
 	ToPrefix   string
 
+	// Training, if set, is saved with the incident when the message is
+	// created (see Apply), for IncidentReport. ResolveFlow sets it.
+	Training *TrainingRecord
+
 	// Purpose, if non-empty, is a short hint of what this specific
 	// message is about (e.g. "request shelter capacity status"). Leave
 	// empty to let Claude infer it from the scenario and its place in

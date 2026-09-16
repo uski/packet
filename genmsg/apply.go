@@ -42,6 +42,7 @@ func Apply(inc *incident.Incident, specs []MessageSpec, results []Result) ([]App
 	applied := make([]Applied, len(results))
 	ids := make([]string, len(results))
 	nextSeq := map[string]int{}
+	records := map[int]TrainingRecord{}
 	// A reply is created after the message it answers, so it can refer to
 	// that message's number.
 	for _, i := range generationOrder(specs) {
@@ -79,6 +80,12 @@ func Apply(inc *incident.Incident, specs []MessageSpec, results []Result) ([]App
 		}
 		ids[i] = le.LocalMsgID
 		applied[i] = Applied{Ident: le.Ident, ID: le.LocalMsgID, MsgType: spec.MsgType, Result: res}
+		if spec.Training != nil {
+			records[le.Ident] = *spec.Training
+		}
+	}
+	if err := saveTrainingRecords(inc.Dir, records); err != nil {
+		return nil, fmt.Errorf("saving the training message records: %w", err)
 	}
 	return applied, nil
 }

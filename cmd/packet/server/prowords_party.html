@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <meta charset="utf-8">
+  <title>Prowords by Party{{if .Incident}}: {{.Incident}}{{end}}</title>
+  <style>
+    @font-face {
+      font-family: Go;
+      src: local("Go"),
+        local("Go-Regular"),
+        local("Go Regular"),
+        url("/Go-Regular.woff2") format("woff2");
+    }
+
+    body {
+      font-family: Go, sans-serif;
+      margin: 1rem;
+    }
+
+    h1 {
+      font-size: 1.5rem;
+      margin: 0 0 0.5rem;
+    }
+
+    h2 {
+      font-size: 1.1rem;
+      margin: 1.5rem 0 0.5rem;
+    }
+
+    .hint {
+      color: #666;
+      max-width: 60rem;
+      margin: 0.25rem 0;
+    }
+
+    .scroll {
+      overflow-x: auto;
+    }
+
+    table {
+      border-collapse: collapse;
+    }
+
+    th,
+    td {
+      border: 1px solid #ccc;
+      padding: 0.15rem 0.5rem;
+      text-align: center;
+      vertical-align: top;
+    }
+
+    th:first-child,
+    td:first-child {
+      text-align: left;
+      white-space: nowrap;
+    }
+
+    .pp-f3row {
+      background-color: #e3eeff;
+    }
+
+    .pp-fullrow {
+      background-color: #fff1d6;
+    }
+
+    .pp-zero {
+      color: #999;
+    }
+
+    .pp-bad {
+      color: #c00;
+      font-weight: bold;
+    }
+
+    .pp-good {
+      color: #070;
+    }
+
+    .pp-short {
+      color: #a15c00;
+      font-size: 0.85em;
+      text-align: left;
+      max-width: 16rem;
+    }
+
+    .pp-declared {
+      outline: 2px solid #333;
+      outline-offset: -2px;
+    }
+
+    .credential {
+      display: block;
+      font-weight: normal;
+      font-size: 0.85em;
+      color: #555;
+    }
+  </style>
+</head>
+
+<body>
+  <h1>Prowords by Party{{if .Incident}}: {{.Incident}}{{end}}</h1>
+  <p class="hint">Recounted from the current content of every message in the incident. Senders, recipients, and
+    operator-to-operator traffic come from the record kept when a multi-party scenario generated the messages; for
+    other messages they are guessed from the message number, To address, and ICS positions.</p>
+  {{if not .Parties}}
+  <p>This incident has no messages.</p>
+  {{else}}
+  <h2>Prowords sent</h2>
+  <p class="hint"><span class="pp-f3row">&nbsp;F3 list&nbsp;</span> <span class="pp-fullrow">&nbsp;complete list only&nbsp;</span>
+    <span class="pp-bad">0</span> = required by the party's credential but never sent; – = not required for that party.</p>
+  <div class="scroll">
+    <table>
+      <tr>
+        <th>Proword</th>
+        {{range .Parties}}<th>{{.Name}}{{if .Credential}}<span class="credential">{{.Credential}}</span>{{end}}</th>{{end}}
+      </tr>
+      {{range .Prowords}}<tr class="{{.Class}}">
+        <td>{{.Label}}</td>{{range .Cells}}<td class="{{.Class}}">{{.Text}}</td>{{end}}
+      </tr>
+      {{end}}
+    </table>
+  </div>
+
+  <h2>Traffic</h2>
+  <div class="scroll">
+    <table>
+      <tr>
+        <th></th>
+        {{range .Parties}}<th>{{.Name}}</th>{{end}}
+      </tr>
+      {{range .Traffic}}<tr>
+        <td>{{.Label}}</td>{{range .Cells}}<td>{{.Text}}</td>{{end}}
+      </tr>
+      {{end}}
+    </table>
+  </div>
+
+  <h2>Credentials each party could reach</h2>
+  <p class="hint">A credential is reached when the party sends and receives the minimum traffic the Credentialing
+    Program Handbook requires, and sends every proword on its list at least once. The credential a party was
+    generated for is outlined. Net Control credentials have no message criteria, so they aren't listed.</p>
+  <div class="scroll">
+    <table>
+      <tr>
+        <th>Credential</th>
+        {{range .Parties}}<th>{{.Name}}</th>{{end}}
+      </tr>
+      {{range .Reach}}<tr>
+        <td>{{.Label}}</td>{{range .Cells}}<td class="{{.Class}}">{{.Text}}</td>{{end}}
+      </tr>
+      {{end}}
+    </table>
+  </div>
+  {{end}}
+</body>
+
+</html>

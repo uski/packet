@@ -76,4 +76,13 @@ func TestServeGetViewProwords(t *testing.T) {
 	if rr.Code != http.StatusOK || !strings.Contains(rr.Body.String(), `title="TELEPHONE FIGURES"`) {
 		t.Errorf("status %d, body:\n%s", rr.Code, rr.Body)
 	}
+
+	rr = httptest.NewRecorder()
+	s.serveGetProwordsByParty(rr, httptest.NewRequest(http.MethodGet, "/prowords-by-party?"+url.Values{"dir": {dir}}.Encode(), nil))
+	body := rr.Body.String()
+	for _, want := range []string{"Prowords by Party", "(unknown sender)", "Field III (F3)", "TELEPHONE FIGURES", `class="pp-f3row"`} {
+		if !strings.Contains(body, want) {
+			t.Errorf("prowords by party page (status %d) lacks %q:\n%s", rr.Code, want, body)
+		}
+	}
 }
