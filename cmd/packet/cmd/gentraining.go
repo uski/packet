@@ -45,7 +45,7 @@ For a coherent multi-party exchange -- e.g. one message asking all stations for 
     ]
   }
 
-A party's optional "credential" names the credential it is evaluated for ("F3", "F2", "F1", "S3", "S2", "S1", "P3", "P2", "P1", "N3", "N2", or "N1"); "F3" also selects the reduced proword list, as "f3": true does. The GUI dialog's "Check credential criteria" button compares each party's traffic with its credential's minimums from the Credentialing Program Handbook, and "Auto-add traffic to meet criteria" adds messages until they're met.
+A party's optional "credential" names the credential it is evaluated for ("F3", "F2", "F1", "S3", "S2", "S1", "P3", "P2", "P1", "N3", "N2", or "N1"); "F3" also selects the reduced proword list, as "f3": true does. The GUI dialog's "Check credential criteria" button compares each party's traffic with its credential's minimums from the Credentialing Program Handbook, and "Auto-add traffic to meet criteria" adds messages until they're met, all through the Net Control party (the one with a Net Control credential, or a role containing "Net Control"): Net Control to a station or to All Stations, and a station to Net Control, often as a reply.
 
 An optional top-level "scenario" gives the scenario text, used when --scenario isn't given. The "Save scenario…" button of the GUI's Generate Multi-Party Training Messages dialog writes a file in this format, and its "Load scenario…" button reads one.
 

@@ -65,9 +65,50 @@ func TestCompleteFlowMeetsCriteria(t *testing.T) {
 			t.Errorf("%s still falls short after completing: %v", c.Role, c.Problems)
 		}
 	}
-	for i, m := range out.Messages {
-		if m.From == m.To {
-			t.Errorf("added message %d goes from a party to itself", i+1)
+	types := map[string]bool{}
+	replies, fresh := 0, 0
+	for i, m := range out.Messages[1:] {
+		n := i + 2
+		switch {
+		case m.From == 0 && (m.To > 0 || m.To == -1 && m.ToLabel == "All Stations"):
+			if m.ReplyTo != 0 {
+				t.Errorf("added message %d from Net Control shouldn't be a reply", n)
+			}
+		case m.From > 0 && m.To == 0:
+			if m.ReplyTo > 0 {
+				replies++
+				target := out.Messages[m.ReplyTo-1]
+				if m.ReplyTo >= n || target.From != 0 || !(target.To == m.From || target.To == -1) {
+					t.Errorf("added message %d replies to message %d, which isn't an earlier Net Control message to that station", n, m.ReplyTo)
+				}
+				if isOpToOp(target.MsgType) != isOpToOp(m.MsgType) {
+					t.Errorf("added message %d replies to a different kind of message", n)
+				}
+			} else {
+				fresh++
+			}
+		default:
+			t.Errorf("added message %d goes from party %d to %d, not between Net Control and a station", n, m.From, m.To)
+		}
+		if !isOpToOp(m.MsgType) {
+			types[m.MsgType] = true
+		}
+	}
+	if replies == 0 || fresh == 0 {
+		t.Errorf("expected station messages to mix replies (%d) and new messages (%d)", replies, fresh)
+	}
+	if len(types) < 3 {
+		t.Errorf("expected varied form types, got %v", types)
+	}
+	// Each station replies to a given message at most once.
+	seen := map[[2]int]bool{}
+	for _, m := range out.Messages {
+		if m.ReplyTo > 0 {
+			key := [2]int{m.From, m.ReplyTo}
+			if seen[key] {
+				t.Errorf("party %d replies to message %d twice", m.From, m.ReplyTo)
+			}
+			seen[key] = true
 		}
 	}
 	if _, err := ResolveFlow(out); err != nil {
@@ -82,6 +123,10 @@ func TestCompleteFlowErrors(t *testing.T) {
 	formType(t, "ICS213")
 	if _, _, err := CompleteFlow(Flow{Parties: []FlowParty{{Role: "A", Credential: "F3"}}}); err == nil {
 		t.Error("a single party can't exchange messages")
+	}
+	noNetControl := Flow{Parties: []FlowParty{{Role: "Shelter A", Credential: "F3"}, {Role: "Shelter B", Credential: "F3"}}}
+	if _, _, err := CompleteFlow(noNetControl); err == nil || !strings.Contains(err.Error(), "Net Control") {
+		t.Errorf("auto-adding traffic without a Net Control party should fail, got %v", err)
 	}
 	if _, err := CheckFlow(Flow{Parties: []FlowParty{{Role: "A", Credential: "X9"}}}); err == nil || !strings.Contains(err.Error(), "credential") {
 		t.Errorf("an unknown credential should be rejected, got %v", err)
