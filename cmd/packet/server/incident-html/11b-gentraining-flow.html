@@ -40,9 +40,10 @@
       const partyOptions = mpPartyOptions()
       const msgRows = [...document.querySelectorAll('#mpmessages .mprow')]
       msgRows.forEach((row, i) => {
+        // "Each Station" last, so a new row defaults to a single party.
         mpSetOptions(row.querySelector('.mp-from'), [
-          { value: '-1', label: 'Each Station (fan-out)' },
           ...partyOptions,
+          { value: '-1', label: 'Each Station (fan-out)' },
         ])
         mpSetOptions(row.querySelector('.mp-to'), [
           { value: '-1', label: 'All Stations' },

@@ -154,6 +154,35 @@ func TestResolveFlowEachStationNoReplyToIncludesAllParties(t *testing.T) {
 	}
 }
 
+// TestResolveFlowNoStationMessagesItself covers each station sending to one
+// party without replying to anything: the recipient must not be among the
+// senders.
+func TestResolveFlowNoStationMessagesItself(t *testing.T) {
+	fl := Flow{
+		Parties: []FlowParty{{Role: "Net Control"}, {Role: "Shelter A"}, {Role: "Shelter B"}},
+		Messages: []FlowMessage{
+			{MsgType: "plain", From: fromEachStation, To: 0},
+		},
+	}
+	specs, err := ResolveFlow(fl)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(specs) != 2 {
+		t.Fatalf("got %d messages, want 2 (one from each shelter)", len(specs))
+	}
+	for _, s := range specs {
+		if s.From == s.To {
+			t.Errorf("%s sends a message to itself", s.From)
+		}
+	}
+
+	fl.Messages = []FlowMessage{{MsgType: "plain", From: 0, To: 0}}
+	if _, err := ResolveFlow(fl); err == nil || !strings.Contains(err.Error(), "to itself") {
+		t.Errorf("a message from a party to itself should be rejected, got %v", err)
+	}
+}
+
 func TestResolveFlowCannotReplyToFannedOutMessage(t *testing.T) {
 	fl := Flow{
 		Parties: []FlowParty{{Role: "A"}, {Role: "B"}},

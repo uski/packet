@@ -100,10 +100,11 @@ func resolveTo(fm FlowMessage, parties []FlowParty) (FlowParty, error) {
 //
 // A FlowMessage with From == -1 ("one message from each party") fans out
 // into one MessageSpec per party, each with that party as its sender --
-// the common case of a broadcast request that every station answers. If
-// the fanned-out message replies to another (ReplyTo > 0) and that other
-// message has a single, ordinary sender, that sender is excluded from the
-// fan-out (a station doesn't reply to its own broadcast). Another message
+// the common case of a broadcast request that every station answers. The
+// fan-out leaves out the recipient party, and the sender of the message it
+// replies to (ReplyTo > 0), since no station sends a message to itself or
+// replies to its own broadcast. An ordinary message's From and To must be
+// different parties. Another message
 // may not reply to a fanned-out one (ReplyTo pointing at a From == -1
 // entry), since there would be no single message to reply to.
 func ResolveFlow(fl Flow) ([]MessageSpec, error) {
@@ -129,24 +130,26 @@ func ResolveFlow(fl Flow) ([]MessageSpec, error) {
 			return nil, fmt.Errorf("message %d: invalid \"replyTo\" %d", i+1, fm.ReplyTo)
 		}
 		if fm.From == fromEachStation {
-			excluded := -1
+			// No station sends to itself: leave out the recipient, and
+			// the sender of the message being answered.
+			excluded := map[int]bool{fm.To: true}
 			if fm.ReplyTo > 0 {
-				if ref := fl.Messages[fm.ReplyTo-1]; ref.From >= 0 && ref.From < len(fl.Parties) {
-					excluded = ref.From
-				}
+				excluded[fl.Messages[fm.ReplyTo-1].From] = true
 			}
 			var idxs []int
 			for p := range fl.Parties {
-				if p != excluded {
+				if !excluded[p] {
 					idxs = append(idxs, p)
 				}
 			}
 			if len(idxs) == 0 {
-				return nil, fmt.Errorf("message %d: \"from each station\" has no parties left once the message it replies to is excluded", i+1)
+				return nil, fmt.Errorf("message %d: \"from each station\" has no parties left once its recipient and the sender of the message it replies to are excluded", i+1)
 			}
 			partyIndices[i] = idxs
 		} else if fm.From < 0 || fm.From >= len(fl.Parties) {
 			return nil, fmt.Errorf("message %d: invalid \"from\" party index %d", i+1, fm.From)
+		} else if fm.From == fm.To {
+			return nil, fmt.Errorf("message %d: %s can't send a message to itself", i+1, fl.Parties[fm.From].Role)
 		} else {
 			partyIndices[i] = []int{fm.From}
 		}
