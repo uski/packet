@@ -75,7 +75,7 @@ var catalog = map[Category]info{
 	},
 	MixedGroupFigures: {
 		Proword: "MIXED GROUP FIGURE(S)",
-		Prompt:  `Include at least one group that STARTS WITH A DIGIT and also holds letters or symbols (e.g. "2C", a frequency like "146.595", a rating like "5kW", a temperature like "28°F", or "50%"), so the sender must use the MIXED GROUP FIGURE(S) proword.`,
+		Prompt:  `Include at least one group that STARTS WITH A DIGIT and also holds letters or symbols (e.g. "2C", a decimal measurement like "2.5", a rating like "5kW", a temperature like "28°F", or "50%"), so the sender must use the MIXED GROUP FIGURE(S) proword.`,
 	},
 	MixedGroupSymbols: {
 		Proword: "MIXED GROUP SYMBOL(S)",
@@ -123,7 +123,7 @@ var catalog = map[Category]info{
 	},
 	InternetAddress: {
 		Proword: "INTERNET ADDRESS",
-		Prompt:  `Include a web address, so the sender must use the INTERNET ADDRESS proword. ALWAYS use "xanadu-city.org" as the domain (e.g. "https://www.xanadu-city.org" or "xanadu-city.org/shelters") -- never a real-world domain.`,
+		Prompt:  `Include a web address, so the sender must use the INTERNET ADDRESS proword. It MUST start with "https://", and ALWAYS use "xanadu-city.org" as the domain (e.g. "https://www.xanadu-city.org" or "https://xanadu-city.org/shelters") -- never a real-world domain.`,
 		re:      regexp.MustCompile(`https?://\S+|\bwww\.\S+\.\S+|\b[a-zA-Z0-9-]+\.(org|com|net|gov)/\S+`),
 	},
 	CaseSensitive: {

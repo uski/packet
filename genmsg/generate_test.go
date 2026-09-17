@@ -262,3 +262,16 @@ func TestPromptsAskForRealism(t *testing.T) {
 		}
 	}
 }
+
+func TestPromptsSetContentRules(t *testing.T) {
+	mt := formType(t, "ICS213")
+	req := Request{Messages: []MessageSpec{{MsgType: mt}, {MsgType: mt}}}
+	for name, prompt := range map[string]string{"message": sharedPrompt(req, ""), "brief": buildBriefPrompt(req)} {
+		if !strings.Contains(prompt, "Never mention an amateur radio frequency") || !strings.Contains(prompt, `MUST start with "https://"`) {
+			t.Errorf("the %s prompt lacks the frequency and https rules", name)
+		}
+		if strings.Contains(prompt, "146.") || strings.Contains(prompt, `"xanadu-city.org/`) {
+			t.Errorf("the %s prompt still has an example with a frequency or a URL without https://", name)
+		}
+	}
+}

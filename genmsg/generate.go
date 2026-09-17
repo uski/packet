@@ -687,6 +687,7 @@ func buildBriefPrompt(req Request) string {
 		"1. The incident: what happened, where, and when.\n" +
 		"2. Shared facts every message must agree on: names of people, places and addresses, quantities, times, amateur call signs, and the specific details that make requests realistic (e.g. a generator's make, model number, and power rating). Use only the xanadu-city.org domain for any email or web address, and only fictitious call signs ending with a digit, like W6XRL4, never a real call sign.\n" +
 		"   " + fictionalPlacesPrompt + "\n" +
+		"   " + contentRulesPrompt + "\n" +
 		"3. One line per message saying specifically what it reports, requests, or answers, so each reply answers what was actually asked (nothing for a message sent as is).\n" +
 		"Do not write the messages themselves. Each message will be at most about 50 words.\n")
 	return b.String()
@@ -863,6 +864,9 @@ func buildPrompt(req Request, brief string, specsPerMsg [][]FieldSpec, results [
 // it can't be mistaken for a report about one.
 const fictionalPlacesPrompt = `Every place must be fictitious, so exercise traffic can't be confused with a real incident: invent street names, cross streets, building names, and street numbers freely, but the city is ALWAYS "Xanadu City" and the county, whenever one is mentioned, is ALWAYS "Xanadu County" -- even when the scenario mentions a real place. Never name a real city, county, street address, highway, or facility (such as a real school, hospital, or business location).`
 
+// contentRulesPrompt gives rules for what exercise traffic may contain.
+const contentRulesPrompt = `Never mention an amateur radio frequency (no frequencies, repeaters, or channels in MHz or kHz). Every web address (URL) MUST start with "https://".`
+
 // realismPrompt asks for the specific details real requests and reports
 // carry. Such details (model numbers, ratings) also tend to call for mixed
 // group and figures prowords naturally.
@@ -885,7 +889,7 @@ func sharedPrompt(req Request, brief string) string {
 		fmt.Fprintf(&b, "The incident takes place on %s; any date a message mentions must be consistent with that. Date and time fields are filled in separately, so they aren't listed.\n\n", date)
 	}
 	b.WriteString("Messages may be different form types with different fields (a training session can mix, for example, an ICS-213, a plain text message, and a Road Closure form). Weave each message's listed requirements naturally into that message's own field values -- they must fit the scenario and read like real, professional emergency radio traffic, not like a checklist. Proword content in ANY field counts, so each requirement only needs to be met ONCE, in the single field that suits it best (a person's name in a name field, an email address or phone number in a contact field) -- never repeat it in another field, and never add a sentence to the free-text body just to carry it (e.g. not \"Contact Jane Doe at jane@xanadu-city.org for logistics.\" when there are name and contact fields to hold them). Requirements already satisfied by pre-filled fields have been left out. Fill each form the way a trained operator fills out the real form: put every piece of information in the field made for it -- for example each requested item in its own item row (Item 1's name and quantity, then Item 2's), a person in a name field, a phone number in a phone field -- and use a free-text field such as Comments or Special Instructions only for information no other field holds, never to restate other fields (e.g. not \"Need 50 blankets, generator\" in Comments when the form has item fields). A subject, title, or summary field is only a short headline of a few words: the message's details go in its message body or the form's other fields, never in the subject.\n")
-	b.WriteString(realismPrompt + "\n\n" + fictionalPlacesPrompt + "\n\n")
+	b.WriteString(realismPrompt + "\n\n" + fictionalPlacesPrompt + "\n\n" + contentRulesPrompt + "\n\n")
 	b.WriteString("How to meet each proword requirement a message lists:\n")
 	full, _ := prowords.Profile(prowords.LevelFull)
 	for _, cat := range full {

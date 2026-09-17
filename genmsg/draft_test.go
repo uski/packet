@@ -404,7 +404,7 @@ func TestBuildDraftIncidentDate(t *testing.T) {
 func TestGenerateTrimsOverBudgetMessage(t *testing.T) {
 	// Satisfies every f3-profile category on its own, in about 40 words.
 	const body = `Please call KJ6ABC at 408-555-1212 or email kj6abc@xanadu-city.org ` +
-		`about the Kaczmarek Street closure near model A123, use channel #4 at 146.595 MHz; ` +
+		`about the Kaczmarek Street closure near model A123, use gate #4 within 2.5 miles; ` +
 		`confirm ETA by 1500 & initials J.R. Total 5 units, cost is $250. This is drill traffic.`
 	padding := strings.Repeat(" more", 40)
 

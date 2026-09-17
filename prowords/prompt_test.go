@@ -14,7 +14,7 @@ func TestPromptExamplesAreDetected(t *testing.T) {
 		ISpell:               {"Diego Marchetti", "Kaczmarek Street"},
 		Figures:              {"100 containers"},
 		MixedGroup:           {"F150", "W6XRL4/VA", "abc-123"},
-		MixedGroupFigures:    {"2C", "146.595", "5kW", "28°F", "50%"},
+		MixedGroupFigures:    {"2C", "2.5", "5kW", "28°F", "50%"},
 		MixedGroupSymbols:    {"-10 degrees", "$32", "#4", "-32°F"},
 		Initials:             {"EOC", "ARRL"},
 		Symbols:              {"Replace all ? with a value", "This != that", "Smith & Jones"},
@@ -23,7 +23,7 @@ func TestPromptExamplesAreDetected(t *testing.T) {
 		EmailAddress:         {"harry@xanadu-city.org"},
 		GPSCoordinates:       {"37.336 N, 121.890 W", "37 20.16', 121 53.40'"},
 		PacketAddress:        {"w6xrl4@w6bbs4.#nca.ca.usa"},
-		InternetAddress:      {"https://www.xanadu-city.org", "xanadu-city.org/shelters"},
+		InternetAddress:      {"https://www.xanadu-city.org", "https://xanadu-city.org/shelters"},
 		CaseSensitive:        {"PackItForms", "pasSWOrd"},
 		SubscriptSuperscript: {"H₂O", "10⁵"},
 	}
