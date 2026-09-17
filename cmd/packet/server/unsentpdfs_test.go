@@ -3,6 +3,7 @@ package server
 import (
 	"archive/zip"
 	"bytes"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -13,6 +14,7 @@ import (
 	"github.com/rothskeller/packet/v4/form/formdefs"
 	"github.com/rothskeller/packet/v4/incident"
 	"github.com/rothskeller/packet/v4/message"
+	"github.com/rothskeller/pdf/v2"
 )
 
 func TestServeGetUnsentPDFs(t *testing.T) {
@@ -32,9 +34,10 @@ func TestServeGetUnsentPDFs(t *testing.T) {
 		t.Fatal(err)
 	}
 	s := &Server{stop: make(chan struct{})}
-	get := func() *httptest.ResponseRecorder {
+	get := func(format ...string) *httptest.ResponseRecorder {
+		query := url.Values{"dir": {dir}, "format": format}
 		rr := httptest.NewRecorder()
-		s.serveGetUnsentPDFs(rr, httptest.NewRequest(http.MethodGet, "/unsent-pdfs?"+url.Values{"dir": {dir}}.Encode(), nil))
+		s.serveGetUnsentPDFs(rr, httptest.NewRequest(http.MethodGet, "/unsent-pdfs?"+query.Encode(), nil))
 		return rr
 	}
 	if rr := get(); rr.Code != http.StatusNotFound {
@@ -70,19 +73,22 @@ func TestServeGetUnsentPDFs(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	var names []string
+	var (
+		names []string
+		pages int
+	)
 	for _, f := range zr.File {
 		names = append(names, f.Name)
 		fr, err := f.Open()
 		if err != nil {
 			t.Fatal(err)
 		}
-		head := make([]byte, 4)
-		fr.Read(head)
+		data, err := io.ReadAll(fr)
 		fr.Close()
-		if string(head) != "%PDF" {
-			t.Errorf("%s is not a PDF", f.Name)
+		if err != nil {
+			t.Fatal(err)
 		}
+		pages += pdfPages(t, f.Name, data)
 	}
 	if len(names) != 3 || !slices.ContainsFunc(names, func(n string) bool { return strings.Contains(n, "ICS213") }) {
 		t.Errorf("files = %q, want 3 PDFs, one of them the ICS-213", names)
@@ -92,4 +98,29 @@ func TestServeGetUnsentPDFs(t *testing.T) {
 	if len(slices.Compact(names)) != 3 {
 		t.Errorf("file names should be unique: %q", names)
 	}
+
+	rr = get("pdf")
+	if rr.Code != http.StatusOK || rr.Header().Get("Content-Type") != "application/pdf" {
+		t.Fatalf("single PDF: status %d, content type %q: %s", rr.Code, rr.Header().Get("Content-Type"), rr.Body)
+	}
+	if n := pdfPages(t, "single PDF", rr.Body.Bytes()); n != pages || n < 3 {
+		t.Errorf("single PDF has %d pages, want the %d of the separate PDFs", n, pages)
+	}
+	if rr := get("doc"); rr.Code != http.StatusBadRequest {
+		t.Errorf("unknown format: status %d, want 400", rr.Code)
+	}
+}
+
+// pdfPages parses data as a PDF and returns its number of pages.
+func pdfPages(t *testing.T, name string, data []byte) int {
+	t.Helper()
+	p, err := pdf.Open(bytes.NewReader(data))
+	if err != nil {
+		t.Fatalf("%s is not a valid PDF: %v", name, err)
+	}
+	n, err := p.NumPages()
+	if err != nil {
+		t.Fatalf("%s: %v", name, err)
+	}
+	return n
 }

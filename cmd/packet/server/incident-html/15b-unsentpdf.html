@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <script> // Download Unsent Messages Dialog
+    function setupUnsentPDFsDialog() {
+      document.getElementById('upform').addEventListener('submit', async evt => {
+        evt.preventDefault()
+        const format = document.querySelector('input[name=upformat]:checked').value
+        const params = new URLSearchParams({ dir: document.body.dataset.dir, format })
+        const sub = document.getElementById('upsub')
+        sub.disabled = true
+        document.getElementById('upstatus').textContent = 'Creating the PDFs…'
+        try {
+          const resp = await fetch2('/unsent-pdfs?' + params.toString())
+          if (!resp.ok) {
+            document.getElementById('updlg').close()
+            openErrorDialog('Download Unsent Messages', await resp.text())
+            return
+          }
+          const a = document.createElement('a')
+          a.href = URL.createObjectURL(await resp.blob())
+          a.download = format === 'pdf' ? 'unsent-messages.pdf' : 'unsent-messages.zip'
+          document.body.appendChild(a)
+          a.click()
+          a.remove()
+          setTimeout(() => URL.revokeObjectURL(a.href), 1000)
+          document.getElementById('updlg').close()
+        } finally {
+          sub.disabled = false
+          document.getElementById('upstatus').textContent = ''
+        }
+      })
+      document.getElementById('upcan').addEventListener('click', () => {
+        document.getElementById('updlg').close()
+      })
+    }
+    function openUnsentPDFsDialog() {
+      document.getElementById('upstatus').textContent = ''
+      document.getElementById('updlg').showModal()
+    }
+  </script>
+  <style>
+    #updlg {
+      margin: 4rem auto;
+      padding: 0 0.75rem 0.75rem;
+      z-index: 2;
+    }
+
+    #updlg h1 {
+      background-color: #a8e8a8;
+      margin: 0 -0.75rem;
+      padding: 0.5rem 0.75rem;
+      font-size: 1.5rem;
+    }
+
+    #upform {
+      max-width: 40rem;
+      margin-top: 1rem;
+    }
+
+    #upform label {
+      display: block;
+      margin-top: 0.5rem;
+    }
+
+    #upstatus {
+      margin-top: 1rem;
+      color: #666;
+    }
+
+    #upbuttons {
+      margin-top: 1.5rem;
+      display: flex;
+      justify-content: end;
+      gap: 0.75rem;
+    }
+
+    #upcan,
+    #upsub {
+      border-radius: 0.25rem;
+    }
+
+    #upsub {
+      background-color: #a8e8a8;
+    }
+  </style>
+</head>
+
+<body>
+  <dialog id=updlg>
+    <h1>Download Unsent Messages</h1>
+    <form id=upform>
+      <div>Download a PDF of every unsent message as:</div>
+      <label><input type=radio name=upformat value=pdf checked> One PDF with all the messages, one after another</label>
+      <label><input type=radio name=upformat value=zip> A ZIP file with a separate PDF for each message</label>
+      <div id=upstatus></div>
+      <div id=upbuttons>
+        <button id=upcan type=button>Cancel</button>
+        <input id=upsub type=submit value="Download">
+      </div>
+    </form>
+  </dialog>
+</body>
+
+</html>
