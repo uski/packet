@@ -143,15 +143,50 @@
     // mpSaveScenario downloads the dialog's parties, messages, and scenario
     // as a JSON file (the same format "packet gentrain --flow" reads).
     function mpSaveScenario() {
-      const data = { scenario: document.getElementById('mpscenario').value, ...mpBuildFlow() }
-      const blob = new Blob([JSON.stringify(data, null, 2) + '\n'], { type: 'application/json' })
+      const blob = new Blob([JSON.stringify(mpScenarioData(), null, 2) + '\n'], { type: 'application/json' })
+      mpDownload(blob, 'scenario.json')
+    }
+
+    function mpScenarioData() {
+      return { scenario: document.getElementById('mpscenario').value, ...mpBuildFlow() }
+    }
+
+    function mpDownload(blob, filename) {
       const a = document.createElement('a')
       a.href = URL.createObjectURL(blob)
-      a.download = 'scenario.json'
+      a.download = filename
       document.body.appendChild(a)
       a.click()
       a.remove()
       setTimeout(() => URL.revokeObjectURL(a.href), 1000)
+    }
+
+    // mpExportUML downloads the scenario as a PlantUML sequence diagram.
+    async function mpExportUML() {
+      const err = document.getElementById('mperr')
+      err.textContent = ''
+      const resp = await fetch2('/gentrain-flow-uml', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(mpScenarioData()) })
+      if (!resp.ok) {
+        err.textContent = (await resp.text()) || resp.statusText
+        return
+      }
+      mpDownload(await resp.blob(), 'scenario.puml')
+    }
+
+    // mpViewDiagram opens the scenario as a printable diagram in a new tab.
+    function mpViewDiagram() {
+      const form = document.createElement('form')
+      form.method = 'POST'
+      form.action = '/gentrain-flow-diagram'
+      form.target = '_blank'
+      const input = document.createElement('input')
+      input.type = 'hidden'
+      input.name = 'flow'
+      input.value = JSON.stringify(mpScenarioData())
+      form.appendChild(input)
+      document.body.appendChild(form)
+      form.submit()
+      form.remove()
     }
 
     // mpLoadScenario fills the dialog from a file saved by mpSaveScenario.
@@ -450,6 +485,8 @@
       document.getElementById('mpmsgadd').addEventListener('click', () => mpAddMessageRow())
       document.getElementById('mpparties').addEventListener('input', mpSyncOptions)
       document.getElementById('mpsave').addEventListener('click', mpSaveScenario)
+      document.getElementById('mpuml').addEventListener('click', mpExportUML)
+      document.getElementById('mpview').addEventListener('click', mpViewDiagram)
       document.getElementById('mpcheckbtn').addEventListener('click', async () => {
         const data = await mpPostFlow('/gentrain-flow-check')
         if (data) mpShowCheck(data.parties)
@@ -751,6 +788,8 @@
       <div id=mpfilerow>
         <button type=button id=mpload>Load scenario…</button>
         <button type=button id=mpsave>Save scenario…</button>
+        <button type=button id=mpuml>Export UML…</button>
+        <button type=button id=mpview>View diagram…</button>
         <input type=file id=mploadfile accept=".json,application/json" hidden>
       </div>
       <p>Parties in this exchange:</p>

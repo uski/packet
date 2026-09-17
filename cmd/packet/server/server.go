@@ -340,6 +340,8 @@ func (s *Server) registerHandlers() {
 	s.mux.HandleFunc("POST /gentrain-messages", s.servePostGenTraining)
 	s.mux.HandleFunc("POST /gentrain-flow", s.servePostGenTrainingFlow)
 	s.mux.HandleFunc("POST /gentrain-flow-check", s.servePostGenTrainingFlowCheck)
+	s.mux.HandleFunc("POST /gentrain-flow-uml", s.servePostGenTrainingFlowUML)
+	s.mux.HandleFunc("POST /gentrain-flow-diagram", s.servePostGenTrainingFlowDiagram)
 	s.mux.HandleFunc("POST /gentrain-flow-complete", s.servePostGenTrainingFlowComplete)
 	s.mux.HandleFunc("GET /gentrain-progress", s.serveGetGenTrainingProgress)
 	s.mux.HandleFunc("GET /new-message", s.serveGetNewMessage)

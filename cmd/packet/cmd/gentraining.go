@@ -25,6 +25,7 @@ usage: packet gentrain ⇥[-flags] «msg-type» [«msg-type» ...]
   -l, --level «level»      ⇥Proword profile: "f3" or "full" (default "full"); ignored with --flow, where each party has its own "f3" flag instead
   -s, --scenario «text»    ⇥Scenario to steer the generated content
   -f, --flow «file.json»   ⇥Generate a multi-party message flow from a JSON file
+      --uml                ⇥With --flow, print the flow as a PlantUML sequence diagram instead
 
 The "packet gentrain" (or "gentraining") command asks Claude to draft one realistic 3rd-party message for each «msg-type» given on the command line (see "packet forms list" for the supported tags/keys, or "plain" for a plain text message), suitable for handing to a candidate during an SCCo RACES credential evaluation.
 
@@ -70,6 +71,7 @@ func cmdGentraining(args []string) (err error) {
 		level    string
 		scenario string
 		flowFile string
+		uml      bool
 		specs    []genmsg.MessageSpec
 		c        = cio.Open()
 	)
@@ -77,6 +79,7 @@ func cmdGentraining(args []string) (err error) {
 	flags.StringVarP(&level, "level", "l", prowords.LevelFull, `Proword profile: "f3" or "full"`)
 	flags.StringVarP(&scenario, "scenario", "s", "", "Scenario to steer the generated content")
 	flags.StringVarP(&flowFile, "flow", "f", "", "Generate a multi-party message flow from a JSON file")
+	flags.BoolVar(&uml, "uml", false, "With --flow, print the flow as a PlantUML sequence diagram instead of generating it")
 	flags.Usage = func() {} // we do our own
 	if err = flags.Parse(args); err == pflag.ErrHelp {
 		return cmdHelp([]string{"gentraining"})
@@ -113,10 +116,22 @@ func cmdGentraining(args []string) (err error) {
 		if scenario == "" {
 			scenario = fl.Scenario
 		}
+		if uml {
+			d, err := genmsg.FlowDiagram(fl.Flow)
+			if err != nil {
+				c.ErrorF(`%s: %s.`, flowFile, err)
+				return usage(gentrainingHelp)
+			}
+			fmt.Print(d.PlantUML(fl.Scenario))
+			return nil
+		}
 		if specs, err = genmsg.ResolveFlow(fl.Flow); err != nil {
 			c.ErrorF(`%s: %s.`, flowFile, err)
 			return usage(gentrainingHelp)
 		}
+	} else if uml {
+		c.ErrorF(`--uml requires --flow.`)
+		return usage(gentrainingHelp)
 	} else {
 		specs = make([]genmsg.MessageSpec, flags.NArg())
 		for argidx := range flags.NArg() {
