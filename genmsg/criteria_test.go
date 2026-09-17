@@ -159,3 +159,18 @@ func TestCompleteFlowErrors(t *testing.T) {
 		t.Errorf("an unknown credential should be rejected, got %v", err)
 	}
 }
+
+// TestCredentialNeedsFollowHandbook pins the minimums to the Operator Skills
+// sections of the Credentialing Program Handbook v3.2.
+func TestCredentialNeedsFollowHandbook(t *testing.T) {
+	for cred, want := range map[string]Traffic{
+		"F3": {2, 2, 2}, "F2": {3, 2, 2}, "F1": {3, 2, 2},
+		"N3": {2, 2, 2}, "N2": {3, 2, 3}, "N1": {3, 2, 3},
+		"S3": {2, 0, 2}, "S2": {2, 0, 2}, "S1": {2, 0, 2},
+		"P3": {2, 2, 2}, "P2": {2, 2, 2}, "P1": {2, 2, 2},
+	} {
+		if got := credentialNeeds[cred]; got != want {
+			t.Errorf("%s needs %+v, want %+v", cred, got, want)
+		}
+	}
+}

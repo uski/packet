@@ -30,10 +30,10 @@ type CredentialCheck struct {
 	Missing    []string
 }
 
-// ReportCredentials lists the credentials a report checks, in order. The
-// Net Control credentials have no message criteria, so they're left out.
+// ReportCredentials lists the credentials a report checks, in order.
 var ReportCredentials = []struct{ Code, Label string }{
 	{"F3", "Field III (F3)"}, {"F2", "Field II"}, {"F1", "Field I"},
+	{"N3", "Net Control III"}, {"N2", "Net Control II"}, {"N1", "Net Control I"},
 	{"S3", "Shadow III"}, {"S2", "Shadow II"}, {"S1", "Shadow I"},
 	{"P3", "Packet III"}, {"P2", "Packet II"}, {"P1", "Packet I"},
 }

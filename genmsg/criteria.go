@@ -17,24 +17,25 @@ type Traffic struct {
 
 // credentialNeeds gives, for each credential a flow party can be evaluated
 // for, the traffic it must send and receive (each direction), per the
-// Credentialing Program Handbook's Operator Skills sections. Field I,
-// Shadow I, and Packet I state no counts of their own, so they take their
-// Type II minimums; the Net Control credentials aren't evaluated on
-// message counts. The empty credential is a party not being evaluated.
+// Credentialing Program Handbook's Operator Skills sections. Field I, Net
+// Control I, Shadow I, and Packet I state no counts of their own ("perform
+// any of the Type II evaluation criteria"), so they take their Type II
+// minimums. The Shadow credentials don't require forms. The empty
+// credential is a party not being evaluated.
 var credentialNeeds = map[string]Traffic{
 	"":   {},
 	"F3": {ThirdParty: 2, Forms: 2, OpToOp: 2},
 	"F2": {ThirdParty: 3, Forms: 2, OpToOp: 2},
 	"F1": {ThirdParty: 3, Forms: 2, OpToOp: 2},
-	"S3": {ThirdParty: 2, Forms: 2, OpToOp: 2},
-	"S2": {ThirdParty: 3, Forms: 2, OpToOp: 3},
-	"S1": {ThirdParty: 3, Forms: 2, OpToOp: 3},
+	"N3": {ThirdParty: 2, Forms: 2, OpToOp: 2},
+	"N2": {ThirdParty: 3, Forms: 2, OpToOp: 3},
+	"N1": {ThirdParty: 3, Forms: 2, OpToOp: 3},
+	"S3": {ThirdParty: 2, OpToOp: 2},
+	"S2": {ThirdParty: 2, OpToOp: 2},
+	"S1": {ThirdParty: 2, OpToOp: 2},
 	"P3": {ThirdParty: 2, Forms: 2, OpToOp: 2},
 	"P2": {ThirdParty: 2, Forms: 2, OpToOp: 2},
 	"P1": {ThirdParty: 2, Forms: 2, OpToOp: 2},
-	"N3": {},
-	"N2": {},
-	"N1": {},
 }
 
 // opToOpTypes are the message types (by create tag, lower case) counted as
