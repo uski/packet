@@ -87,10 +87,23 @@ func saveTrainingRecords(dir string, records map[int]TrainingRecord) error {
 	if err != nil {
 		return err
 	}
-	byKey := make(map[string]TrainingRecord, len(all)+len(records))
-	for ident, r := range all {
-		byKey[strconv.Itoa(ident)] = r
+	for ident, r := range records {
+		all[ident] = r
 	}
+	return writeTrainingRecords(dir, all)
+}
+
+// writeTrainingRecords replaces the records saved in incident directory dir
+// with records, removing the file if there are none.
+func writeTrainingRecords(dir string, records map[int]TrainingRecord) error {
+	if len(records) == 0 {
+		err := os.Remove(filepath.Join(dir, trainingFileName))
+		if errors.Is(err, os.ErrNotExist) {
+			return nil
+		}
+		return err
+	}
+	byKey := make(map[string]TrainingRecord, len(records))
 	for ident, r := range records {
 		byKey[strconv.Itoa(ident)] = r
 	}
@@ -99,4 +112,27 @@ func saveTrainingRecords(dir string, records map[int]TrainingRecord) error {
 		return err
 	}
 	return os.WriteFile(filepath.Join(dir, trainingFileName), data, 0o644)
+}
+
+// ForgetTrainingRecords removes the records of the log entries with the
+// given idents (e.g. deleted messages) from incident directory dir.
+func ForgetTrainingRecords(dir string, idents []int) error {
+	if len(idents) == 0 {
+		return nil
+	}
+	all, err := loadTrainingRecords(dir)
+	if err != nil {
+		return err
+	}
+	var removed bool
+	for _, ident := range idents {
+		if _, ok := all[ident]; ok {
+			delete(all, ident)
+			removed = true
+		}
+	}
+	if !removed {
+		return nil
+	}
+	return writeTrainingRecords(dir, all)
 }

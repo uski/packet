@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <script> // Delete All Messages Dialog
+    function setupDeleteAllMessagesDialog() {
+      document.getElementById('dasub').addEventListener('click', async () => {
+        const params = new URLSearchParams({ dir: document.body.dataset.dir })
+        const resp = await fetch2('/delete-all-messages?' + params.toString(), { method: 'POST' })
+        document.getElementById('dadlg').close()
+        if (!resp.ok) openErrorDialog('Delete All Messages', await resp.text())
+      })
+      document.getElementById('dacan').addEventListener('click', () => {
+        document.getElementById('dadlg').close()
+      })
+    }
+    async function openDeleteAllMessagesDialog() {
+      const params = new URLSearchParams({ dir: document.body.dataset.dir, dryrun: '1' })
+      const resp = await fetch2('/delete-all-messages?' + params.toString(), { method: 'POST' })
+      if (!resp.ok) {
+        openErrorDialog('Delete All Messages', await resp.text())
+        return
+      }
+      const counts = await resp.json()
+      const msg = document.getElementById('damsg')
+      const kept = counts.kept
+        ? ` ${counts.kept} sent or received message(s) will be kept: they are part of the incident's record and can't be deleted.`
+        : ''
+      if (!counts.deleted) {
+        msg.textContent = 'There are no unsent messages or manual log entries to delete.' + kept
+      } else {
+        msg.textContent = `Are you sure you want to delete all ${counts.deleted} unsent message(s) and manual log entries? This can't be undone.` + kept
+      }
+      document.getElementById('dasub').hidden = !counts.deleted
+      document.getElementById('dacan').textContent = counts.deleted ? 'Cancel' : 'Close'
+      document.getElementById('dadlg').showModal()
+    }
+  </script>
+  <style>
+    #dadlg {
+      margin: 4rem auto;
+      padding: 0 0.75rem 0.75rem;
+      z-index: 2;
+    }
+
+    #dadlg h1 {
+      background-color: #e7a6a6;
+      margin: 0 -0.75rem;
+      padding: 0.5rem 0.75rem;
+      font-size: 1.5rem;
+    }
+
+    #damsg {
+      max-width: 40rem;
+      margin-top: 1.5rem;
+    }
+
+    #dabuttons {
+      margin-top: 1.5rem;
+      display: flex;
+      justify-content: end;
+      gap: 0.75rem;
+    }
+
+    #dacan,
+    #dasub {
+      border-radius: 0.25rem;
+    }
+
+    #dasub {
+      background-color: #e7a6a6;
+    }
+  </style>
+</head>
+
+<body>
+  <dialog id=dadlg>
+    <h1>Delete All Messages</h1>
+    <div id=damsg></div>
+    <div id=dabuttons>
+      <button id=dacan type=button>Cancel</button>
+      <button id=dasub type=button>Delete All</button>
+    </div>
+  </dialog>
+</body>
+
+</html>

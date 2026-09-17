@@ -359,6 +359,7 @@ func (s *Server) registerHandlers() {
 	s.mux.HandleFunc("POST /toggle-flag", s.servePostToggleFlag)
 	s.mux.HandleFunc("POST /new-message-from", s.servePostNewMessageFrom)
 	s.mux.HandleFunc("POST /delete-message", s.servePostDeleteMessage)
+	s.mux.HandleFunc("POST /delete-all-messages", s.servePostDeleteAllMessages)
 	s.mux.HandleFunc("GET /view-encoded", s.serveGetViewEncoded)
 	s.mux.HandleFunc("GET /view-prowords", s.serveGetViewProwords)
 	s.mux.HandleFunc("GET /prowords-by-party", s.serveGetProwordsByParty)

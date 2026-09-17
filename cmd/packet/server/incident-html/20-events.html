@@ -245,6 +245,11 @@
           if (!resp.ok) openErrorDialog('Delete Log Entry', await resp.text())
         },
       })
+      // Message: Delete All Messages
+      setupMenuItem({
+        id: 'm-msg-delete-all',
+        clicked: () => { openDeleteAllMessagesDialog() },
+      })
       // Message: View Encoded
       setupMenuItem({
         id: 'm-msg-view-enc', cid: 'cm-msg-view-enc',
