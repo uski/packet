@@ -143,9 +143,9 @@ const DrillTrafficPhrase = "This is drill traffic"
 // too long, or missing required content.
 const maxRounds = 3
 
-const briefSystemPrompt = `You are helping a Santa Clara County ARES/RACES credential evaluator plan a short, realistic emergency-communications training exercise whose messages will be written one at a time from your plan. Respond with plain text only.`
+const briefSystemPrompt = `You are helping a Santa Clara County ARES/RACES credential evaluator plan a short, realistic emergency-communications training exercise whose messages will be written one at a time from your plan. The exercise is set in the fictitious Xanadu City, Xanadu County. Respond with plain text only.`
 
-const systemPrompt = `You are helping a Santa Clara County ARES/RACES credential evaluator generate realistic, short, third-party emergency-communications training messages. A candidate being evaluated will read these messages aloud over amateur radio using proper message-passing procedure, so the written content must naturally require specific prowords when voiced correctly (for example, a message won't require the EMAIL ADDRESS proword unless it actually contains an email address). Some batches are a single coherent multi-party exchange (e.g. one message requesting a status update, answered by several reply messages) rather than independent messages -- when a message says it replies to another, its content must directly and consistently respond to that message, as a real reply would. Respond with ONLY a single JSON array (no markdown code fences, no commentary before or after) containing one object per requested message, each object mapping the given field tags to string values.`
+const systemPrompt = `You are helping a Santa Clara County ARES/RACES credential evaluator generate realistic, short, third-party emergency-communications training messages. The exercises are set in the fictitious Xanadu City, Xanadu County, never in a real place. A candidate being evaluated will read these messages aloud over amateur radio using proper message-passing procedure, so the written content must naturally require specific prowords when voiced correctly (for example, a message won't require the EMAIL ADDRESS proword unless it actually contains an email address). Some batches are a single coherent multi-party exchange (e.g. one message requesting a status update, answered by several reply messages) rather than independent messages -- when a message says it replies to another, its content must directly and consistently respond to that message, as a real reply would. Respond with ONLY a single JSON array (no markdown code fences, no commentary before or after) containing one object per requested message, each object mapping the given field tags to string values.`
 
 // Generate produces one draft message for each entry of req.Messages,
 // together satisfying req.Level's proword profile (spread across the
@@ -518,7 +518,7 @@ func buildBriefPrompt(req Request) string {
 	if req.Scenario != "" {
 		fmt.Fprintf(&b, "Scenario: %s\n\n", req.Scenario)
 	} else {
-		b.WriteString("No scenario was given: invent a plausible Santa Clara County emergency-response scenario (e.g. a downed power line, a fallen tree blocking a road, traffic congestion near a shelter, storm damage, a utility outage).\n\n")
+		b.WriteString("No scenario was given: invent a plausible emergency-response scenario set in the fictitious Xanadu City (e.g. a downed power line, a fallen tree blocking a road, traffic congestion near a shelter, storm damage, a utility outage).\n\n")
 	}
 	if date := incidentDate(req); date != "" {
 		fmt.Fprintf(&b, "The incident takes place on %s.\n\n", date)
@@ -543,6 +543,7 @@ func buildBriefPrompt(req Request) string {
 	b.WriteString("\nWrite a concise exercise brief of at most 250 words, in plain text:\n" +
 		"1. The incident: what happened, where, and when.\n" +
 		"2. Shared facts every message must agree on: names of people, places and addresses, quantities, times, amateur call signs, and the specific details that make requests realistic (e.g. a generator's make, model number, and power rating). Use only the xanadu-city.org domain for any email or web address, and only fictitious call signs ending with a digit, like W6XRL4, never a real call sign.\n" +
+		"   "+fictionalPlacesPrompt+"\n" +
 		"3. One line per message saying specifically what it reports, requests, or answers, so each reply answers what was actually asked.\n" +
 		"Do not write the messages themselves. Each message will be at most about 50 words.\n")
 	return b.String()
@@ -683,10 +684,14 @@ func buildPrompt(req Request, brief string, specsPerMsg [][]FieldSpec, results [
 	return sharedPrompt(req, brief) + messagePrompt(req, specsPerMsg, results, pending, plans, routedPerMsg, baseWords, isRepair)
 }
 
+// fictionalPlacesPrompt keeps exercise traffic from naming real places, so
+// it can't be mistaken for a report about one.
+const fictionalPlacesPrompt = `Every place must be fictitious, so exercise traffic can't be confused with a real incident: invent street names, cross streets, building names, and street numbers freely, but the city is ALWAYS "Xanadu City" and the county, whenever one is mentioned, is ALWAYS "Xanadu County" -- even when the scenario mentions a real place. Never name a real city, county, street address, highway, or facility (such as a real school, hospital, or business location).`
+
 // realismPrompt asks for the specific details real requests and reports
 // carry. Such details (model numbers, ratings) also tend to call for mixed
 // group and figures prowords naturally.
-const realismPrompt = `Make every message realistic, with the specific details a real served agency would give so the recipient can act on it: when asking for or reporting equipment or supplies, identify them precisely -- e.g. a generator with its make, model number, or power rating ("Honda EU7000is, 7 kW"), cots or blankets with a quantity and type, a pump with its capacity, a vehicle with its type and unit number -- and give real-looking places (street addresses, cross streets, building and room names), quantities with units, and names of responsible people. Keep these details plausible for Santa Clara County, and within the word budget.`
+const realismPrompt = `Make every message realistic, with the specific details a real served agency would give so the recipient can act on it: when asking for or reporting equipment or supplies, identify them precisely -- e.g. a generator with its make, model number, or power rating ("Honda EU7000is, 7 kW"), cots or blankets with a quantity and type, a pump with its capacity, a vehicle with its type and unit number -- and give realistic-looking places (street addresses, cross streets, building and room names, following the place rules below), quantities with units, and names of responsible people. Keep these details plausible, and within the word budget.`
 
 // sharedPrompt returns the part of the prompt that is the same for every
 // message of a batch -- the scenario, the rules, and how to meet each proword
@@ -699,13 +704,13 @@ func sharedPrompt(req Request, brief string) string {
 	} else if req.Scenario != "" {
 		fmt.Fprintf(&b, "Scenario to base all of the messages on: %s\n\n", req.Scenario)
 	} else {
-		b.WriteString("No specific scenario was given. Invent a plausible Santa Clara County emergency-response scenario (e.g. a downed power line, a fallen tree blocking a road, traffic congestion near a shelter, storm damage assessment, a utility outage) and use it consistently across all the messages in this batch.\n\n")
+		b.WriteString("No specific scenario was given. Invent a plausible emergency-response scenario set in the fictitious Xanadu City (e.g. a downed power line, a fallen tree blocking a road, traffic congestion near a shelter, storm damage assessment, a utility outage) and use it consistently across all the messages in this batch.\n\n")
 	}
 	if date := incidentDate(req); date != "" {
 		fmt.Fprintf(&b, "The incident takes place on %s; any date a message mentions must be consistent with that. Date and time fields are filled in separately, so they aren't listed.\n\n", date)
 	}
 	b.WriteString("Messages may be different form types with different fields (a training session can mix, for example, an ICS-213, a plain text message, and a Road Closure form). Weave each message's listed requirements naturally into that message's own field values -- they must fit the scenario and read like real, professional emergency radio traffic, not like a checklist. Proword content in ANY field counts, so each requirement only needs to be met ONCE, in the single field that suits it best (a person's name in a name field, an email address or phone number in a contact field) -- never repeat it in another field, and never add a sentence to the free-text body just to carry it (e.g. not \"Contact Jane Doe at jane@xanadu-city.org for logistics.\" when there are name and contact fields to hold them). Requirements already satisfied by pre-filled fields have been left out. Fill each form the way a trained operator fills out the real form: put every piece of information in the field made for it -- for example each requested item in its own item row (Item 1's name and quantity, then Item 2's), a person in a name field, a phone number in a phone field -- and use a free-text field such as Comments or Special Instructions only for information no other field holds, never to restate other fields (e.g. not \"Need 50 blankets, generator\" in Comments when the form has item fields). A subject, title, or summary field is only a short headline of a few words: the message's details go in its message body or the form's other fields, never in the subject.\n")
-	b.WriteString(realismPrompt + "\n\n")
+	b.WriteString(realismPrompt + "\n\n" + fictionalPlacesPrompt + "\n\n")
 	b.WriteString("How to meet each proword requirement a message lists:\n")
 	full, _ := prowords.Profile(prowords.LevelFull)
 	for _, cat := range full {

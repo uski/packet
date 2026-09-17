@@ -250,4 +250,15 @@ func TestPromptsAskForRealism(t *testing.T) {
 	if !strings.Contains(buildBriefPrompt(req), "model number") {
 		t.Error("the brief should settle realistic details such as model numbers")
 	}
+	for name, prompt := range map[string]string{
+		"message": sharedPrompt(req, ""), "brief": buildBriefPrompt(req),
+		"message system": systemPrompt, "brief system": briefSystemPrompt,
+	} {
+		if !strings.Contains(prompt, "Xanadu City") || !strings.Contains(prompt, "Xanadu County") {
+			t.Errorf("the %s prompt should set the exercise in Xanadu City, Xanadu County", name)
+		}
+		if strings.Contains(prompt, "Santa Clara County emergency") || strings.Contains(prompt, "plausible for Santa Clara") {
+			t.Errorf("the %s prompt should not set the exercise in a real county", name)
+		}
+	}
 }
