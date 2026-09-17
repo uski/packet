@@ -245,6 +245,25 @@
           if (!resp.ok) openErrorDialog('Delete Log Entry', await resp.text())
         },
       })
+      // Message: Download Unsent Messages as PDFs
+      setupMenuItem({
+        id: 'm-msg-unsent-pdfs',
+        clicked: async () => {
+          const params = new URLSearchParams({ dir: document.body.dataset.dir })
+          const resp = await fetch2('/unsent-pdfs?' + params.toString())
+          if (!resp.ok) {
+            openErrorDialog('Download Unsent Messages', await resp.text())
+            return
+          }
+          const a = document.createElement('a')
+          a.href = URL.createObjectURL(await resp.blob())
+          a.download = 'unsent-messages.zip'
+          document.body.appendChild(a)
+          a.click()
+          a.remove()
+          setTimeout(() => URL.revokeObjectURL(a.href), 1000)
+        },
+      })
       // Message: Delete All Messages
       setupMenuItem({
         id: 'm-msg-delete-all',
