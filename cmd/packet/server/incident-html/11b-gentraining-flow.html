@@ -957,7 +957,7 @@
               <option value=P>Priority</option>
               <option value=I>Immediate</option>
             </select></label>
-          <label class=mpfield title="Leave blank to let the tool number the message. Give a whole number (e.g. XND-101) for a message with one sender, or just the sequence (e.g. 102) to use each sender's prefix, as for Each Station. Without a suffix, P is added, like the tool's own numbers.">Msg # (optional)<input type=text class=mp-msgno placeholder="auto, e.g. XND-101 or 102" autocapitalize=characters></label>
+          <label class=mpfield title="Leave blank to let the tool number the message. Otherwise PPP-NNN: the sender's prefix and a number, e.g. XND-101. Each Station messages can't be numbered: give each station its own message instead. Without a suffix, P is added, like the tool's own numbers.">Msg # (optional)<input type=text class=mp-msgno placeholder="auto, or e.g. XND-101" autocapitalize=characters></label>
           <label class=mpfield title="Fills the message's time fields; leave blank to leave them blank">Time (optional)<input type=time class=mp-time></label>
           <label class=mpfield title="Messages with the same group number are handed to their operators together, who should send them in handling order (immediate first).">Hand-off group<input type=number class=mp-group min=0 step=1 placeholder="none"></label>
         </div>

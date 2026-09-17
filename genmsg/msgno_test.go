@@ -17,7 +17,8 @@ func msgNoFlow() Flow {
 		Messages: []FlowMessage{
 			{MsgType: "plain", From: 1, To: 0}, // auto: S21-101
 			{MsgType: "plain", From: 0, To: -1, ToLabel: "All Stations", MsgNo: "xnd-108"},
-			{MsgType: "plain", From: fromEachStation, To: 0, MsgNo: "102"},
+			{MsgType: "plain", From: 1, To: 0, MsgNo: "s21-102"},
+			{MsgType: "plain", From: 2, To: 0, MsgNo: "S22-102"},
 			{MsgType: "plain", From: 2, To: 0, MsgNo: "S22-101R"}, // suffix kept
 			{MsgType: "plain", From: 1, To: 0},                    // auto: skips 102
 		},
@@ -38,10 +39,13 @@ func TestFlowMessageNumbers(t *testing.T) {
 	}
 
 	for name, change := range map[string]func(*Flow){
-		"malformed":         func(fl *Flow) { fl.Messages[1].MsgNo = "XND101" },
-		"whole for fan-out": func(fl *Flow) { fl.Messages[2].MsgNo = "S21-102" },
-		"no prefix":         func(fl *Flow) { fl.Parties[1].Prefix = "" },
-		"duplicate":         func(fl *Flow) { fl.Messages[3].MsgNo = "S22-102" },
+		"malformed":      func(fl *Flow) { fl.Messages[1].MsgNo = "XND101" },
+		"sequence alone": func(fl *Flow) { fl.Messages[1].MsgNo = "108" },
+		"short sequence": func(fl *Flow) { fl.Messages[1].MsgNo = "XND-18" },
+		"other prefix":   func(fl *Flow) { fl.Messages[1].MsgNo = "S21-108" },
+		"each station":   func(fl *Flow) { fl.Messages[1].From = fromEachStation },
+		"no prefix":      func(fl *Flow) { fl.Parties[1].Prefix = "" },
+		"duplicate":      func(fl *Flow) { fl.Messages[4].MsgNo = "S22-102" },
 	} {
 		fl := msgNoFlow()
 		change(&fl)

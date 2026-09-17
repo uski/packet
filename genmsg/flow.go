@@ -76,10 +76,10 @@ type FlowMessage struct {
 	// then ignored.
 	Event string `json:"event,omitempty"`
 	// MsgNo, if not empty, is the message's number, overriding the one the
-	// tool would pick: a whole number such as "XND-101" for a message with
-	// one sender, or just the sequence, such as "102", to use with each
-	// sender's message number prefix (as for an "each station" message).
-	// Without a suffix, it gets "P", like the tool's own numbers.
+	// tool would pick: PPP-NNN, where PPP is the sender's message number
+	// prefix and NNN the sequence number, e.g. "XND-101". Only a message
+	// with a single sender can have one. Without a suffix letter, it gets
+	// "P", like the tool's own numbers.
 	MsgNo string `json:"msgNo,omitempty"`
 	// Time is the time the message is written (HH:MM), for its time
 	// fields; empty leaves them blank.
@@ -114,14 +114,17 @@ func eventText(fm FlowMessage) (string, bool) {
 	return "", false
 }
 
-// msgNoRE matches a message number as a scenario may give it: a whole
-// number, with an optional suffix, or just the sequence.
-var msgNoRE = regexp.MustCompile(`^(?:([A-Z0-9]{3})-)?(\d{1,4})([A-Z]?)$`)
+// msgNoRE matches a message number as a scenario gives it: PPP-NNN, the
+// sender's three-character prefix and the sequence number, with an optional
+// suffix letter.
+var msgNoRE = regexp.MustCompile(`^([A-Z0-9]{3})-(\d{3,4})([A-Z]?)$`)
 
 // flowMessageNumbers returns, for each message of fl and each of its
 // senders (see flowSenders), the message number the scenario gives it, or
-// "" to let the tool pick one. It fails if a number is malformed, can't
-// apply, or is given twice.
+// "" to let the tool pick one. A number must be PPP-NNN, where PPP is the
+// sender's message number prefix, so only a message with a single sender
+// can have one. It fails if a number is malformed, doesn't match its
+// sender, or is given twice.
 func flowMessageNumbers(fl Flow, senders [][]int) ([][]string, error) {
 	nums := make([][]string, len(fl.Messages))
 	used := map[string]int{} // number without suffix -> 1-based message
@@ -133,34 +136,33 @@ func flowMessageNumbers(fl Flow, senders [][]int) ([][]string, error) {
 		}
 		m := msgNoRE.FindStringSubmatch(given)
 		if m == nil {
-			return nil, fmt.Errorf("message %d: invalid message number %q (use e.g. XND-101, or just 101 for the sender's prefix)", i+1, fm.MsgNo)
+			return nil, fmt.Errorf("message %d: invalid message number %q (use PPP-NNN: the sender's prefix and a number, e.g. XND-101)", i+1, fm.MsgNo)
 		}
 		prefix, suffix := m[1], m[3]
 		seq, _ := strconv.Atoi(m[2])
 		if suffix == "" {
 			suffix = "P"
 		}
-		if prefix != "" && len(senders[i]) > 1 {
-			return nil, fmt.Errorf("message %d: a message from each station needs just the sequence of its number (e.g. %d), so each station's own prefix is used", i+1, seq)
+		if len(senders[i]) != 1 {
+			return nil, fmt.Errorf("message %d: a message from each station can't have one message number; give each station its own message to number it", i+1)
 		}
-		for k, s := range senders[i] {
-			p := prefix
-			if p == "" {
-				if p = fl.Parties[s].Prefix; p == "" {
-					return nil, fmt.Errorf("message %d: %s has no message number prefix to use with number %d; give the whole number (e.g. XND-%03d) or the party's prefix", i+1, fl.Parties[s].Role, seq, seq)
-				}
-			}
-			id, err := messageid.Encode(p, seq, suffix)
-			if err != nil {
-				return nil, fmt.Errorf("message %d: invalid message number %q: %v", i+1, fm.MsgNo, err)
-			}
-			key := fmt.Sprintf("%s-%03d", p, seq)
-			if j, dup := used[key]; dup {
-				return nil, fmt.Errorf("message %d: message number %s is also given to message %d", i+1, key, j)
-			}
-			used[key] = i + 1
-			nums[i][k] = id
+		sender := fl.Parties[senders[i][0]]
+		if sender.Prefix == "" {
+			return nil, fmt.Errorf("message %d: %s has no message number prefix; give it one to number its messages", i+1, sender.Role)
 		}
+		if prefix != sender.Prefix {
+			return nil, fmt.Errorf("message %d: message number %s must start with its sender's prefix, %s", i+1, given, sender.Prefix)
+		}
+		id, err := messageid.Encode(prefix, seq, suffix)
+		if err != nil {
+			return nil, fmt.Errorf("message %d: invalid message number %q: %v", i+1, fm.MsgNo, err)
+		}
+		key := numberKey(prefix, seq)
+		if j, dup := used[key]; dup {
+			return nil, fmt.Errorf("message %d: message number %s is also given to message %d", i+1, key, j)
+		}
+		used[key] = i + 1
+		nums[i][0] = id
 	}
 	return nums, nil
 }
