@@ -2,6 +2,7 @@ package genmsg
 
 import (
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/rothskeller/packet/v4/message"
@@ -237,5 +238,16 @@ func TestFieldLabels(t *testing.T) {
 	want := []string{"Handling", "Subject"}
 	if len(got) != len(want) || got[0] != want[0] || got[1] != want[1] {
 		t.Errorf("fieldLabels(%+v) = %v, want %v", specs, got, want)
+	}
+}
+
+func TestPromptsAskForRealism(t *testing.T) {
+	mt := formType(t, "ICS213")
+	req := Request{Messages: []MessageSpec{{MsgType: mt}, {MsgType: mt}}}
+	if !strings.Contains(sharedPrompt(req, ""), "model number") {
+		t.Error("the message prompt should ask for realistic details such as model numbers")
+	}
+	if !strings.Contains(buildBriefPrompt(req), "model number") {
+		t.Error("the brief should settle realistic details such as model numbers")
 	}
 }
