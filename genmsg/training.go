@@ -23,12 +23,28 @@ type TrainingRecord struct {
 	FromCredential string          `json:"fromCredential,omitempty"`
 	To             []TrainingParty `json:"to,omitempty"`
 	OpToOp         bool            `json:"opToOp,omitempty"`
+	// FromPrincipal is the sending party's principal (see
+	// FlowParty.Principal).
+	FromPrincipal string `json:"fromPrincipal,omitempty"`
+	// Batch identifies the flow generation that made the message, and Step
+	// the 1-based flow entry it came from, so the messages of one "each
+	// station" or "All Stations" entry can be drawn together.
+	Batch string `json:"batch,omitempty"`
+	Step  int    `json:"step,omitempty"`
+	// Group is the message's hand-off group within its batch (see
+	// FlowMessage.Group).
+	Group int `json:"group,omitempty"`
+	// Events are the flow events just before the message, and EventsAfter
+	// those after it, for the last message of a flow.
+	Events      []FlowMessage `json:"events,omitempty"`
+	EventsAfter []FlowMessage `json:"eventsAfter,omitempty"`
 }
 
 // TrainingParty is a party that receives a message.
 type TrainingParty struct {
 	Name       string `json:"name"`
 	Credential string `json:"credential,omitempty"`
+	Principal  string `json:"principal,omitempty"`
 }
 
 // partyName is how a flow party is named in records and reports.

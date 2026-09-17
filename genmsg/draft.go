@@ -43,6 +43,7 @@ func buildDraft(inc *incident.Incident, m MessageSpec, values map[string]string)
 	clearOperatorFields(draft)
 	applyPartyFields(draft, m)
 	setFieldValues(draft, values)
+	applyHandling(draft, m)
 	// After the values, since they can make further dates/times required.
 	if m.Date != "" {
 		setIncidentDate(draft, m.Date)

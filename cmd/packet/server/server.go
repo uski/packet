@@ -362,6 +362,7 @@ func (s *Server) registerHandlers() {
 	s.mux.HandleFunc("GET /view-encoded", s.serveGetViewEncoded)
 	s.mux.HandleFunc("GET /view-prowords", s.serveGetViewProwords)
 	s.mux.HandleFunc("GET /prowords-by-party", s.serveGetProwordsByParty)
+	s.mux.HandleFunc("GET /incident-diagram", s.serveGetIncidentDiagram)
 	s.mux.HandleFunc("POST /filled-pdf", s.servePostFilledPDF)
 	s.mux.HandleFunc("/view-ics309", s.serveViewICS309)
 	s.mux.HandleFunc("GET /manpage.html", s.serveGetManPage)

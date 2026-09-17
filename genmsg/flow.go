@@ -1,6 +1,7 @@
 package genmsg
 
 import (
+	"errors"
 	"fmt"
 	"regexp"
 	"slices"
@@ -31,6 +32,10 @@ type FlowParty struct {
 	// CheckFlow), or empty if it isn't being evaluated. "F3" also selects
 	// the reduced proword list, as F3 does.
 	Credential string `json:"credential,omitempty"`
+	// Principal is the served-agency person who hands this party's
+	// messages to its operator and receives the messages delivered to it,
+	// e.g. "NetMgr" or "FieldMgr". It only affects diagrams.
+	Principal string `json:"principal,omitempty"`
 }
 
 // stationPrefixRE matches a station's message number prefix.
@@ -56,7 +61,50 @@ type FlowMessage struct {
 	// status report between radio operators, rather than a served agency's
 	// message. Plain text, check-in, and check-out messages always are.
 	OpToOp bool `json:"opToOp,omitempty"`
+	// Handling is the message's handling order: "R", "P", "I", or empty to
+	// let Claude choose.
+	Handling string `json:"handling,omitempty"`
+	// Group, if not zero, puts the message in a hand-off group: the
+	// messages with the same Group are handed to their operators together,
+	// who should send them in handling order (immediate first).
+	Group int `json:"group,omitempty"`
+	// Event, if not empty, makes this entry a scenario event instead of a
+	// message (see FlowEvents): something shown on the diagram but never
+	// generated, such as opening the net. The other fields but Text are
+	// then ignored.
+	Event string `json:"event,omitempty"`
+	// Text is an event's text, replacing its default one. A "note" event
+	// needs one.
+	Text string `json:"text,omitempty"`
 }
+
+// FlowEvents lists the kinds of flow events, with their default text.
+var FlowEvents = []struct{ Kind, Label, Text string }{
+	{"note", "Note", ""},
+	{"open-net", "Open net", "Open Net"},
+	{"check-ins", "Check-ins (voice)", "Check In"},
+	{"hw-check", "Health and welfare check", "Health and Welfare Check"},
+	{"shift-change", "Net Control shift change", "Net Control Shift Change"},
+	{"closing", "Announce net closing", "Announce:\nNet is closing"},
+	{"check-outs", "Check-outs (voice)", "Check Out"},
+	{"net-closed", "Net closed", "Net is closed."},
+}
+
+// eventText returns the text of event fm, or "" if fm isn't a known event.
+func eventText(fm FlowMessage) (string, bool) {
+	for _, e := range FlowEvents {
+		if e.Kind == fm.Event {
+			if t := strings.TrimSpace(fm.Text); t != "" {
+				return t, true
+			}
+			return e.Text, true
+		}
+	}
+	return "", false
+}
+
+// isEvent says whether fm is an event rather than a message.
+func isEvent(fm FlowMessage) bool { return fm.Event != "" }
 
 // opToOpPurpose describes operator-to-operator traffic to Claude.
 const opToOpPurpose = "operator-to-operator traffic between the radio operators themselves, such as a status report or health and welfare message, not a served agency's message"
@@ -77,6 +125,9 @@ func flowPurpose(fm FlowMessage) string {
 // and the messages exchanged between them. ResolveFlow validates it and
 // resolves it into a []MessageSpec.
 type Flow struct {
+	// Name names the net or exercise, e.g. "Evaluation Net", for diagram
+	// titles.
+	Name string `json:"name,omitempty"`
 	// Date is the incident date (MM/DD/YYYY or YYYY-MM-DD), used for every
 	// message's date fields; empty means today. Time fields are left blank.
 	Date     string        `json:"date,omitempty"`
@@ -144,12 +195,33 @@ func normalizeParties(fl *Flow) error {
 // the sender of the message it replies to.
 func flowSenders(fl Flow) ([][]int, error) {
 	senders := make([][]int, len(fl.Messages))
+	var needNetControl bool
 	for i, fm := range fl.Messages {
+		if isEvent(fm) {
+			text, ok := eventText(fm)
+			if !ok {
+				return nil, fmt.Errorf("entry %d: unknown event %q", i+1, fm.Event)
+			}
+			if text == "" {
+				return nil, fmt.Errorf("entry %d: a note needs text", i+1)
+			}
+			needNetControl = needNetControl || fm.Event != "note" && fm.Event != "hw-check" && fm.Event != "shift-change"
+			continue
+		}
 		if _, ok := FindMsgType(fm.MsgType); !ok {
 			return nil, fmt.Errorf("message %d: no such message type %q", i+1, fm.MsgType)
 		}
 		if fm.ReplyTo < 0 || fm.ReplyTo > len(fl.Messages) || fm.ReplyTo == i+1 {
 			return nil, fmt.Errorf("message %d: invalid \"replyTo\" %d", i+1, fm.ReplyTo)
+		}
+		if fm.ReplyTo > 0 && isEvent(fl.Messages[fm.ReplyTo-1]) {
+			return nil, fmt.Errorf("message %d: entry %d it replies to is an event, not a message", i+1, fm.ReplyTo)
+		}
+		if fm.Handling != "" && NormalizeHandling(fm.Handling) == "" {
+			return nil, fmt.Errorf("message %d: invalid handling order %q (use R, P, or I)", i+1, fm.Handling)
+		}
+		if fm.Group < 0 {
+			return nil, fmt.Errorf("message %d: invalid hand-off group %d", i+1, fm.Group)
 		}
 		if fm.To >= len(fl.Parties) {
 			return nil, fmt.Errorf("message %d: invalid \"to\" party index %d", i+1, fm.To)
@@ -175,6 +247,11 @@ func flowSenders(fl Flow) ([][]int, error) {
 			return nil, fmt.Errorf("message %d: %s can't send a message to itself", i+1, fl.Parties[fm.From].Role)
 		} else {
 			senders[i] = []int{fm.From}
+		}
+	}
+	if needNetControl {
+		if _, ok := netControlParty(fl.Parties); !ok {
+			return nil, errors.New(`net events (opening, check-ins, closing) need a Net Control party: give one party a Net Control credential, or a role containing "Net Control"`)
 		}
 	}
 	return senders, nil
@@ -208,7 +285,7 @@ func resolveTo(fm FlowMessage, parties []FlowParty) (FlowParty, error) {
 // may not reply to a fanned-out one (ReplyTo pointing at a From == -1
 // entry), since there would be no single message to reply to.
 func ResolveFlow(fl Flow) ([]MessageSpec, error) {
-	if len(fl.Messages) == 0 {
+	if !slices.ContainsFunc(fl.Messages, func(fm FlowMessage) bool { return !isEvent(fm) }) {
 		return nil, fmt.Errorf("at least one message is required")
 	}
 	if err := normalizeParties(&fl); err != nil {
@@ -232,7 +309,13 @@ func ResolveFlow(fl Flow) ([]MessageSpec, error) {
 		replyTo int // original 1-based ReplyTo, to be remapped once all messages are placed
 	}
 	var pendingReplies []pending
+	batch := time.Now().UTC().Format("20060102T150405.000000000")
+	var events []FlowMessage // events waiting for the next message's record
 	for i, fm := range fl.Messages {
+		if isEvent(fm) {
+			events = append(events, fm)
+			continue
+		}
 		to, err := resolveTo(fm, fl.Parties)
 		if err != nil {
 			return nil, fmt.Errorf("message %d: %s", i+1, err)
@@ -248,15 +331,21 @@ func ResolveFlow(fl Flow) ([]MessageSpec, error) {
 				Purpose:      flowPurpose(fm),
 				Level:        partyLevel(fl.Parties[p]),
 				Date:         date,
+				Handling:     NormalizeHandling(fm.Handling),
 			}
 			spec.MsgType, _ = FindMsgType(fm.MsgType) // already validated above
-			rec := &TrainingRecord{From: partyName(fl.Parties[p]), FromCredential: fl.Parties[p].Credential, OpToOp: isOpToOpMessage(fm)}
+			rec := &TrainingRecord{
+				From: partyName(fl.Parties[p]), FromCredential: fl.Parties[p].Credential,
+				FromPrincipal: fl.Parties[p].Principal, OpToOp: isOpToOpMessage(fm),
+				Batch: batch, Step: i + 1, Group: fm.Group, Events: events,
+			}
+			events = nil
 			if rec.FromCredential == "" && fl.Parties[p].F3 {
 				rec.FromCredential = "F3"
 			}
 			if r := flowRecipients(fl, fm, p); len(r) > 0 {
 				for _, q := range r {
-					rec.To = append(rec.To, TrainingParty{Name: partyName(fl.Parties[q]), Credential: fl.Parties[q].Credential})
+					rec.To = append(rec.To, TrainingParty{Name: partyName(fl.Parties[q]), Credential: fl.Parties[q].Credential, Principal: fl.Parties[q].Principal})
 				}
 			} else if to.Role != "" {
 				rec.To = []TrainingParty{{Name: to.Role}}
@@ -266,6 +355,11 @@ func ResolveFlow(fl Flow) ([]MessageSpec, error) {
 			pendingReplies = append(pendingReplies, pending{specIdx: len(specs), replyTo: fm.ReplyTo})
 			specs = append(specs, spec)
 		}
+	}
+
+	if len(events) > 0 { // events after the last message
+		last := specs[len(specs)-1].Training
+		last.EventsAfter = events
 	}
 
 	// Third pass: remap each spec's ReplyTo from the original 1-based

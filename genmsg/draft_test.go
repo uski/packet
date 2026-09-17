@@ -447,3 +447,30 @@ func TestGenerateTrimsOverBudgetMessage(t *testing.T) {
 		t.Errorf("final message is %d words, want between 1 and %d", w, MaxWords+WordTolerance)
 	}
 }
+
+func TestHandlingIsTheTools(t *testing.T) {
+	inc := draftTestIncident(t)
+	for _, tag := range []string{"ICS213", "plain"} {
+		mt := formType(t, tag)
+		spec := MessageSpec{MsgType: mt, Handling: "I"}
+		draft, err := buildDraft(inc, spec, map[string]string{"handling": "ROUTINE", "subjectHandling": "ROUTINE"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		var n int
+		for f := range draft.Fields() {
+			if handlingCommon[f.Common()] {
+				n++
+				if v := f.Value(draft); v != "IMMEDIATE" {
+					t.Errorf("%s %s = %q, want IMMEDIATE", tag, f.Common(), v)
+				}
+			}
+		}
+		if n == 0 {
+			t.Errorf("%s has no handling field", tag)
+		}
+	}
+	if NormalizeHandling(" priority ") != "P" || NormalizeHandling("x") != "" {
+		t.Error("NormalizeHandling")
+	}
+}

@@ -288,7 +288,7 @@ func stationsShort(report []PartyCompliance, nc int, opToOp bool) int {
 func prefersReply(fl Flow, s int) bool {
 	var replies, others int
 	for _, m := range fl.Messages {
-		if m.From != s {
+		if m.From != s || isEvent(m) {
 			continue
 		}
 		if m.ReplyTo > 0 {
@@ -315,7 +315,7 @@ func unanswered(fl Flow, nc, s int, opToOp bool) (int, error) {
 		}
 	}
 	for i, m := range fl.Messages {
-		if m.From == nc && !answered[i+1] && isOpToOpMessage(m) == opToOp &&
+		if m.From == nc && !isEvent(m) && !answered[i+1] && isOpToOpMessage(m) == opToOp &&
 			(m.To == s || m.To < 0 && isAllStations(m.ToLabel)) {
 			return i + 1, nil
 		}

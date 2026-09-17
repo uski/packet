@@ -5,6 +5,25 @@
   <script> // Generate Multi-Party Training Messages Dialog
     const mpMessageTypeData = '{{MTYPES}}'
     let mpMessageTypes = []
+    let mpRowID = 0
+    // Flow events: shown on the diagram, never generated (genmsg.FlowEvents).
+    const mpEvents = [
+      { kind: 'note', label: 'Note (section heading)' },
+      { kind: 'open-net', label: 'Open net', text: 'Open Net' },
+      { kind: 'check-ins', label: 'Check-ins (voice)', text: 'Check In' },
+      { kind: 'hw-check', label: 'Health and welfare check', text: 'Health and Welfare Check' },
+      { kind: 'shift-change', label: 'Net Control shift change', text: 'Net Control Shift Change' },
+      { kind: 'closing', label: 'Announce net closing', text: 'Announce:\nNet is closing' },
+      { kind: 'check-outs', label: 'Check-outs (voice)', text: 'Check Out' },
+      { kind: 'net-closed', label: 'Net closed', text: 'Net is closed.' },
+    ]
+
+    function mpEntryRows() {
+      return [...document.querySelectorAll('#mpmessages .mprow')]
+    }
+    function mpMessageRows() {
+      return [...document.querySelectorAll('#mpmessages .mprow.mpmsg')]
+    }
 
     function mpSetOptions(select, options) {
       const prev = select.value
@@ -38,8 +57,10 @@
     // the "Replying to" labels) edited.
     function mpSyncOptions() {
       const partyOptions = mpPartyOptions()
-      const msgRows = [...document.querySelectorAll('#mpmessages .mprow')]
-      msgRows.forEach((row, i) => {
+      const entries = mpEntryRows()
+      entries.forEach((row, i) => { row.querySelector('.mpnum').textContent = `#${i + 1}` })
+      const msgRows = mpMessageRows()
+      msgRows.forEach(row => {
         // "Each Station" last, so a new row defaults to a single party.
         mpSetOptions(row.querySelector('.mp-from'), [
           ...partyOptions,
@@ -51,14 +72,15 @@
           { value: 'custom', label: 'Other (specify at right)…' },
         ])
         const replyOptions = [{ value: '0', label: '(none)' }]
-        msgRows.forEach((r2, j) => {
-          if (j === i) return
+        // Choices are row IDs, so they survive reordering.
+        msgRows.forEach(r2 => {
+          if (r2 === row) return
           // A message can't reply to a fanned-out ("Each Station") entry --
           // there's no single message to point at -- so it's left out of
           // the choices entirely.
           if (r2.querySelector('.mp-from').value === '-1') return
           const typeLabel = r2.querySelector('.mp-type').selectedOptions[0]?.textContent || '?'
-          replyOptions.push({ value: String(j + 1), label: `Message ${j + 1} (${typeLabel})` })
+          replyOptions.push({ value: r2.dataset.rid, label: `Message #${entries.indexOf(r2) + 1} (${typeLabel})` })
         })
         mpSetOptions(row.querySelector('.mp-replyto'), replyOptions)
       })
@@ -79,9 +101,54 @@
       mpSyncOptions()
     }
 
+    // mpEntryControls wires up a message or event row's move and remove
+    // buttons.
+    function mpEntryControls(row) {
+      row.dataset.rid = String(++mpRowID)
+      row.querySelector('.mpup').addEventListener('click', () => {
+        if (row.previousElementSibling) row.parentNode.insertBefore(row, row.previousElementSibling)
+        mpSyncOptions()
+      })
+      row.querySelector('.mpdown').addEventListener('click', () => {
+        if (row.nextElementSibling) row.parentNode.insertBefore(row.nextElementSibling, row)
+        mpSyncOptions()
+      })
+    }
+
+    function mpAddEventRow(kind, text) {
+      const tmpl = document.getElementById('mpevttmpl')
+      const row = document.importNode(tmpl.content, true).firstElementChild
+      const kindSel = row.querySelector('.mp-event')
+      mpEvents.forEach(e => {
+        const opt = document.createElement('option')
+        opt.value = e.kind
+        opt.textContent = e.label
+        kindSel.appendChild(opt)
+      })
+      kindSel.value = kind || 'note'
+      const textInput = row.querySelector('.mp-text')
+      const placeholder = () => {
+        const e = mpEvents.find(e => e.kind === kindSel.value)
+        textInput.placeholder = e && e.text ? `default: ${e.text.replace('\n', ' / ')}` : 'e.g. Prioritization drill: each station is given a routine and a priority message'
+        textInput.required = kindSel.value === 'note'
+      }
+      kindSel.addEventListener('change', placeholder)
+      textInput.value = (text || '').replace(/\n/g, '\\n')
+      placeholder()
+      mpEntryControls(row)
+      row.querySelector('.mpremove').addEventListener('click', () => {
+        row.remove()
+        mpSyncOptions()
+      })
+      document.getElementById('mpmessages').appendChild(row)
+      mpSyncOptions()
+      return row
+    }
+
     function mpAddMessageRow() {
       const tmpl = document.getElementById('mpmsgtmpl')
       const row = document.importNode(tmpl.content, true).firstElementChild
+      mpEntryControls(row)
       const typeSel = row.querySelector('.mp-type')
       mpMessageTypes.forEach(mt => {
         const opt = document.createElement('option')
@@ -92,13 +159,14 @@
       typeSel.addEventListener('change', mpSyncOptions)
       row.querySelector('.mp-from').addEventListener('change', mpSyncOptions)
       row.querySelector('.mpremove').addEventListener('click', () => {
-        if (document.querySelectorAll('#mpmessages .mprow').length > 1) {
+        if (mpMessageRows().length > 1) {
           row.remove()
           mpSyncOptions()
         }
       })
       document.getElementById('mpmessages').appendChild(row)
       mpSyncOptions()
+      return row
     }
 
     // mpBuildFlow reads the current parties/messages rows into the JSON
@@ -110,15 +178,23 @@
         credential: row.querySelector('.mp-cred').value,
         f3: row.querySelector('.mp-cred').value === 'F3',
         prefix: row.querySelector('.mp-prefix').value.trim().toUpperCase(),
+        principal: row.querySelector('.mp-principal').value.trim(),
       }))
-      const messages = [...document.querySelectorAll('#mpmessages .mprow')].map(row => {
+      const entries = mpEntryRows()
+      const position = rid => entries.findIndex(r => r.dataset.rid === rid) + 1
+      const messages = entries.map(row => {
+        if (row.classList.contains('mpevent')) {
+          return { event: row.querySelector('.mp-event').value, text: row.querySelector('.mp-text').value.trim().replace(/\\n/g, '\n') }
+        }
         const toVal = row.querySelector('.mp-to').value
         const msg = {
           msgType: row.querySelector('.mp-type').value,
           from: parseInt(row.querySelector('.mp-from').value, 10),
           purpose: row.querySelector('.mp-purpose').value.trim(),
-          replyTo: parseInt(row.querySelector('.mp-replyto').value, 10),
+          replyTo: position(row.querySelector('.mp-replyto').value),
           opToOp: row.querySelector('.mp-optoop').checked,
+          handling: row.querySelector('.mp-handling').value,
+          group: parseInt(row.querySelector('.mp-group').value, 10) || 0,
         }
         if (toVal === '-1') {
           msg.to = -1
@@ -131,7 +207,7 @@
         }
         return msg
       })
-      return { date: document.getElementById('mpdate').value, parties, messages }
+      return { name: document.getElementById('mpname').value.trim(), date: document.getElementById('mpdate').value, parties, messages }
     }
 
     // mpToday returns today's date as the date input's YYYY-MM-DD.
@@ -161,7 +237,8 @@
       setTimeout(() => URL.revokeObjectURL(a.href), 1000)
     }
 
-    // mpExportUML downloads the scenario as a PlantUML sequence diagram.
+    // mpExportUML downloads the scenario as a sequence diagram for
+    // sequencediagram.org.
     async function mpExportUML() {
       const err = document.getElementById('mperr')
       err.textContent = ''
@@ -170,7 +247,7 @@
         err.textContent = (await resp.text()) || resp.statusText
         return
       }
-      mpDownload(await resp.blob(), 'scenario.puml')
+      mpDownload(await resp.blob(), 'scenario.uml')
     }
 
     // mpViewDiagram opens the scenario as a printable diagram in a new tab.
@@ -206,11 +283,11 @@
       const err = document.getElementById('mperr')
       const parties = Array.isArray(data.parties) ? data.parties : []
       const messages = Array.isArray(data.messages) ? data.messages : []
-      if (!parties.length || !messages.length) {
+      if (!parties.length || !messages.some(m => !m.event)) {
         err.textContent = `${source} has no parties or no messages.`
         return
       }
-      const unknown = messages.map(m => m.msgType).filter(t => !mpMessageTypes.some(mt => mt.tag === t))
+      const unknown = messages.filter(m => !m.event).map(m => m.msgType).filter(t => !mpMessageTypes.some(mt => mt.tag === t))
       if (unknown.length) {
         err.textContent = `${source} uses message types this program doesn't have: ${[...new Set(unknown)].join(', ')}.`
         return
@@ -223,17 +300,19 @@
         const row = document.querySelector('#mpparties .mprow:last-child')
         row.querySelector('.mp-cred').value = p.credential || (p.f3 ? 'F3' : '')
         row.querySelector('.mp-prefix').value = p.prefix || ''
+        row.querySelector('.mp-principal').value = p.principal || ''
       })
-      messages.forEach(() => mpAddMessageRow())
-      const rows = [...document.querySelectorAll('#mpmessages .mprow')]
+      const rows = messages.map(m => m.event ? mpAddEventRow(m.event, m.text) : mpAddMessageRow())
       // Type and From first: the To and Replying-to choices depend on them.
       rows.forEach((row, i) => {
+        if (messages[i].event) return
         row.querySelector('.mp-type').value = messages[i].msgType
         row.querySelector('.mp-from').value = String(messages[i].from ?? 0)
       })
       mpSyncOptions()
       rows.forEach((row, i) => {
         const m = messages[i]
+        if (m.event) return
         if (m.to === -1 || m.to === undefined) {
           if (!m.toLabel || m.toLabel === 'All Stations') {
             row.querySelector('.mp-to').value = '-1'
@@ -246,8 +325,11 @@
         }
         row.querySelector('.mp-purpose').value = m.purpose || ''
         row.querySelector('.mp-optoop').checked = !!m.opToOp
-        row.querySelector('.mp-replyto').value = String(m.replyTo || 0)
+        row.querySelector('.mp-handling').value = m.handling || ''
+        row.querySelector('.mp-group').value = m.group || ''
+        row.querySelector('.mp-replyto').value = m.replyTo > 0 && rows[m.replyTo - 1] ? rows[m.replyTo - 1].dataset.rid : '0'
       })
+      document.getElementById('mpname').value = data.name || ''
       if (data.scenario !== undefined) document.getElementById('mpscenario').value = data.scenario
       if (data.date) {
         // The date input wants YYYY-MM-DD; a file written by hand may use MM/DD/YYYY.
@@ -483,6 +565,7 @@
       })
       document.getElementById('mppartyadd').addEventListener('click', () => mpAddPartyRow())
       document.getElementById('mpmsgadd').addEventListener('click', () => mpAddMessageRow())
+      document.getElementById('mpevtadd').addEventListener('click', () => mpAddEventRow())
       document.getElementById('mpparties').addEventListener('input', mpSyncOptions)
       document.getElementById('mpsave').addEventListener('click', mpSaveScenario)
       document.getElementById('mpuml').addEventListener('click', mpExportUML)
@@ -516,9 +599,7 @@
         const body = JSON.stringify({
           dir,
           scenario: document.getElementById('mpscenario').value,
-          date: flow.date,
-          parties: flow.parties,
-          messages: flow.messages,
+          ...flow,
         })
         const sub = document.getElementById('mpsub')
         sub.disabled = true
@@ -541,25 +622,23 @@
     function openGenTrainingFlowDialog() {
       document.getElementById('mperr').textContent = ''
       document.getElementById('mpscenario').value = ''
+      document.getElementById('mpname').value = ''
       document.getElementById('mpdate').value = mpToday()
       document.getElementById('mpparties').innerHTML = ''
       document.getElementById('mpmessages').innerHTML = ''
       document.getElementById('mpcheck').innerHTML = ''
       mpAddPartyRow('Net Control', 'County EOC')
       mpAddPartyRow('Shelter Manager', '')
-      mpAddMessageRow()
-      mpAddMessageRow()
       // Give the example a sensible starting shape: message 1 from party 0
       // broadcasting a request, message 2 from party 1 replying to it.
-      const rows = document.querySelectorAll('#mpmessages .mprow')
-      if (rows.length === 2) {
-        rows[0].querySelector('.mp-purpose').value = 'Request a status update'
-        rows[1].querySelector('.mp-from').value = '1'
-        rows[1].querySelector('.mp-purpose').value = 'Reply with current status'
-        mpSyncOptions()
-        rows[1].querySelector('.mp-to').value = '0'
-        rows[1].querySelector('.mp-replyto').value = '1'
-      }
+      const first = mpAddMessageRow()
+      const second = mpAddMessageRow()
+      first.querySelector('.mp-purpose').value = 'Request a status update'
+      second.querySelector('.mp-from').value = '1'
+      second.querySelector('.mp-purpose').value = 'Reply with current status'
+      mpSyncOptions()
+      second.querySelector('.mp-to').value = '0'
+      second.querySelector('.mp-replyto').value = first.dataset.rid
       document.getElementById('mpform').hidden = false
       document.getElementById('mpprogress').hidden = true
       document.getElementById('mpresults').hidden = true
@@ -605,7 +684,30 @@
     }
 
     #mpparties .mprow {
-      grid-template-columns: 1fr 1fr 6rem auto auto;
+      grid-template-columns: 1fr 1fr 5rem 6rem auto auto;
+    }
+
+    #mpmessages .mprow.mpevent {
+      grid-template-columns: 1fr 2fr;
+      background-color: #fff8d8;
+    }
+
+    .mprowhead {
+      grid-column: 1 / -1;
+      display: flex;
+      align-items: center;
+      gap: 0.3rem;
+      font-size: 0.85em;
+      font-weight: bold;
+    }
+
+    .mprowhead .mpnum {
+      flex: 1;
+    }
+
+    .mp-text {
+      width: 100%;
+      box-sizing: border-box;
     }
 
     .mp-prefix {
@@ -616,9 +718,6 @@
       grid-template-columns: 1fr 1fr;
     }
 
-    #mpmessages .mprow .mpremove {
-      justify-self: end;
-    }
 
     .mpfield {
       display: flex;
@@ -638,9 +737,13 @@
       white-space: nowrap;
     }
 
-    #mpadd,
-    #mppartyadd,
-    #mpmsgadd {
+    #mpaddrow {
+      display: flex;
+      gap: 0.5rem;
+      margin-top: 0.5rem;
+    }
+
+    #mppartyadd {
       margin-top: 0.5rem;
       align-self: start;
     }
@@ -788,7 +891,7 @@
       <div id=mpfilerow>
         <button type=button id=mpload>Load scenario…</button>
         <button type=button id=mpsave>Save scenario…</button>
-        <button type=button id=mpuml>Export UML…</button>
+        <button type=button id=mpuml title="Save as a sequence diagram for sequencediagram.org">Export UML…</button>
         <button type=button id=mpview>View diagram…</button>
         <input type=file id=mploadfile accept=".json,application/json" hidden>
       </div>
@@ -799,6 +902,7 @@
           <label class=mpfield>Role<input type=text class=mp-role placeholder="e.g. Net Control"></label>
           <label class=mpfield>Location<input type=text class=mp-location placeholder="e.g. County EOC (optional)"></label>
           <label class=mpfield>Msg # prefix<input type=text class=mp-prefix maxlength=3 placeholder="e.g. S24" autocapitalize=characters></label>
+          <label class=mpfield title="Who hands this party's messages to its operator, and receives those delivered to it (for the diagram only)">Principal<input type=text class=mp-principal placeholder="e.g. FieldMgr"></label>
           <label class=mpfield>Credential<select class=mp-cred>
               <option value="">Not evaluated</option>
               <option value=F3>Field III (F3, limited prowords)</option>
@@ -819,11 +923,16 @@
       </template>
       <button type=button id=mppartyadd>+ Add party</button>
 
-      <p>Messages, in order: (choose "Each Station" as From to generate one reply from every party at once, e.g. answering a broadcast request)</p>
+      <p>Messages and events, in order: (choose "Each Station" as From to generate one reply from every party at once, e.g. answering a broadcast request; events such as opening the net are only drawn on the diagram)</p>
       <p class=mphint>Each party's own messages exercise its whole proword list, since a candidate is evaluated on what they transmit. Give every party at least two messages (three for Field Type II and Shadow Type II).</p>
       <div id=mpmessages></div>
       <template id=mpmsgtmpl>
-        <div class=mprow>
+        <div class="mprow mpmsg">
+          <div class=mprowhead><span class=mpnum></span>
+            <button type=button class=mpup title="Move up">&uarr;</button>
+            <button type=button class=mpdown title="Move down">&darr;</button>
+            <button type=button class=mpremove title="Remove this message">&times;</button>
+          </div>
           <label class=mpfield>Type<select class=mp-type></select></label>
           <label class=mpfield>From<select class=mp-from></select></label>
           <label class=mpfield>To<select class=mp-to></select></label>
@@ -831,16 +940,38 @@
           <label class="mpfield mpwide">Purpose (optional)<input type=text class=mp-purpose placeholder="e.g. request shelter capacity status"></label>
           <label class=mpfield>Replying to<select class=mp-replyto></select></label>
           <label class="mpfield mpcheck" title="Traffic between the radio operators, such as a status report, rather than a served agency's message. Plain text, check-in, and check-out messages always are."><input type=checkbox class=mp-optoop><span>Operator-to-operator</span></label>
-          <button type=button class=mpremove title="Remove this message">&times;</button>
+          <label class=mpfield>Handling<select class=mp-handling>
+              <option value="">Claude chooses</option>
+              <option value=R>Routine</option>
+              <option value=P>Priority</option>
+              <option value=I>Immediate</option>
+            </select></label>
+          <label class=mpfield title="Messages with the same group number are handed to their operators together, who should send them in handling order (immediate first).">Hand-off group<input type=number class=mp-group min=0 step=1 placeholder="none"></label>
         </div>
       </template>
-      <button type=button id=mpmsgadd>+ Add message</button>
+      <template id=mpevttmpl>
+        <div class="mprow mpevent">
+          <div class=mprowhead><span class=mpnum></span>
+            <button type=button class=mpup title="Move up">&uarr;</button>
+            <button type=button class=mpdown title="Move down">&darr;</button>
+            <button type=button class=mpremove title="Remove this event">&times;</button>
+          </div>
+          <label class=mpfield>Event<select class=mp-event></select></label>
+          <label class=mpfield>Text (\n for a new line)<input type=text class=mp-text></label>
+        </div>
+      </template>
+      <div id=mpaddrow>
+        <button type=button id=mpmsgadd>+ Add message</button>
+        <button type=button id=mpevtadd>+ Add event</button>
+      </div>
       <div id=mpcritrow>
         <button type=button id=mpcheckbtn>Check credential criteria</button>
         <button type=button id=mpautobtn>Auto-add traffic to meet criteria</button>
       </div>
       <div id=mpcheck></div>
 
+      <p><label>Net or exercise name: <input type=text id=mpname placeholder="e.g. Evaluation Net"></label>
+        <span class=mphint>Titles the diagram.</span></p>
       <p><label>Incident date: <input type=date id=mpdate required></label>
         <span class=mphint>Used for every date field of the generated messages; time fields are left blank.</span></p>
       <p>Overall scenario (optional):</p>

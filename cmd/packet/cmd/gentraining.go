@@ -22,10 +22,13 @@ const (
 	gentrainingHelp = `
 usage: packet gentrain ⇥[-flags] «msg-type» [«msg-type» ...]
        packet gentrain ⇥--flow «file.json» [-flags]
+       packet gentrain ⇥--uml|--plantuml [--flow «file.json»] [--name «net-name»]
   -l, --level «level»      ⇥Proword profile: "f3" or "full" (default "full"); ignored with --flow, where each party has its own "f3" flag instead
   -s, --scenario «text»    ⇥Scenario to steer the generated content
   -f, --flow «file.json»   ⇥Generate a multi-party message flow from a JSON file
-      --uml                ⇥With --flow, print the flow as a PlantUML sequence diagram instead
+      --uml                ⇥Print the flow (or without --flow, the current incident's messages) as a sequencediagram.org diagram instead
+      --plantuml           ⇥Likewise, as a PlantUML sequence diagram
+      --name «net-name»    ⇥With --uml or --plantuml and no --flow, the diagram title's net name (default: the incident name)
 
 The "packet gentrain" (or "gentraining") command asks Claude to draft one realistic 3rd-party message for each «msg-type» given on the command line (see "packet forms list" for the supported tags/keys, or "plain" for a plain text message), suitable for handing to a candidate during an SCCo RACES credential evaluation.
 
@@ -47,6 +50,12 @@ For a coherent multi-party exchange -- e.g. one message asking all stations for 
   }
 
 A party's optional "credential" names the credential it is evaluated for ("F3", "F2", "F1", "S3", "S2", "S1", "P3", "P2", "P1", "N3", "N2", or "N1"); "F3" also selects the reduced proword list, as "f3": true does. The GUI dialog's "Check credential criteria" button compares each party's traffic with its credential's minimums from the Credentialing Program Handbook, and "Auto-add traffic to meet criteria" adds messages until they're met, all through the Net Control party (the one with a Net Control credential, or a role containing "Net Control"): Net Control to a station or to All Stations, and a station to Net Control, often as a reply. A message's optional "opToOp": true marks it as operator-to-operator traffic (e.g. a status report between radio operators) rather than a served agency's message; plain text, check-in, and check-out messages always count as operator-to-operator. Auto-added operator-to-operator traffic is ICS-213s marked this way, never plain text.
+
+An optional top-level "name" names the net or exercise (e.g. "Evaluation Net") for diagram titles. A party's optional "principal" names who hands its messages to its operator and receives the messages delivered to it (e.g. "NetMgr" or "FieldMgr"); diagrams show those hand-offs and deliveries for 3rd-party traffic. A message's optional "handling" ("R", "P", or "I") sets its handling order instead of letting Claude choose, and its optional "group" (a number) puts it in a hand-off group: the messages with the same group are handed to their operators together, and the diagram shows them sent in handling order, most urgent first -- a prioritization drill.
+
+An entry with "event" instead of "msgType" is a scenario event: drawn on the diagram, never generated, and not counted as traffic. The events are "note" (a section heading, with its "text"), "open-net", "check-ins", "hw-check" (health and welfare check), "shift-change" (Net Control shift change), "closing" (announcing the net is closing), "check-outs", and "net-closed"; an optional "text" replaces the default wording. Every event but "note", "hw-check", and "shift-change" needs a Net Control party. Events count as entries for "replyTo" numbering, but a message can't reply to one.
+
+--uml prints the flow in the syntax of sequencediagram.org, and --plantuml in PlantUML's, without generating anything. Without --flow, they draw the messages in the current incident instead, with their actual numbers and handling orders; the principals, hand-off groups, and events are known for the messages generated from a flow. The GUI's Incident menu has the same diagram under "Message Flow Diagram".
 
 An optional top-level "date" gives the incident date (MM/DD/YYYY or YYYY-MM-DD, default today): every date field of the generated messages gets it, and their time fields are left blank.
 
@@ -72,6 +81,8 @@ func cmdGentraining(args []string) (err error) {
 		scenario string
 		flowFile string
 		uml      bool
+		plantuml bool
+		netName  string
 		specs    []genmsg.MessageSpec
 		c        = cio.Open()
 	)
@@ -79,13 +90,27 @@ func cmdGentraining(args []string) (err error) {
 	flags.StringVarP(&level, "level", "l", prowords.LevelFull, `Proword profile: "f3" or "full"`)
 	flags.StringVarP(&scenario, "scenario", "s", "", "Scenario to steer the generated content")
 	flags.StringVarP(&flowFile, "flow", "f", "", "Generate a multi-party message flow from a JSON file")
-	flags.BoolVar(&uml, "uml", false, "With --flow, print the flow as a PlantUML sequence diagram instead of generating it")
+	flags.BoolVar(&uml, "uml", false, "Print the flow or incident as a sequencediagram.org diagram")
+	flags.BoolVar(&plantuml, "plantuml", false, "Print the flow or incident as a PlantUML sequence diagram")
+	flags.StringVar(&netName, "name", "", "Net name for the incident diagram title")
 	flags.Usage = func() {} // we do our own
 	if err = flags.Parse(args); err == pflag.ErrHelp {
 		return cmdHelp([]string{"gentraining"})
 	} else if err != nil {
 		c.Error(err)
 		return usage(gentrainingHelp)
+	}
+	if uml && plantuml {
+		c.ErrorF(`Give only one of --uml and --plantuml.`)
+		return usage(gentrainingHelp)
+	}
+	if (uml || plantuml) && flowFile == "" {
+		if flags.NArg() != 0 {
+			c.ErrorF(`Do not give «msg-type» arguments together with --uml or --plantuml.`)
+			return usage(gentrainingHelp)
+		}
+		registerForms()
+		return incidentDiagram(netName, plantuml)
 	}
 	if (flowFile == "") == (flags.NArg() == 0) {
 		if flowFile != "" {
@@ -116,22 +141,23 @@ func cmdGentraining(args []string) (err error) {
 		if scenario == "" {
 			scenario = fl.Scenario
 		}
-		if uml {
+		if uml || plantuml {
 			d, err := genmsg.FlowDiagram(fl.Flow)
 			if err != nil {
 				c.ErrorF(`%s: %s.`, flowFile, err)
 				return usage(gentrainingHelp)
 			}
-			fmt.Print(d.PlantUML(fl.Scenario))
+			if plantuml {
+				fmt.Print(d.PlantUML(scenario))
+			} else {
+				fmt.Print(d.SequenceDiagram())
+			}
 			return nil
 		}
 		if specs, err = genmsg.ResolveFlow(fl.Flow); err != nil {
 			c.ErrorF(`%s: %s.`, flowFile, err)
 			return usage(gentrainingHelp)
 		}
-	} else if uml {
-		c.ErrorF(`--uml requires --flow.`)
-		return usage(gentrainingHelp)
 	} else {
 		specs = make([]genmsg.MessageSpec, flags.NArg())
 		for argidx := range flags.NArg() {
@@ -190,6 +216,26 @@ func cmdGentraining(args []string) (err error) {
 		}
 	}
 	return nil
+}
+
+// incidentDiagram prints the current incident's messages as a sequence
+// diagram (see genmsg.IncidentDiagram).
+func incidentDiagram(name string, plantuml bool) error {
+	return incRead(func(i *incident.Incident) error {
+		if name == "" {
+			name = i.Config.IncidentName
+		}
+		d, err := genmsg.IncidentDiagram(i, name)
+		if err != nil {
+			return err
+		}
+		if plantuml {
+			fmt.Print(d.PlantUML(""))
+		} else {
+			fmt.Print(d.SequenceDiagram())
+		}
+		return nil
+	})
 }
 
 // printProwordTable prints, for each generated message, which prowords the

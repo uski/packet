@@ -78,6 +78,11 @@ type MessageSpec struct {
 	// Leave empty to use Request.Level, as in the original single-batch
 	// (non-flow) mode where every message shares one level.
 	Level string
+
+	// Handling, if non-empty, is the message's handling order: "R", "P",
+	// or "I" (or ROUTINE, PRIORITY, IMMEDIATE). It is set by the tool,
+	// never asked of Claude.
+	Handling string
 }
 
 // Request describes one batch of training messages to generate. The
@@ -191,6 +196,9 @@ func Generate(ctx context.Context, client *ClaudeClient, req Request) ([]Result,
 		assigned[i] = plans[i].Categories
 		plans[i].Categories = missingCategories(plans[i].Categories, prowords.CountFields(AllFieldValues(draft)))
 		specs, routed := PromptFields(draft, plans[i].Categories)
+		if m.Handling != "" {
+			specs = slices.DeleteFunc(specs, func(s FieldSpec) bool { return handlingCommon[s.Common] })
+		}
 		plans[i].CheckOne = countCheckboxes(specs) >= manyCheckboxes
 		if len(specs) == 0 {
 			return nil, fmt.Errorf("message type %q has no editable fields to generate", m.MsgType.Tag())
@@ -601,6 +609,38 @@ func applyPartyFields(draft *message.DraftMessage, m MessageSpec) {
 	set("fromLocation", m.FromLocation)
 	set("toICSPosition", m.To)
 	set("toLocation", m.ToLocation)
+}
+
+// handlingCommon are the common names of the fields holding a message's
+// handling order.
+var handlingCommon = map[string]bool{"handling": true, "subjectHandling": true}
+
+// handlingNames maps handling order codes to their names.
+var handlingNames = map[string]string{"R": "ROUTINE", "P": "PRIORITY", "I": "IMMEDIATE"}
+
+// NormalizeHandling returns h as a handling order code ("R", "P", "I"), or
+// "" if it is empty or isn't one.
+func NormalizeHandling(h string) string {
+	h = strings.ToUpper(strings.TrimSpace(h))
+	for code, name := range handlingNames {
+		if h == code || h == name {
+			return code
+		}
+	}
+	return ""
+}
+
+// applyHandling sets draft's handling order to m.Handling, if given.
+func applyHandling(draft *message.DraftMessage, m MessageSpec) {
+	code := NormalizeHandling(m.Handling)
+	if code == "" {
+		return
+	}
+	for f := range draft.Fields() {
+		if handlingCommon[f.Common()] && f.Settable() {
+			f.SetValue(draft, f.FromHuman(draft, handlingNames[code]))
+		}
+	}
 }
 
 // completeWithHeartbeat calls client.Complete, calling progress with a

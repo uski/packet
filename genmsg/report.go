@@ -49,6 +49,9 @@ type reportMessage struct {
 	counts        map[prowords.Category]int
 	senderName    string
 	recipientName []string
+	id            string // message number
+	handling      string // R, P, I, or ""
+	date          string // message date, MM/DD/YYYY, if known
 }
 
 // IncidentReport recounts, from the current content of every message in
@@ -60,9 +63,55 @@ type reportMessage struct {
 // Position, and the recipient from the To address and To ICS Position.
 // Parties appear in the order of their first message.
 func IncidentReport(inc *incident.Incident) ([]PartyReport, error) {
-	records, err := loadTrainingRecords(inc.Dir)
+	msgs, names, err := readIncidentMessages(inc)
 	if err != nil {
 		return nil, err
+	}
+	var reports []*PartyReport
+	byName := map[string]*PartyReport{}
+	for _, name := range names {
+		p := &PartyReport{Name: name, Counts: map[prowords.Category]int{}}
+		byName[name] = p
+		reports = append(reports, p)
+	}
+	for _, rm := range msgs {
+		if rec := rm.record; rec != nil {
+			if rec.FromCredential != "" {
+				byName[rec.From].Credential = rec.FromCredential
+			}
+			for _, t := range rec.To {
+				if t.Credential != "" {
+					byName[t.Name].Credential = t.Credential
+				}
+			}
+		}
+	}
+	for _, rm := range msgs {
+		p := byName[rm.senderName]
+		p.Messages++
+		for cat, n := range rm.counts {
+			p.Counts[cat] += n
+		}
+		countTraffic(&p.Sent, rm.opToOp)
+		for _, r := range rm.recipientName {
+			countTraffic(&byName[r].Received, rm.opToOp)
+		}
+	}
+	out := make([]PartyReport, len(reports))
+	for i, p := range reports {
+		p.Reach = credentialReach(p)
+		out[i] = *p
+	}
+	return out, nil
+}
+
+// readIncidentMessages reads the messages of inc that a report covers, in
+// log order, naming their senders and recipients, and returns them with
+// the names of all parties in the order of their first appearance.
+func readIncidentMessages(inc *incident.Incident) ([]*reportMessage, []string, error) {
+	records, err := loadTrainingRecords(inc.Dir)
+	if err != nil {
+		return nil, nil, err
 	}
 	draftMu.Lock()
 	defer draftMu.Unlock()
@@ -78,7 +127,15 @@ func IncidentReport(inc *incident.Incident) ([]PartyReport, error) {
 			slog.Warn("proword report: can't read message", "id", le.LocalMsgID, "err", err)
 			continue
 		}
-		rm := &reportMessage{counts: map[prowords.Category]int{}}
+		rm := &reportMessage{counts: map[prowords.Category]int{}, id: le.LocalMsgID}
+		if le.Status == incident.StatusReceived {
+			rm.id = le.FromMsgID
+		}
+		rm.handling = NormalizeHandling(commonValue(msg, "handling"))
+		if rm.handling == "" {
+			rm.handling = NormalizeHandling(commonValue(msg, "subjectHandling"))
+		}
+		rm.date = commonValue(msg, "messageDate")
 		for _, f := range ProwordFields(msg) {
 			for _, m := range f.Matches {
 				rm.counts[m.Category]++
@@ -91,11 +148,7 @@ func IncidentReport(inc *incident.Incident) ([]PartyReport, error) {
 			rm.record = &rec
 			rm.opToOp = rm.opToOp || rec.OpToOp
 		} else {
-			id := le.LocalMsgID
-			if le.Status == incident.StatusReceived {
-				id = le.FromMsgID
-			}
-			if pfx, _, _, err := messageid.Decode(id, true, false); err == nil && pfx != ownPrefix {
+			if pfx, _, _, err := messageid.Decode(rm.id, true, false); err == nil && pfx != ownPrefix {
 				rm.fromPrefix = pfx
 			}
 			rm.fromRole = commonValue(msg, "fromICSPosition")
@@ -113,24 +166,19 @@ func IncidentReport(inc *incident.Incident) ([]PartyReport, error) {
 			prefixRole[rm.fromPrefix] = rm.fromRole
 		}
 	}
-	var reports []*PartyReport
-	byName := map[string]*PartyReport{}
-	party := func(name string) *PartyReport {
-		if p, ok := byName[name]; ok {
-			return p
+	var names []string
+	seen := map[string]bool{}
+	party := func(name string) {
+		if !seen[name] {
+			seen[name] = true
+			names = append(names, name)
 		}
-		p := &PartyReport{Name: name, Counts: map[prowords.Category]int{}}
-		byName[name] = p
-		reports = append(reports, p)
-		return p
 	}
 	roleName := map[string]string{}
 	for _, rm := range msgs {
 		if rec := rm.record; rec != nil {
 			rm.senderName = rec.From
-			if p := party(rec.From); rec.FromCredential != "" {
-				p.Credential = rec.FromCredential
-			}
+			party(rec.From)
 			continue
 		}
 		switch role := rm.fromRole; {
@@ -153,9 +201,7 @@ func IncidentReport(inc *incident.Incident) ([]PartyReport, error) {
 	for _, rm := range msgs {
 		if rec := rm.record; rec != nil {
 			for _, t := range rec.To {
-				if p := party(t.Name); t.Credential != "" {
-					p.Credential = t.Credential
-				}
+				party(t.Name)
 				rm.recipientName = append(rm.recipientName, t.Name)
 			}
 			continue
@@ -164,9 +210,9 @@ func IncidentReport(inc *incident.Incident) ([]PartyReport, error) {
 		addrPrefix = strings.ToUpper(strings.TrimSpace(addrPrefix))
 		switch {
 		case isAllStations(rm.toRole) && rm.toRole != "":
-			for _, p := range reports {
-				if p.Name != rm.senderName {
-					rm.recipientName = append(rm.recipientName, p.Name)
+			for _, name := range names {
+				if name != rm.senderName {
+					rm.recipientName = append(rm.recipientName, name)
 				}
 			}
 		case addrPrefix != "" && prefixRole[addrPrefix] != "":
@@ -177,24 +223,12 @@ func IncidentReport(inc *incident.Incident) ([]PartyReport, error) {
 			rm.recipientName = []string{rm.toRole}
 		}
 	}
-
 	for _, rm := range msgs {
-		p := byName[rm.senderName]
-		p.Messages++
-		for cat, n := range rm.counts {
-			p.Counts[cat] += n
-		}
-		countTraffic(&p.Sent, rm.opToOp)
 		for _, r := range rm.recipientName {
-			countTraffic(&party(r).Received, rm.opToOp)
+			party(r)
 		}
 	}
-	out := make([]PartyReport, len(reports))
-	for i, p := range reports {
-		p.Reach = credentialReach(p)
-		out[i] = *p
-	}
-	return out, nil
+	return msgs, names, nil
 }
 
 func commonValue(msg message.Message, common string) string {

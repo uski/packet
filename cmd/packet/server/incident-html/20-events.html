@@ -98,6 +98,14 @@
           window.open('/prowords-by-party?' + params.toString(), 'prowordsbyparty')
         }
       })
+      // Incident: Message Flow Diagram
+      setupMenuItem({
+        id: 'm-inc-diagram',
+        clicked: () => {
+          const params = new URLSearchParams({ dir: document.body.dataset.dir })
+          window.open('/incident-diagram?' + params.toString(), 'incidentdiagram')
+        }
+      })
       // Incident: Archive
       // TODO:
       // Message: New
