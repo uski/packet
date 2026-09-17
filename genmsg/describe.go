@@ -26,6 +26,7 @@ type FieldSpec struct {
 	Problem   string   // on a repair round, why the field's current value fails validation
 	Optional  bool     // offered to Claude to fill only if the message has information that belongs in it
 	Group     string   // label of the required checkbox group this checkbox belongs to, of which at least one must be checked
+	DateTime  bool     // a date or time field, which the tool fills in itself
 }
 
 // Describe returns the settable, addressable fields of msg (which should be
@@ -81,6 +82,7 @@ func newFieldSpec(msg message.Message, f field.Field, key string) FieldSpec {
 		Help:      f.EditHelp(),
 		Multiline: f.Multiline(),
 		Required:  f.Value(msg) == "" && f.Validate(msg, f, 0) != nil,
+		DateTime:  isDateOrTime(f),
 	}
 	if f.Restricted() {
 		for _, c := range f.Choices(msg) {

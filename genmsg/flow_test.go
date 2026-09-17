@@ -3,6 +3,7 @@ package genmsg
 import (
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/rothskeller/packet/v4/message"
 )
@@ -243,6 +244,33 @@ func TestResolveFlowPrefixes(t *testing.T) {
 	fl.Parties[1].Prefix = "SHELTER"
 	if _, err := ResolveFlow(fl); err == nil || !strings.Contains(err.Error(), "prefix") {
 		t.Errorf("expected an invalid prefix error, got %v", err)
+	}
+}
+
+func TestFlowDate(t *testing.T) {
+	now := time.Date(2026, 9, 16, 12, 0, 0, 0, time.Local)
+	for in, want := range map[string]string{"": "09/16/2026", "2026-03-14": "03/14/2026", "03/14/2026": "03/14/2026", "3/4/2026": "03/04/2026"} {
+		if got, err := flowDate(Flow{Date: in}, now); err != nil || got != want {
+			t.Errorf("flowDate(%q) = %q, %v; want %q", in, got, err, want)
+		}
+	}
+	if _, err := flowDate(Flow{Date: "next Tuesday"}, now); err == nil {
+		t.Error("an unparseable date should be rejected")
+	}
+	fl := Flow{
+		Date:     "2026-03-14",
+		Parties:  []FlowParty{{Role: "A"}, {Role: "B"}},
+		Messages: []FlowMessage{{MsgType: "plain", From: 0, To: 1}},
+	}
+	specs, err := ResolveFlow(fl)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if specs[0].Date != "03/14/2026" {
+		t.Errorf("message date = %q, want the flow's incident date", specs[0].Date)
+	}
+	if prompt := buildBriefPrompt(Request{Messages: specs}); !strings.Contains(prompt, "takes place on 03/14/2026") {
+		t.Errorf("the brief should give Claude the incident date:\n%s", prompt)
 	}
 }
 

@@ -115,8 +115,8 @@ func PromptFields(msg message.Message, categories []prowords.Category) (specs []
 		mustTag[s.Tag] = true
 	}
 	for _, s := range all {
-		if skipCommon[s.Common] {
-			continue
+		if skipCommon[s.Common] || s.DateTime {
+			continue // dates and times are the tool's to fill
 		}
 		if !mustTag[s.Tag] {
 			if strings.HasPrefix(s.Label, "Operator") {

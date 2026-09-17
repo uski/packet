@@ -8,6 +8,7 @@ import (
 
 	"github.com/rothskeller/packet/v4/incident"
 	"github.com/rothskeller/packet/v4/message"
+	"github.com/rothskeller/packet/v4/message/field"
 )
 
 // MaxWords is the target upper bound on a generated message's total word
@@ -43,8 +44,40 @@ func buildDraft(inc *incident.Incident, m MessageSpec, values map[string]string)
 	applyPartyFields(draft, m)
 	setFieldValues(draft, values)
 	// After the values, since they can make further dates/times required.
-	fillRequiredDateTimes(draft, time.Now())
+	if m.Date != "" {
+		setIncidentDate(draft, m.Date)
+	} else {
+		fillRequiredDateTimes(draft, time.Now())
+	}
 	return draft, nil
+}
+
+const (
+	dateHint     = "mm/dd/yyyy"
+	timeHint     = "hh:mm"
+	dateTimeHint = "mm/dd/yyyy hh:mm"
+)
+
+// setIncidentDate sets every date field of msg that has a value or is
+// required to date, and clears every time field.
+func setIncidentDate(msg *message.DraftMessage, date string) {
+	for f := range msg.Fields() {
+		if !f.Settable() {
+			continue
+		}
+		switch f.EditHint() {
+		case dateHint:
+			if f.Value(msg) != "" || f.Validate(msg, f, 0) != nil {
+				if v := f.FromHuman(msg, date); f.Value(msg) != v {
+					f.SetValue(msg, v)
+				}
+			}
+		case timeHint:
+			if f.Value(msg) != "" {
+				f.SetValue(msg, "")
+			}
+		}
+	}
 }
 
 // fillRequiredDateTimes sets every empty, required date or time field of
@@ -59,15 +92,24 @@ func fillRequiredDateTimes(msg *message.DraftMessage, now time.Time) {
 		}
 		var v string
 		switch f.EditHint() {
-		case "mm/dd/yyyy":
+		case dateHint:
 			v = now.Format("01/02/2006")
-		case "hh:mm":
+		case timeHint:
 			v = now.Format("15:04")
 		default:
 			continue
 		}
 		f.SetValue(msg, f.FromHuman(msg, v))
 	}
+}
+
+// isDateOrTime reports whether f holds a date, a time, or both.
+func isDateOrTime(f field.Field) bool {
+	switch f.EditHint() {
+	case dateHint, timeHint, dateTimeHint:
+		return true
+	}
+	return false
 }
 
 // problemSpecs returns a spec, with Problem set to the validation error,
@@ -79,8 +121,8 @@ func problemSpecs(msg message.Message) []FieldSpec {
 	var specs []FieldSpec
 	for f := range msg.Fields() {
 		key := fieldKey(f)
-		if key == "" || skipCommon[f.Common()] || !f.Settable() || !f.Editable(msg, true) {
-			continue
+		if key == "" || skipCommon[f.Common()] || !f.Settable() || !f.Editable(msg, true) || isDateOrTime(f) {
+			continue // dates and times are set by the tool, and times may be left blank on purpose
 		}
 		if err := f.Validate(msg, f, 0); err != nil && !isFictitiousCallSignError(f.Value(msg), err) {
 			s := newFieldSpec(msg, f, key)
@@ -220,8 +262,7 @@ func messageWordCount(msg message.Message) int {
 		if fieldKey(f) == "" || skipCommon[f.Common()] || !f.Settable() {
 			continue
 		}
-		switch f.EditHint() {
-		case "mm/dd/yyyy", "hh:mm", "mm/dd/yyyy hh:mm":
+		if isDateOrTime(f) {
 			continue
 		}
 		n += len(strings.Fields(f.Value(msg)))

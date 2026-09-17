@@ -131,7 +131,13 @@
         }
         return msg
       })
-      return { parties, messages }
+      return { date: document.getElementById('mpdate').value, parties, messages }
+    }
+
+    // mpToday returns today's date as the date input's YYYY-MM-DD.
+    function mpToday() {
+      const d = new Date()
+      return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
     }
 
     // mpSaveScenario downloads the dialog's parties, messages, and scenario
@@ -208,6 +214,11 @@
         row.querySelector('.mp-replyto').value = String(m.replyTo || 0)
       })
       if (data.scenario !== undefined) document.getElementById('mpscenario').value = data.scenario
+      if (data.date) {
+        // The date input wants YYYY-MM-DD; a file written by hand may use MM/DD/YYYY.
+        const m = /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/.exec(data.date)
+        document.getElementById('mpdate').value = m ? `${m[3]}-${m[1].padStart(2, '0')}-${m[2].padStart(2, '0')}` : data.date
+      }
     }
 
     // mpPostFlow sends the dialog's flow to url and returns the parsed JSON
@@ -468,6 +479,7 @@
         const body = JSON.stringify({
           dir,
           scenario: document.getElementById('mpscenario').value,
+          date: flow.date,
           parties: flow.parties,
           messages: flow.messages,
         })
@@ -492,6 +504,7 @@
     function openGenTrainingFlowDialog() {
       document.getElementById('mperr').textContent = ''
       document.getElementById('mpscenario').value = ''
+      document.getElementById('mpdate').value = mpToday()
       document.getElementById('mpparties').innerHTML = ''
       document.getElementById('mpmessages').innerHTML = ''
       document.getElementById('mpcheck').innerHTML = ''
@@ -789,6 +802,8 @@
       </div>
       <div id=mpcheck></div>
 
+      <p><label>Incident date: <input type=date id=mpdate required></label>
+        <span class=mphint>Used for every date field of the generated messages; time fields are left blank.</span></p>
       <p>Overall scenario (optional):</p>
       <textarea id=mpscenario rows=2 placeholder="e.g. a magnitude 5.4 earthquake has just occurred (leave blank for a generic scenario)"></textarea>
       <div id=mperr></div>

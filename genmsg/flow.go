@@ -5,6 +5,7 @@ import (
 	"regexp"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/rothskeller/packet/v4/message"
 	"github.com/rothskeller/packet/v4/prowords"
@@ -76,8 +77,25 @@ func flowPurpose(fm FlowMessage) string {
 // and the messages exchanged between them. ResolveFlow validates it and
 // resolves it into a []MessageSpec.
 type Flow struct {
+	// Date is the incident date (MM/DD/YYYY or YYYY-MM-DD), used for every
+	// message's date fields; empty means today. Time fields are left blank.
+	Date     string        `json:"date,omitempty"`
 	Parties  []FlowParty   `json:"parties"`
 	Messages []FlowMessage `json:"messages"`
+}
+
+// flowDate returns fl's incident date as MM/DD/YYYY, or today's if unset.
+func flowDate(fl Flow, now time.Time) (string, error) {
+	s := strings.TrimSpace(fl.Date)
+	if s == "" {
+		return now.Format("01/02/2006"), nil
+	}
+	for _, layout := range []string{"2006-01-02", "01/02/2006", "1/2/2006"} {
+		if t, err := time.Parse(layout, s); err == nil {
+			return t.Format("01/02/2006"), nil
+		}
+	}
+	return "", fmt.Errorf("invalid incident date %q (use MM/DD/YYYY)", fl.Date)
 }
 
 // FindMsgType looks up a registered, editable message type by its create
@@ -200,6 +218,10 @@ func ResolveFlow(fl Flow) ([]MessageSpec, error) {
 	if err != nil {
 		return nil, err
 	}
+	date, err := flowDate(fl, time.Now())
+	if err != nil {
+		return nil, err
+	}
 
 	// Second pass: build the expanded spec list, and record where each
 	// original message's spec(s) landed so ReplyTo can be remapped.
@@ -225,6 +247,7 @@ func ResolveFlow(fl Flow) ([]MessageSpec, error) {
 				ToPrefix:     to.Prefix,
 				Purpose:      flowPurpose(fm),
 				Level:        partyLevel(fl.Parties[p]),
+				Date:         date,
 			}
 			spec.MsgType, _ = FindMsgType(fm.MsgType) // already validated above
 			rec := &TrainingRecord{From: partyName(fl.Parties[p]), FromCredential: fl.Parties[p].Credential, OpToOp: isOpToOpMessage(fm)}

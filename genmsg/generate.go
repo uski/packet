@@ -46,6 +46,11 @@ type MessageSpec struct {
 	FromPrefix string
 	ToPrefix   string
 
+	// Date, if set (MM/DD/YYYY), is the incident date: every filled date
+	// field gets it, and time fields are left blank. Otherwise dates and
+	// times are the current ones.
+	Date string
+
 	// Training, if set, is saved with the incident when the message is
 	// created (see Apply), for IncidentReport. ResolveFlow sets it.
 	Training *TrainingRecord
@@ -487,6 +492,16 @@ func generationOrder(msgs []MessageSpec) []int {
 	return order
 }
 
+// incidentDate returns the incident date req's messages use, if any.
+func incidentDate(req Request) string {
+	for _, m := range req.Messages {
+		if m.Date != "" {
+			return m.Date
+		}
+	}
+	return ""
+}
+
 // buildBriefPrompt asks Claude to plan the exercise every message in req
 // will be written from: the incident, the facts they must agree on, and
 // what each message says.
@@ -496,6 +511,9 @@ func buildBriefPrompt(req Request) string {
 		fmt.Fprintf(&b, "Scenario: %s\n\n", req.Scenario)
 	} else {
 		b.WriteString("No scenario was given: invent a plausible Santa Clara County emergency-response scenario (e.g. a downed power line, a fallen tree blocking a road, traffic congestion near a shelter, storm damage, a utility outage).\n\n")
+	}
+	if date := incidentDate(req); date != "" {
+		fmt.Fprintf(&b, "The incident takes place on %s.\n\n", date)
 	}
 	fmt.Fprintf(&b, "The exercise has %d messages. Each will be written separately later, by someone who sees only your brief and that one message's details:\n", len(req.Messages))
 	for i, m := range req.Messages {
@@ -637,6 +655,9 @@ func sharedPrompt(req Request, brief string) string {
 		fmt.Fprintf(&b, "Scenario to base all of the messages on: %s\n\n", req.Scenario)
 	} else {
 		b.WriteString("No specific scenario was given. Invent a plausible Santa Clara County emergency-response scenario (e.g. a downed power line, a fallen tree blocking a road, traffic congestion near a shelter, storm damage assessment, a utility outage) and use it consistently across all the messages in this batch.\n\n")
+	}
+	if date := incidentDate(req); date != "" {
+		fmt.Fprintf(&b, "The incident takes place on %s; any date a message mentions must be consistent with that. Date and time fields are filled in separately, so they aren't listed.\n\n", date)
 	}
 	b.WriteString("Messages may be different form types with different fields (a training session can mix, for example, an ICS-213, a plain text message, and a Road Closure form). Weave each message's listed requirements naturally into that message's own field values -- they must fit the scenario and read like real, professional emergency radio traffic, not like a checklist. Proword content in ANY field counts, so each requirement only needs to be met ONCE, in the single field that suits it best (a person's name in a name field, an email address or phone number in a contact field) -- never repeat it in another field, and never add a sentence to the free-text body just to carry it (e.g. not \"Contact Jane Doe at jane@xanadu-city.org for logistics.\" when there are name and contact fields to hold them). Requirements already satisfied by pre-filled fields have been left out. Fill each form the way a trained operator fills out the real form: put every piece of information in the field made for it -- for example each requested item in its own item row (Item 1's name and quantity, then Item 2's), a person in a name field, a phone number in a phone field -- and use a free-text field such as Comments or Special Instructions only for information no other field holds, never to restate other fields (e.g. not \"Need 50 blankets, generator\" in Comments when the form has item fields). A subject, title, or summary field is only a short headline of a few words: the message's details go in its message body or the form's other fields, never in the subject.\n\n")
 	b.WriteString("How to meet each proword requirement a message lists:\n")

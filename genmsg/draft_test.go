@@ -376,6 +376,31 @@ func TestMessageWordCount(t *testing.T) {
 
 // TestGenerateTrimsOverBudgetMessage verifies that a message well over the
 // word budget is sent back to Claude to be shortened.
+func TestBuildDraftIncidentDate(t *testing.T) {
+	mt := sitRepType(t)
+	draft, err := buildDraft(draftTestIncident(t), MessageSpec{MsgType: mt, Date: "03/14/2026"}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// 1a./1b. are the message date and time; 20d./20t. the prepared ones.
+	for tag, want := range map[string]string{"1a.": "03/14/2026", "20d.": "03/14/2026", "1b.": "", "20t.": ""} {
+		if got := FindField(draft, tag).Value(draft); got != want {
+			t.Errorf("field %q = %q, want %q", tag, got, want)
+		}
+	}
+	for _, p := range problemSpecs(draft) {
+		if p.DateTime {
+			t.Errorf("a blank time field shouldn't be reported for revision, got %+v", p)
+		}
+	}
+	specs, _ := PromptFields(draft, nil)
+	for _, s := range specs {
+		if s.DateTime {
+			t.Errorf("date/time field %q shouldn't be offered to Claude", s.Tag)
+		}
+	}
+}
+
 func TestGenerateTrimsOverBudgetMessage(t *testing.T) {
 	// Satisfies every f3-profile category on its own, in about 40 words.
 	const body = `Please call KJ6ABC at 408-555-1212 or email kj6abc@xanadu-city.org ` +
