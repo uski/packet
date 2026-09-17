@@ -39,9 +39,12 @@ type prowordCount struct {
 }
 
 type prowordPage struct {
-	Title  string
-	Counts []prowordCount
-	Fields []prowordField
+	Title string
+	// Contentless marks a check-in or check-out message, which counts no
+	// prowords: sending it is all that counts.
+	Contentless bool
+	Counts      []prowordCount
+	Fields      []prowordField
 }
 
 // serveGetViewProwords handles GET /view-prowords requests, which have dir=
@@ -82,7 +85,7 @@ func (s *Server) serveGetViewProwords(w http.ResponseWriter, r *http.Request) {
 // buildProwordPage splits each of msg's fields into segments at its proword
 // usages, and tallies the usages.
 func buildProwordPage(title string, msg message.Message) prowordPage {
-	page := prowordPage{Title: title}
+	page := prowordPage{Title: title, Contentless: genmsg.IsContentlessType(msg.Type())}
 	counts := map[prowords.Category]int{}
 	for _, f := range genmsg.ProwordFields(msg) {
 		pf := prowordField{Label: f.Label}

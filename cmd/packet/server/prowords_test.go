@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/rothskeller/packet/v4/form/formdefs"
 	"github.com/rothskeller/packet/v4/genmsg"
 	"github.com/rothskeller/packet/v4/incident"
 	"github.com/rothskeller/packet/v4/message"
@@ -84,5 +85,36 @@ func TestServeGetViewProwords(t *testing.T) {
 		if !strings.Contains(body, want) {
 			t.Errorf("prowords by party page (status %d) lacks %q:\n%s", rr.Code, want, body)
 		}
+	}
+}
+
+func TestBuildProwordPageCheckIn(t *testing.T) {
+	formdefs.UseInternalForms = true
+	if err := formdefs.RegisterForms(); err != nil {
+		t.Fatal(err)
+	}
+	mt := message.FindCreateTag("Check-In")
+	if mt == nil {
+		t.Skip("Check-In not registered (build without -tags sccopifo?)")
+	}
+	msg := mt.(message.EditableMType).NewDraft().(*message.DraftMessage)
+	for f := range msg.Fields() {
+		switch f.Common() {
+		case "operatorCall":
+			f.SetValue(msg, "W6XRL4")
+		case "operatorName":
+			f.SetValue(msg, "Diego Marchetti")
+		}
+	}
+	page := buildProwordPage("S21-101P", msg)
+	if !page.Contentless || len(page.Counts) != 0 || len(page.Fields) == 0 {
+		t.Errorf("a check-in should show its fields but count no prowords: %+v", page)
+	}
+	var buf bytes.Buffer
+	if err := prowordsTemplate.Execute(&buf, page); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(buf.String(), "no proword is counted") || strings.Contains(buf.String(), `class="pw"`) {
+		t.Errorf("page:\n%s", buf.String())
 	}
 }

@@ -13,6 +13,7 @@ import (
 
 	"github.com/rothskeller/packet/v4/incident"
 	"github.com/rothskeller/packet/v4/message"
+	"github.com/rothskeller/packet/v4/prowords"
 )
 
 // TestGenerateReportsProgress verifies that Generate calls its Progress
@@ -150,5 +151,97 @@ func TestGenerateReportsActivities(t *testing.T) {
 	}
 	if !sawReplyWait || !sawLabel || !sawElapsed {
 		t.Errorf("reply wait %v, label %v, elapsed %v: %+v", sawReplyWait, sawLabel, sawElapsed, events)
+	}
+}
+
+// TestCheckInsAreSentAsIs verifies that check-in and check-out messages are
+// never written by Claude, carry no proword requirements, and count no
+// prowords.
+func TestCheckInsAreSentAsIs(t *testing.T) {
+	checkIn, checkOut := formType(t, "Check-In"), formType(t, "Check-Out")
+	var (
+		mu      sync.Mutex
+		prompts []string
+	)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var req struct {
+			Messages []claudeMessage `json:"messages"`
+		}
+		json.NewDecoder(r.Body).Decode(&req)
+		mu.Lock()
+		for _, m := range req.Messages {
+			prompts = append(prompts, m.Text())
+		}
+		mu.Unlock()
+		resp := claudeResponse{}
+		resp.Content = []struct {
+			Type string `json:"type"`
+			Text string `json:"text"`
+		}{{Type: "text", Text: `[{"subjectSummary":"Test","subjectHandling":"ROUTINE","defaultBody":"Body with 5 units and a phone 408-555-1212."}]`}}
+		json.NewEncoder(w).Encode(resp)
+	}))
+	defer srv.Close()
+	inc := draftTestIncident(t)
+	shelter := func(mt message.EditableMType) MessageSpec {
+		return MessageSpec{MsgType: mt, From: "Shelter", FromPrefix: "S21", Level: "full"}
+	}
+	specs := []MessageSpec{shelter(checkIn), shelter(message.PlainMessage), shelter(checkOut)}
+	var activities []Activity
+	client := &ClaudeClient{APIKey: "test-key", URL: srv.URL}
+	results, err := Generate(context.Background(), client, Request{
+		Incident: inc, Messages: specs, Level: "full",
+		Activity: func(a Activity) { activities = append(activities, a) },
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Only the plain text message is written (drafted, then revised, as
+	// the canned response misses requirements): no plan is needed for one.
+	if len(prompts) == 0 {
+		t.Error("the plain text message should be written by Claude")
+	}
+	for _, p := range prompts {
+		if !strings.Contains(p, "Message 2 -- type: a plain text message") || strings.Contains(p, "check-in") || strings.Contains(p, "check-out") {
+			t.Errorf("Claude should only be asked for the plain text message, got:\n%s", p)
+		}
+	}
+	for _, i := range []int{0, 2} {
+		r := results[i]
+		if len(r.Values) != 0 || len(r.Assigned) != 0 || len(r.Counts) != 0 || len(r.Missing) != 0 {
+			t.Errorf("message %d should have no content, requirements, or prowords: %+v", i+1, r)
+		}
+	}
+	full, _ := prowords.Profile(prowords.LevelFull)
+	if len(results[1].Assigned) != len(full) {
+		t.Errorf("the plain text message should carry every requirement, got %v", results[1].Assigned)
+	}
+	if brief := buildBriefPrompt(Request{Messages: specs}); !strings.Contains(brief, "Message 1: a check-in message (sent as is, with no content to write)") {
+		t.Errorf("the brief should say the check-in has no content:\n%s", brief)
+	}
+	var sawDone bool
+	for _, a := range activities {
+		sawDone = sawDone || a.Key == "message-1" && a.State == ActivityDone && strings.Contains(a.Status, "nothing to write")
+	}
+	if !sawDone {
+		t.Errorf("the check-in's activity should be done with nothing to write: %+v", activities)
+	}
+
+	// Even with a call sign and name filled in, a check-in counts nothing.
+	draft, err := buildDraft(inc, specs[0], map[string]string{"tacname": "Shelter Kaczmarek", "taccall": "XSHEL4"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for f := range draft.Fields() {
+		if f.Common() == "operatorCall" {
+			f.SetValue(draft, "W6XRL4")
+		}
+	}
+	if n := len(messageCounts(draft)); n != 0 {
+		t.Errorf("a check-in counted %d prowords", n)
+	}
+	for _, f := range ProwordFields(draft) {
+		if len(f.Matches) != 0 {
+			t.Errorf("check-in field %s shows prowords: %v", f.Label, f.Matches)
+		}
 	}
 }

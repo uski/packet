@@ -230,11 +230,14 @@ func Generate(ctx context.Context, client *ClaudeClient, req Request) ([]Result,
 			return nil, err
 		}
 		baseWords[i] = messageWordCount(draft)
+		if isContentless(m) {
+			continue
+		}
 		// Categories the pre-filled fields already cover don't need to
 		// be asked for again; Assigned keeps the full list so coverage
 		// is still reported against it.
 		assigned[i] = plans[i].Categories
-		plans[i].Categories = missingCategories(plans[i].Categories, prowords.CountFields(AllFieldValues(draft)))
+		plans[i].Categories = missingCategories(plans[i].Categories, messageCounts(draft))
 		specs, routed := PromptFields(draft, plans[i].Categories)
 		if m.Handling != "" {
 			specs = slices.DeleteFunc(specs, func(s FieldSpec) bool { return handlingCommon[s.Common] })
@@ -255,8 +258,14 @@ func Generate(ctx context.Context, client *ClaudeClient, req Request) ([]Result,
 	// Asking for a whole batch in one response can outgrow the output
 	// limit, so messages are generated one call at a time; a brief
 	// planned up front keeps them consistent with each other.
+	var toWrite int // messages Claude writes
+	for _, m := range req.Messages {
+		if !isContentless(m) {
+			toWrite++
+		}
+	}
 	var brief string
-	if count > 1 {
+	if toWrite > 1 {
 		const label = "Planning a scenario shared by all the messages"
 		plan := Activity{Key: "plan", Label: label, Status: "planning", State: ActivityWorking}
 		progress(label + "...")
@@ -280,7 +289,7 @@ func Generate(ctx context.Context, client *ClaudeClient, req Request) ([]Result,
 	defer cancel()
 	g := &generation{ctx: ctx, client: client, req: req, shared: sharedPrompt(req, brief), specs: specsPerMsg,
 		routed: routedPerMsg, baseWords: baseWords, results: results, progress: progress, activity: activity}
-	if count > 1 {
+	if toWrite > 1 {
 		// Messages start in parallel, before any could read a cache entry
 		// written by another, so write it once up front.
 		if err := client.Prewarm(ctx, systemPrompt, g.shared); err != nil {
@@ -313,7 +322,9 @@ func (g *generation) generateAll(plans []MessagePlan, cancel context.CancelFunc)
 	for n, idx := range order {
 		a := g.messageActivity(idx, n+1)
 		a.Status, a.State = "waiting to start", ActivityWaiting
-		if r := g.req.Messages[idx].ReplyTo; r > 0 && pos[r-1] < n {
+		if isContentless(g.req.Messages[idx]) {
+			a.Status, a.State = "nothing to write: sending it is what counts", ActivityDone
+		} else if r := g.req.Messages[idx].ReplyTo; r > 0 && pos[r-1] < n {
 			a.Status = fmt.Sprintf("waiting for message %d, which it replies to", pos[r-1]+1)
 		}
 		g.activity(a)
@@ -326,6 +337,17 @@ func (g *generation) generateAll(plans []MessagePlan, cancel context.CancelFunc)
 		finished int
 	)
 	for n, idx := range order {
+		if isContentless(g.req.Messages[idx]) {
+			if err := g.createAsIs(idx); err != nil {
+				cancel()
+				return err
+			}
+			close(done[idx])
+			mu.Lock()
+			finished++
+			mu.Unlock()
+			continue
+		}
 		wg.Go(func() {
 			defer close(done[idx])
 			// Only wait for a target generated earlier, so a reply cycle
@@ -397,6 +419,13 @@ type generation struct {
 	results   []Result
 	progress  func(string)
 	activity  func(Activity)
+}
+
+// createAsIs records message idx, which has no content to generate (see
+// isContentless), as it is.
+func (g *generation) createAsIs(idx int) error {
+	_, err := g.evaluate(idx, map[string]string{}, nil, false)
+	return err
 }
 
 // stopped reports that message idx, the n-th in generation order, won't be
@@ -528,7 +557,7 @@ func (g *generation) evaluate(idx int, values map[string]string, invalid []strin
 	res := &g.results[idx]
 	res.Values = values
 	res.InvalidFields = invalid
-	res.Counts = prowords.CountFields(AllFieldValues(draft))
+	res.Counts = messageCounts(draft)
 	res.Missing = missingCategories(res.Assigned, res.Counts)
 	res.Words = messageWordCount(draft)
 	var ev evaluation
@@ -630,6 +659,9 @@ func buildBriefPrompt(req Request) string {
 	fmt.Fprintf(&b, "The exercise has %d messages. Each will be written separately later, by someone who sees only your brief and that one message's details:\n", len(req.Messages))
 	for i, m := range req.Messages {
 		fmt.Fprintf(&b, "Message %d: %s", i+1, m.MsgType.Name())
+		if isContentless(m) {
+			fmt.Fprintf(&b, " (sent as is, with no content to write)")
+		}
 		if m.From != "" {
 			fmt.Fprintf(&b, ", from %s", partyLabel(m.From, m.FromLocation))
 		}
@@ -651,9 +683,36 @@ func buildBriefPrompt(req Request) string {
 		"1. The incident: what happened, where, and when.\n" +
 		"2. Shared facts every message must agree on: names of people, places and addresses, quantities, times, amateur call signs, and the specific details that make requests realistic (e.g. a generator's make, model number, and power rating). Use only the xanadu-city.org domain for any email or web address, and only fictitious call signs ending with a digit, like W6XRL4, never a real call sign.\n" +
 		"   " + fictionalPlacesPrompt + "\n" +
-		"3. One line per message saying specifically what it reports, requests, or answers, so each reply answers what was actually asked.\n" +
+		"3. One line per message saying specifically what it reports, requests, or answers, so each reply answers what was actually asked (nothing for a message sent as is).\n" +
 		"Do not write the messages themselves. Each message will be at most about 50 words.\n")
 	return b.String()
+}
+
+// contentlessTypes are the message types (by create tag, lower case) whose
+// sending is the whole point: a check-in or check-out has nothing to write,
+// so it is created as is, without asking Claude for anything.
+var contentlessTypes = map[string]bool{"check-in": true, "check-out": true}
+
+// isContentless says whether m is a message with no content to generate.
+func isContentless(m MessageSpec) bool {
+	return IsContentlessType(m.MsgType)
+}
+
+// IsContentlessType says whether messages of type t have no content: a
+// check-in or check-out, whose sending is all that counts. Such a message
+// is never generated, and no proword is ever counted in it.
+func IsContentlessType(t message.MType) bool {
+	emt, ok := t.(message.EditableMType)
+	return ok && contentlessTypes[strings.ToLower(emt.CreateTag())]
+}
+
+// messageCounts counts the prowords in msg's content (see AllFieldValues);
+// a contentless message (see IsContentlessType) has none.
+func messageCounts(msg message.Message) map[prowords.Category]int {
+	if IsContentlessType(msg.Type()) {
+		return map[prowords.Category]int{}
+	}
+	return prowords.CountFields(AllFieldValues(msg))
 }
 
 // planByParty groups req.Messages by sender and effective proword level (a
@@ -674,6 +733,9 @@ func planByParty(req Request) ([]MessagePlan, error) {
 	count := len(req.Messages)
 	groups := map[party][]int{}
 	for i, m := range req.Messages {
+		if isContentless(m) {
+			continue // no content to hold proword requirements
+		}
 		lvl := m.Level
 		if lvl == "" {
 			lvl = req.Level

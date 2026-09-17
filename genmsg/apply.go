@@ -9,7 +9,6 @@ import (
 	"github.com/rothskeller/packet/v4/message/address"
 	"github.com/rothskeller/packet/v4/message/field"
 	"github.com/rothskeller/packet/v4/message/messageid"
-	"github.com/rothskeller/packet/v4/prowords"
 )
 
 // Applied is one message that was successfully created in an incident by
@@ -70,7 +69,7 @@ func Apply(inc *incident.Incident, specs []MessageSpec, results []Result) ([]App
 		}
 		ensureDrillTraffic(newmsg)
 		// Measured on the final message, after the drill-traffic phrase.
-		res.Counts = prowords.CountFields(AllFieldValues(newmsg))
+		res.Counts = messageCounts(newmsg)
 		res.Missing = missingCategories(res.Assigned, res.Counts)
 		res.MissingFields = fieldLabels(problemSpecs(newmsg))
 		res.Words = messageWordCount(newmsg)

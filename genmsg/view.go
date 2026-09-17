@@ -17,9 +17,11 @@ type FieldProwords struct {
 // the proword usages in its value, found and counted the same way as a
 // generated message's proword table (see AllFieldValues). Administrative
 // fields are left out, and ICS position and location names are shown
-// without matches.
+// without matches, as is every field of a check-in or check-out message
+// (see IsContentlessType).
 func ProwordFields(msg message.Message) []FieldProwords {
 	var out []FieldProwords
+	contentless := IsContentlessType(msg.Type())
 	for f := range msg.Fields() {
 		if fieldKey(f) == "" || skipCommon[f.Common()] {
 			continue
@@ -29,7 +31,7 @@ func ProwordFields(msg message.Message) []FieldProwords {
 			continue
 		}
 		fp := FieldProwords{Label: f.Label(), Value: v}
-		if !shortNameField[f.Common()] {
+		if !shortNameField[f.Common()] && !contentless {
 			fp.Matches = prowords.Find(v)
 		}
 		out = append(out, fp)
