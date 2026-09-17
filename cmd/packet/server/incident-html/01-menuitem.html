@@ -63,6 +63,8 @@
             this._shortcutKey = this._shortcutKey.substring(1)
             this._shortcutCtrl = true
           } else this._shortcutCtrl = false
+          // Short labels for keys whose event name is longer.
+          this._shortcutKey = { del: 'delete' }[this._shortcutKey] || this._shortcutKey
           window.addEventListener('keydown', this._checkShortcut.bind(this))
         } else {
           while (this.firstChild) this._button.appendChild(this.firstChild)
@@ -104,7 +106,7 @@
       shown() { return !this.hasAttribute('hidden') }
       _checkShortcut(evt) {
         if (this.hasAttribute('hidden')) return
-        if (evt.target.closest('dialog')) return
+        if (evt.target.closest('dialog, input, textarea, select, [contenteditable]')) return
         if (evt.altKey || evt.metaKey) return
         if (evt.ctrlKey !== this._shortcutCtrl) return
         if (evt.key.toLowerCase() !== this._shortcutKey) return
