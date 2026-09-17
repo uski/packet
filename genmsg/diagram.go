@@ -8,6 +8,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/rothskeller/packet/v4/message/messageid"
 )
 
 // Diagram is a message flow laid out as a sequence diagram: its parties
@@ -87,9 +89,10 @@ type seqStep struct {
 }
 
 // FlowDiagram lays out fl the way it will be generated (see ResolveFlow).
-// Messages are labeled with the numbers they'd get in an incident with no
-// other messages from their senders, or by entry number for a party
-// without a message number prefix.
+// Messages are labeled with the numbers the scenario gives them, or else
+// those they'd get in an incident with no other messages from their
+// senders, or by entry number for a party without a message number prefix.
+// The usual "P" suffix is left out.
 func FlowDiagram(fl Flow) (Diagram, error) {
 	if err := normalizeParties(&fl); err != nil {
 		return Diagram{}, err
@@ -108,6 +111,18 @@ func FlowDiagram(fl Flow) (Diagram, error) {
 		parties[i] = seqParty{name: partyName(p), label: partyName(p), principal: strings.TrimSpace(p.Principal), netControl: hasNC && i == nc}
 		if cred := partyCredential(p); cred != "" {
 			parties[i].label += " [" + cred + "]"
+		}
+	}
+	msgNos, err := flowMessageNumbers(fl, senders)
+	if err != nil {
+		return Diagram{}, err
+	}
+	reserved := map[string]bool{}
+	for _, nums := range msgNos {
+		for _, id := range nums {
+			if p, n, _, err := messageid.Decode(id, true, false); err == nil {
+				reserved[numberKey(p, n)] = true
+			}
 		}
 	}
 	nextSeq := map[string]int{}
@@ -134,11 +149,16 @@ func FlowDiagram(fl Flow) (Diagram, error) {
 				entry += string(rune('a' + j))
 			}
 			label := "#" + entry
-			if pfx := fl.Parties[s].Prefix; pfx != "" {
+			if id := msgNos[i][j]; id != "" {
+				label = strings.TrimSuffix(id, "P")
+			} else if pfx := fl.Parties[s].Prefix; pfx != "" {
 				if nextSeq[pfx] == 0 {
 					nextSeq[pfx] = 101
 				}
-				label = fmt.Sprintf("%s-%03d", pfx, nextSeq[pfx])
+				for reserved[numberKey(pfx, nextSeq[pfx])] {
+					nextSeq[pfx]++
+				}
+				label = numberKey(pfx, nextSeq[pfx])
 				nextSeq[pfx]++
 			}
 			labels[i] = append(labels[i], label)

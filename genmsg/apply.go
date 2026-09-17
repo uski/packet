@@ -40,6 +40,10 @@ func Apply(inc *incident.Incident, specs []MessageSpec, results []Result) ([]App
 	}
 	applied := make([]Applied, len(results))
 	ids := make([]string, len(results))
+	reserved, err := reserveMessageNumbers(inc, specs)
+	if err != nil {
+		return nil, err
+	}
 	nextSeq := map[string]int{}
 	records := map[int]TrainingRecord{}
 	// A reply is created after the message it answers, so it can refer to
@@ -50,10 +54,12 @@ func Apply(inc *incident.Incident, specs []MessageSpec, results []Result) ([]App
 		if err != nil {
 			return nil, err
 		}
-		if spec.FromPrefix != "" {
-			id, err := nextStationMessageID(inc, spec.FromPrefix, nextSeq)
-			if err != nil {
-				return nil, err
+		if spec.MsgNo != "" || spec.FromPrefix != "" {
+			id := spec.MsgNo
+			if id == "" {
+				if id, err = nextStationMessageID(inc, spec.FromPrefix, nextSeq, reserved); err != nil {
+					return nil, err
+				}
 			}
 			// Forms carry the number in a field; plain messages in the subject line.
 			setCommonField(newmsg, "originMessageID", id)
@@ -98,10 +104,13 @@ func setCommonField(msg *message.DraftMessage, common, value string) {
 // nextStationMessageID returns the next message number for the station with
 // the given prefix, e.g. "S24-101P": one past the highest number with that
 // prefix already in inc, or in this batch (tracked in next).
-func nextStationMessageID(inc *incident.Incident, prefix string, next map[string]int) (string, error) {
+func nextStationMessageID(inc *incident.Incident, prefix string, next map[string]int, reserved map[string]bool) (string, error) {
 	if _, ok := next[prefix]; !ok {
 		seq := 100
 		for _, le := range inc.Log {
+			if le.Status == incident.StatusDeleted {
+				continue // its number is free again
+			}
 			for _, id := range []string{le.LocalMsgID, le.FromMsgID, le.ToMsgID} {
 				if p, n, _, err := messageid.Decode(id, true, false); err == nil && p == prefix && n > seq {
 					seq = n
@@ -111,7 +120,63 @@ func nextStationMessageID(inc *incident.Incident, prefix string, next map[string
 		next[prefix] = seq
 	}
 	next[prefix]++
+	for reserved[numberKey(prefix, next[prefix])] {
+		next[prefix]++
+	}
 	return messageid.Encode(prefix, next[prefix], "P")
+}
+
+// numberKey identifies a message number regardless of its suffix.
+func numberKey(prefix string, seq int) string {
+	return fmt.Sprintf("%s-%03d", strings.ToUpper(prefix), seq)
+}
+
+// reserveMessageNumbers returns the numbers specs give their messages (see
+// MessageSpec.MsgNo), by numberKey, so no other message gets them. It fails
+// if one is already used by a message in inc. Numbers with inc's own prefix
+// move inc's next message number past them, so neither the messages Apply
+// numbers that way nor later ones take them.
+func reserveMessageNumbers(inc *incident.Incident, specs []MessageSpec) (map[string]bool, error) {
+	reserved := map[string]bool{}
+	for _, spec := range specs {
+		if spec.MsgNo == "" {
+			continue
+		}
+		p, n, _, err := messageid.Decode(spec.MsgNo, true, false)
+		if err != nil {
+			return nil, fmt.Errorf("invalid message number %q: %w", spec.MsgNo, err)
+		}
+		reserved[numberKey(p, n)] = true
+	}
+	if len(reserved) == 0 {
+		return reserved, nil
+	}
+	for _, le := range inc.Log {
+		if le.Status == incident.StatusDeleted {
+			continue
+		}
+		for _, id := range []string{le.LocalMsgID, le.FromMsgID, le.ToMsgID} {
+			if p, n, _, err := messageid.Decode(id, true, false); err == nil && reserved[numberKey(p, n)] {
+				return nil, fmt.Errorf("message number %s is already used in this incident; delete that message first (e.g. with Message > Delete All Messages) or change the scenario's number", id)
+			}
+		}
+	}
+	own, next, suffix, err := messageid.Decode(inc.Config.TxMessageID, true, false)
+	if err != nil {
+		return reserved, nil
+	}
+	for key := range reserved {
+		if p, n, _, err := messageid.Decode(key, true, false); err == nil && p == own && n >= next {
+			next = n + 1
+		}
+	}
+	if id, err := messageid.Encode(own, next, suffix); err == nil && id != inc.Config.TxMessageID {
+		if inc.Config.TxMessageID == inc.Config.RxMessageID {
+			inc.Config.RxMessageID = id
+		}
+		inc.Config.TxMessageID = id
+	}
+	return reserved, nil
 }
 
 // ensureDrillTraffic guarantees DrillTrafficPhrase appears somewhere in
