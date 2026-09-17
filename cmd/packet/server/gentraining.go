@@ -63,12 +63,15 @@ type genTrainingProwordRow struct {
 // endpoints, and by their common progress poll (GET /gentrain-progress).
 type genTrainingJob struct {
 	mutex   sync.Mutex
-	ProgMsg string             `json:"progress"`
-	ErrMsg  string             `json:"error"`
-	Seq     int                `json:"seq"`
-	Done    bool               `json:"done"`
-	Result  *genTrainingResult `json:"result,omitempty"`
-	notify  chan struct{}
+	ProgMsg string `json:"progress"`
+	// Activities are the generation's activities (see genmsg.Activity),
+	// in the order they were first reported, each in its latest state.
+	Activities []genmsg.Activity  `json:"activities,omitempty"`
+	ErrMsg     string             `json:"error"`
+	Seq        int                `json:"seq"`
+	Done       bool               `json:"done"`
+	Result     *genTrainingResult `json:"result,omitempty"`
+	notify     chan struct{}
 }
 
 var genTrainingJobs = map[string]*genTrainingJob{}
@@ -79,6 +82,23 @@ var genTrainingJobsMutex sync.Mutex
 func (j *genTrainingJob) Progress(msg string) {
 	j.mutex.Lock()
 	j.ProgMsg = msg
+	j.Seq++
+	if j.notify != nil {
+		close(j.notify)
+		j.notify = nil
+	}
+	j.mutex.Unlock()
+}
+
+// Activity records the latest state of one of the generation's parallel
+// activities: called from the generation goroutine.
+func (j *genTrainingJob) Activity(a genmsg.Activity) {
+	j.mutex.Lock()
+	if i := slices.IndexFunc(j.Activities, func(b genmsg.Activity) bool { return b.Key == a.Key }); i >= 0 {
+		j.Activities[i] = a
+	} else {
+		j.Activities = append(j.Activities, a)
+	}
 	j.Seq++
 	if j.notify != nil {
 		close(j.notify)
@@ -270,6 +290,7 @@ func runGenTraining(job *genTrainingJob, dir string, client *genmsg.ClaudeClient
 			Level:    level,
 			Scenario: scenario,
 			Progress: job.Progress,
+			Activity: job.Activity,
 		})
 		if err != nil {
 			return err

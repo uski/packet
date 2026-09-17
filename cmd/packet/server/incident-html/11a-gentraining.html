@@ -88,7 +88,32 @@
       document.getElementById('gtsubrow').hidden = true
       document.getElementById('gtdonerow').hidden = false
     }
-    function gtShowProgress(msg) {
+    // genShowActivities shows, in list (a <ul>), one line per activity of a
+    // training message generation (planning, and drafting each message),
+    // each with its latest status, and a count of them by state in summary.
+    function genShowActivities(list, summary, activities) {
+      activities = activities || []
+      const icons = { waiting: '…', working: '⟳', done: '✓', failed: '✗' }
+      const rows = new Map([...list.children].map(li => [li.dataset.key, li]))
+      activities.forEach(a => {
+        let li = rows.get(a.key)
+        if (!li) {
+          li = document.createElement('li')
+          li.dataset.key = a.key
+          li.innerHTML = '<span class=gen-act-icon></span><span class=gen-act-label></span><span class=gen-act-status></span>'
+          list.appendChild(li)
+        }
+        li.className = `gen-act gen-act-${a.state}`
+        li.querySelector('.gen-act-icon').textContent = icons[a.state] || ''
+        li.querySelector('.gen-act-label').textContent = a.label
+        li.querySelector('.gen-act-status').textContent = a.status
+      })
+      list.hidden = !activities.length
+      const counts = {}
+      activities.forEach(a => { counts[a.state] = (counts[a.state] || 0) + 1 })
+      summary.textContent = ['working', 'waiting', 'done', 'failed'].filter(s => counts[s]).map(s => `${counts[s]} ${s}`).join(' · ')
+    }
+    function gtShowProgress(msg, activities) {
       document.getElementById('gtform').hidden = true
       document.getElementById('gtresults').hidden = true
       document.getElementById('gtsubrow').hidden = true
@@ -96,6 +121,7 @@
       const prog = document.getElementById('gtprogress')
       prog.hidden = false
       document.getElementById('gtprogmsg').textContent = msg
+      genShowActivities(document.getElementById('gtactivities'), document.getElementById('gtactsummary'), activities)
     }
     function gtShowError(msg) {
       document.getElementById('gtprogress').hidden = true
@@ -133,7 +159,7 @@
         }
         return
       }
-      gtShowProgress(update.progress || 'Working…')
+      gtShowProgress(update.progress || 'Working…', update.activities)
       gtPoll(dir, update.seq)
     }
     function setupGenTrainingDialog() {
@@ -157,6 +183,7 @@
         try {
           const resp = await fetch2('/gentrain-messages', { method: 'POST', body: data })
           if (resp.status === 204) {
+            document.getElementById('gtactivities').innerHTML = ''
             gtShowProgress('Starting…')
             gtPoll(dir, 0)
             return
@@ -236,10 +263,72 @@
     }
 
     #gtprogress {
+      padding: 1rem 0;
+    }
+
+    .gen-progline {
       display: flex;
       align-items: center;
       gap: 0.75rem;
-      padding: 2rem 0;
+    }
+
+    .gen-actsummary {
+      color: #666;
+      font-size: 0.85em;
+      margin: 0.25rem 0;
+    }
+
+    .gen-activities {
+      list-style: none;
+      margin: 0;
+      padding: 0;
+      max-height: 55vh;
+      overflow-y: auto;
+      border-top: 1px solid #ddd;
+      font-size: 0.85em;
+    }
+
+    .gen-act {
+      display: grid;
+      grid-template-columns: 1.25rem minmax(0, 1fr) minmax(0, 1fr);
+      gap: 0.5rem;
+      padding: 0.2rem 0.25rem;
+      border-bottom: 1px solid #eee;
+    }
+
+    .gen-act-status {
+      overflow-wrap: anywhere;
+    }
+
+    .gen-act-waiting {
+      color: #888;
+    }
+
+    .gen-act-working {
+      background-color: #eef8ee;
+    }
+
+    .gen-act-working .gen-act-icon {
+      color: #2a8;
+      font-weight: bold;
+    }
+
+    .gen-act-done .gen-act-icon {
+      color: #070;
+    }
+
+    .gen-act-failed {
+      color: #c00;
+    }
+
+    @media (max-width: 30rem) {
+      .gen-act {
+        grid-template-columns: 1.25rem minmax(0, 1fr);
+      }
+
+      .gen-act-status {
+        grid-column: 2;
+      }
     }
 
     #gtspinner {
@@ -327,7 +416,7 @@
         <label><input type=radio name=level value=f3> F3 reduced list</label>
       </div>
       <p>Scenario (optional):</p>
-      <textarea id=gtscenario name=scenario rows=2 placeholder="e.g. a downed power line on Almaden Expressway (leave blank for a generic scenario)"></textarea>
+      <textarea id=gtscenario name=scenario rows=2 placeholder="e.g. a downed power line on Kaczmarek Street (leave blank for a generic scenario)"></textarea>
       <div id=gterr></div>
       <div id=gtsubrow>
         <button id=gtcan type=button>Cancel</button>
@@ -335,8 +424,12 @@
       </div>
     </form>
     <div id=gtprogress hidden>
-      <div id=gtspinner></div>
-      <p id=gtprogmsg></p>
+      <div class=gen-progline>
+        <div id=gtspinner></div>
+        <p id=gtprogmsg></p>
+      </div>
+      <p id=gtactsummary class=gen-actsummary></p>
+      <ul id=gtactivities class=gen-activities hidden></ul>
     </div>
     <div id=gtresults hidden></div>
     <div id=gtdonerow hidden>

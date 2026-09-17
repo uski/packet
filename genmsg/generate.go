@@ -108,7 +108,29 @@ type Request struct {
 	// these to a user (a CLI status line, a GUI progress panel) always has
 	// something recent to display.
 	Progress func(string)
+
+	// Activity, if non-nil, is called whenever one of the activities
+	// Generate runs, several at a time, changes: planning the scenario, and
+	// drafting each message. Every message's activity is reported, waiting,
+	// before any starts, in the order they're drafted.
+	Activity func(Activity)
 }
+
+// Activity is the state of one activity of Generate (see Request.Activity).
+type Activity struct {
+	Key    string `json:"key"`    // stable identifier: "plan", or "message-N" (1-based message index)
+	Label  string `json:"label"`  // what it is, e.g. "Message 3 of 12: ICS-213 from Shelter S21"
+	Status string `json:"status"` // what it's doing, e.g. "drafting (8s)"
+	State  string `json:"state"`  // ActivityWaiting, ActivityWorking, ActivityDone, or ActivityFailed
+}
+
+// Values for Activity.State.
+const (
+	ActivityWaiting = "waiting"
+	ActivityWorking = "working"
+	ActivityDone    = "done"
+	ActivityFailed  = "failed"
+)
 
 // heartbeatInterval is how often Progress is called with a "still working"
 // update while waiting for a single Claude API call to complete. It's a var
@@ -157,9 +179,22 @@ const systemPrompt = `You are helping a Santa Clara County ARES/RACES credential
 // batch), calling client to draft the content. It does not create the
 // messages in any incident; see Apply for that.
 func Generate(ctx context.Context, client *ClaudeClient, req Request) ([]Result, error) {
-	progress := req.Progress
-	if progress == nil {
-		progress = func(string) {}
+	// Messages are drafted several at a time; the callbacks may not expect
+	// concurrent calls.
+	var callbackMu sync.Mutex
+	progress := func(s string) {
+		if req.Progress != nil {
+			callbackMu.Lock()
+			defer callbackMu.Unlock()
+			req.Progress(s)
+		}
+	}
+	activity := func(a Activity) {
+		if req.Activity != nil {
+			callbackMu.Lock()
+			defer callbackMu.Unlock()
+			req.Activity(a)
+		}
 	}
 	count := len(req.Messages)
 	if count == 0 {
@@ -223,26 +258,28 @@ func Generate(ctx context.Context, client *ClaudeClient, req Request) ([]Result,
 	var brief string
 	if count > 1 {
 		const label = "Planning a scenario shared by all the messages"
+		plan := Activity{Key: "plan", Label: label, Status: "planning", State: ActivityWorking}
 		progress(label + "...")
-		text, err := completeWithHeartbeat(ctx, client, briefSystemPrompt, "", buildBriefPrompt(req), maxOutputTokens, progress, label)
+		activity(plan)
+		text, err := completeWithHeartbeat(ctx, client, briefSystemPrompt, "", buildBriefPrompt(req), maxOutputTokens, func(elapsed time.Duration) {
+			progress(fmt.Sprintf("%s... (%s elapsed)", label, elapsed))
+			plan.Status = fmt.Sprintf("planning (%s)", elapsed)
+			activity(plan)
+		})
 		if err != nil && !errors.Is(err, ErrOutputCutOff) {
+			plan.Status, plan.State = "failed: "+err.Error(), ActivityFailed
+			activity(plan)
 			return nil, err
 		}
 		brief = strings.TrimSpace(text)
+		plan.Status, plan.State = "done", ActivityDone
+		activity(plan)
 	}
 
-	// Messages are drafted several at a time; the progress callback may
-	// not expect concurrent calls.
-	var progressMu sync.Mutex
-	lockedProgress := func(s string) {
-		progressMu.Lock()
-		defer progressMu.Unlock()
-		progress(s)
-	}
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	g := &generation{ctx: ctx, client: client, req: req, shared: sharedPrompt(req, brief), specs: specsPerMsg,
-		routed: routedPerMsg, baseWords: baseWords, results: results, progress: lockedProgress}
+		routed: routedPerMsg, baseWords: baseWords, results: results, progress: progress, activity: activity}
 	if count > 1 {
 		// Messages start in parallel, before any could read a cache entry
 		// written by another, so write it once up front.
@@ -273,6 +310,14 @@ func (g *generation) generateAll(plans []MessagePlan, cancel context.CancelFunc)
 	for i := range done {
 		done[i] = make(chan struct{})
 	}
+	for n, idx := range order {
+		a := g.messageActivity(idx, n+1)
+		a.Status, a.State = "waiting to start", ActivityWaiting
+		if r := g.req.Messages[idx].ReplyTo; r > 0 && pos[r-1] < n {
+			a.Status = fmt.Sprintf("waiting for message %d, which it replies to", pos[r-1]+1)
+		}
+		g.activity(a)
+	}
 	sem := make(chan struct{}, maxParallel)
 	var (
 		wg       sync.WaitGroup
@@ -289,19 +334,34 @@ func (g *generation) generateAll(plans []MessagePlan, cancel context.CancelFunc)
 				select {
 				case <-done[r-1]:
 				case <-g.ctx.Done():
+					g.stopped(idx, n+1)
 					return
 				}
 			}
+			a := g.messageActivity(idx, n+1)
 			select {
 			case sem <- struct{}{}:
-			case <-g.ctx.Done():
-				return
+			default:
+				a.Status = fmt.Sprintf("waiting for a free slot (%d messages are drafted at a time)", maxParallel)
+				g.activity(a)
+				select {
+				case sem <- struct{}{}:
+				case <-g.ctx.Done():
+					g.stopped(idx, n+1)
+					return
+				}
 			}
 			defer func() { <-sem }()
 			err := g.generateMessage(idx, n+1, plans[idx])
 			mu.Lock()
 			defer mu.Unlock()
 			if err != nil {
+				if errors.Is(err, context.Canceled) {
+					a.Status, a.State = "stopped", ActivityFailed
+				} else {
+					a.Status, a.State = "failed: "+err.Error(), ActivityFailed
+				}
+				g.activity(a)
 				if firstErr == nil {
 					firstErr = err
 					cancel()
@@ -309,6 +369,12 @@ func (g *generation) generateAll(plans []MessagePlan, cancel context.CancelFunc)
 				return
 			}
 			finished++
+			res := g.results[idx]
+			a.Status, a.State = fmt.Sprintf("done (%d words)", res.Words), ActivityDone
+			if len(res.Missing) > 0 || len(res.MissingFields) > 0 || res.Words > MaxWords+WordTolerance {
+				a.Status = fmt.Sprintf("done, with warnings to review (%d words)", res.Words)
+			}
+			g.activity(a)
 			g.progress(fmt.Sprintf("Finished message %d of %d (%d of %d done)", n+1, len(order), finished, len(order)))
 		})
 	}
@@ -330,6 +396,26 @@ type generation struct {
 	baseWords []int
 	results   []Result
 	progress  func(string)
+	activity  func(Activity)
+}
+
+// stopped reports that message idx, the n-th in generation order, won't be
+// drafted, as another failed.
+func (g *generation) stopped(idx, n int) {
+	a := g.messageActivity(idx, n)
+	a.Status, a.State = "stopped", ActivityFailed
+	g.activity(a)
+}
+
+// messageActivity returns the activity of message idx, the n-th in
+// generation order, with only its Key and Label set.
+func (g *generation) messageActivity(idx, n int) Activity {
+	m := g.req.Messages[idx]
+	label := fmt.Sprintf("Message %d of %d: %s", n, len(g.req.Messages), strings.TrimPrefix(strings.TrimPrefix(m.MsgType.Name(), "a "), "an "))
+	if from := strings.TrimSpace(m.From + " " + m.FromPrefix); from != "" {
+		label += " from " + from
+	}
+	return Activity{Key: fmt.Sprintf("message-%d", idx+1), Label: label}
 }
 
 // generateMessage generates message idx, the n-th in generation order, in
@@ -350,9 +436,20 @@ func (g *generation) generateMessage(idx, n int, plan MessagePlan) error {
 		if round > 0 {
 			label = fmt.Sprintf("Revising message %d of %d, attempt %d of %d: %s", n, count, round+1, maxRounds, reason)
 		}
+		act := g.messageActivity(idx, n)
+		act.State, act.Status = ActivityWorking, "drafting"
+		if round > 0 {
+			act.Status = fmt.Sprintf("revising, attempt %d of %d: %s", round+1, maxRounds, reason)
+		}
+		status := act.Status
 		g.progress(label + "...")
+		g.activity(act)
 		prompt := messagePrompt(g.req, g.specs, g.results, []int{idx}, []MessagePlan{plan}, g.routed, g.baseWords, res.Values != nil) + retryNote
-		text, err := completeWithHeartbeat(g.ctx, g.client, systemPrompt, g.shared, prompt, maxOutputTokens, g.progress, label)
+		text, err := completeWithHeartbeat(g.ctx, g.client, systemPrompt, g.shared, prompt, maxOutputTokens, func(elapsed time.Duration) {
+			g.progress(fmt.Sprintf("%s... (%s elapsed)", label, elapsed))
+			act.Status = fmt.Sprintf("%s (%s)", status, elapsed)
+			g.activity(act)
+		})
 		if errors.Is(err, ErrOutputCutOff) {
 			lastErr, reason = err, "the previous response was cut off"
 			retryNote = "\nYour previous response was far too long and was cut off. Respond with ONLY the JSON array, keeping every value short.\n"
@@ -373,6 +470,8 @@ func (g *generation) generateMessage(idx, n int, plan MessagePlan) error {
 			continue
 		}
 		retryNote = ""
+		act.Status = "checking the draft"
+		g.activity(act)
 		ev, err := g.evaluate(idx, parsed[0], invalid[0], checkOne)
 		if err != nil {
 			return err
@@ -652,15 +751,17 @@ func applyHandling(draft *message.DraftMessage, m MessageSpec) {
 	}
 }
 
-// completeWithHeartbeat calls client.Complete, calling progress with a
-// "still working" update derived from label every heartbeatInterval while
-// the call is in flight, so a caller displaying progress to a user always
-// has something recent to show during a slow API call.
-func completeWithHeartbeat(ctx context.Context, client *ClaudeClient, system, shared, prompt string, maxTokens int, progress func(string), label string) (string, error) {
+// completeWithHeartbeat calls client.Complete, calling tick with the time
+// elapsed every heartbeatInterval while the call is in flight, so a caller
+// displaying progress to a user always has something recent to show during
+// a slow API call.
+func completeWithHeartbeat(ctx context.Context, client *ClaudeClient, system, shared, prompt string, maxTokens int, tick func(elapsed time.Duration)) (string, error) {
 	done := make(chan struct{})
+	var wg sync.WaitGroup
+	defer wg.Wait() // tick is never called once this returns
 	defer close(done)
-	interval := heartbeatInterval // read here, as the goroutine may outlive the call
-	go func() {
+	interval := heartbeatInterval
+	wg.Go(func() {
 		ticker := time.NewTicker(interval)
 		defer ticker.Stop()
 		elapsed := interval
@@ -669,11 +770,11 @@ func completeWithHeartbeat(ctx context.Context, client *ClaudeClient, system, sh
 			case <-done:
 				return
 			case <-ticker.C:
-				progress(fmt.Sprintf("%s... (%s elapsed)", label, elapsed))
+				tick(elapsed)
 				elapsed += interval
 			}
 		}
-	}()
+	})
 	return client.Complete(ctx, system, shared, prompt, maxTokens)
 }
 

@@ -253,3 +253,17 @@ func TestGenTrainingProgressLongPollReturnsGoneAfterDone(t *testing.T) {
 		t.Errorf("second poll after done: expected 410, got %d: %s", rr2.Code, rr2.Body)
 	}
 }
+
+func TestGenTrainingJobActivities(t *testing.T) {
+	job := &genTrainingJob{}
+	job.Activity(genmsg.Activity{Key: "plan", Status: "planning", State: genmsg.ActivityWorking})
+	job.Activity(genmsg.Activity{Key: "message-1", Status: "waiting", State: genmsg.ActivityWaiting})
+	job.Activity(genmsg.Activity{Key: "plan", Status: "done", State: genmsg.ActivityDone})
+	if job.Seq != 3 || len(job.Activities) != 2 || job.Activities[0].Key != "plan" || job.Activities[0].State != genmsg.ActivityDone {
+		t.Errorf("each activity should keep its place and latest state: %+v", job)
+	}
+	data, err := json.Marshal(job)
+	if err != nil || !strings.Contains(string(data), `"activities":[{"key":"plan","label":"","status":"done","state":"done"}`) {
+		t.Errorf("JSON = %s, %v", data, err)
+	}
+}

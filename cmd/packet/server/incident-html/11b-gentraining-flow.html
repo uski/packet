@@ -403,13 +403,14 @@
       div.appendChild(scroll)
     }
 
-    function mpShowProgress(msg) {
+    function mpShowProgress(msg, activities) {
       document.getElementById('mpform').hidden = true
       document.getElementById('mpresults').hidden = true
       document.getElementById('mpsubrow').hidden = true
       document.getElementById('mpdonerow').hidden = true
       document.getElementById('mpprogress').hidden = false
       document.getElementById('mpprogmsg').textContent = msg
+      genShowActivities(document.getElementById('mpactivities'), document.getElementById('mpactsummary'), activities)
     }
     function mpShowError(msg) {
       document.getElementById('mpprogress').hidden = true
@@ -563,7 +564,7 @@
         else mpShowResults(update.result)
         return
       }
-      mpShowProgress(update.progress || 'Working…')
+      mpShowProgress(update.progress || 'Working…', update.activities)
       mpPoll(dir, update.seq)
     }
 
@@ -615,6 +616,7 @@
         try {
           const resp = await fetch2('/gentrain-flow', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body })
           if (resp.status === 204) {
+            document.getElementById('mpactivities').innerHTML = ''
             mpShowProgress('Starting…')
             mpPoll(dir, 0)
             return
@@ -822,10 +824,7 @@
     }
 
     #mpprogress {
-      display: flex;
-      align-items: center;
-      gap: 0.75rem;
-      padding: 2rem 0;
+      padding: 1rem 0;
     }
 
     #mpspinner {
@@ -993,8 +992,12 @@
       </div>
     </form>
     <div id=mpprogress hidden>
-      <div id=mpspinner></div>
-      <p id=mpprogmsg></p>
+      <div class=gen-progline>
+        <div id=mpspinner></div>
+        <p id=mpprogmsg></p>
+      </div>
+      <p id=mpactsummary class=gen-actsummary></p>
+      <ul id=mpactivities class=gen-activities hidden></ul>
     </div>
     <div id=mpresults hidden></div>
     <div id=mpdonerow hidden>
