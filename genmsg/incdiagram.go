@@ -72,7 +72,8 @@ func IncidentDiagram(inc *incident.Incident, name string) (Diagram, error) {
 	var trailing []FlowMessage
 	for k, rm := range msgs {
 		sm := seqMessage{
-			from: rm.senderName, to: rm.recipientName, label: rm.id,
+			from: rm.senderName, to: rm.recipientName, label: strings.TrimSuffix(rm.id, "P"),
+			kind: rm.kind, time: rm.time,
 			handling: rm.handling, opToOp: rm.opToOp, principal: true,
 		}
 		st := seqStep{msgs: []seqMessage{sm}}

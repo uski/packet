@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/rothskeller/packet/v4/message"
 	"github.com/rothskeller/packet/v4/message/messageid"
 )
 
@@ -49,6 +50,9 @@ type DiagramItem struct {
 	// "linear", or "" (one after another).
 	Block  string
 	Arrows []DiagramArrow
+	// Time, if not empty, is the time of the message(s) the arrows first
+	// show, drawn at the left of their row.
+	Time string
 }
 
 // DiagramArrow is one transmission, or one hand-off between a principal
@@ -73,6 +77,8 @@ type seqMessage struct {
 	to        []string // receiving parties' names
 	external  string   // the recipient, if not a party (and not All Stations)
 	label     string   // message number
+	kind      string   // abbreviated message type, e.g. "ICS213"
+	time      string   // message time, HH:MM, if any
 	handling  string   // R, P, I, or ""
 	opToOp    bool
 	reply     bool
@@ -170,8 +176,9 @@ func FlowDiagram(fl Flow) (Diagram, error) {
 				detail += " (operator-to-operator)"
 			}
 			sm := seqMessage{
-				from: parties[s].name, label: label, handling: NormalizeHandling(fm.Handling),
-				opToOp: isOpToOpMessage(fm), reply: fm.ReplyTo > 0, principal: true,
+				from: parties[s].name, label: label, kind: typeAbbrev(mt), time: flowTime(fm),
+				handling: NormalizeHandling(fm.Handling),
+				opToOp:   isOpToOpMessage(fm), reply: fm.ReplyTo > 0, principal: true,
 			}
 			for _, r := range flowRecipients(fl, fm, s) {
 				sm.to = append(sm.to, parties[r].name)
@@ -195,6 +202,42 @@ func FlowDiagram(fl Flow) (Diagram, error) {
 		steps = append(steps, step)
 	}
 	return layoutDiagram(date, fl.Name, parties, steps, events), nil
+}
+
+// typeAbbrev returns the short name of message type mt: its form tag, as
+// in a subject line (e.g. "ICS213", "ResReq"), or "Plain".
+func typeAbbrev(mt message.EditableMType) string {
+	if mt == nil {
+		return ""
+	}
+	if tag := mt.CreateTag(); tag != "" && !strings.EqualFold(tag, "plain") {
+		return tag
+	}
+	return "Plain"
+}
+
+// numbered returns m's label with its type, and its handling order if
+// withHandling.
+func (m seqMessage) numbered(withHandling bool) string {
+	label := m.label
+	if m.kind != "" {
+		label += " " + m.kind
+	}
+	if withHandling && m.handling != "" {
+		label += " (" + m.handling + ")"
+	}
+	return label
+}
+
+// joinTimes returns the distinct times of msgs, in order.
+func joinTimes(msgs []seqMessage) string {
+	var times []string
+	for _, m := range msgs {
+		if m.time != "" && !slices.Contains(times, m.time) {
+			times = append(times, m.time)
+		}
+	}
+	return strings.Join(times, ", ")
 }
 
 // replyLabel names the message a reply answers.
@@ -312,7 +355,8 @@ func layoutDiagram(date, name string, parties []seqParty, steps []seqStep, trail
 
 		// Hand-offs, one per sender with a principal.
 		var senders []string
-		handed := map[string][]string{}
+		handed := map[string][]seqMessage{}
+		timed := map[string]bool{} // message labels whose time a hand-off shows
 		for _, m := range unit {
 			if _, ok := principal(m.from); !ok || m.opToOp || !m.principal {
 				continue
@@ -320,15 +364,19 @@ func layoutDiagram(date, name string, parties []seqParty, steps []seqStep, trail
 			if handed[m.from] == nil {
 				senders = append(senders, m.from)
 			}
-			label := m.label
-			if grouped && m.handling != "" {
-				label += " (" + m.handling + ")"
-			}
-			handed[m.from] = append(handed[m.from], label)
+			handed[m.from] = append(handed[m.from], m)
+			timed[m.from+"\x00"+m.label] = true
 		}
 		for _, s := range senders {
 			p, _ := principal(s)
-			d.Items = append(d.Items, DiagramItem{Arrows: []DiagramArrow{{From: p, To: party(s), Label: strings.Join(handed[s], "\n"), Handoff: true}}})
+			var lines []string
+			for _, m := range handed[s] {
+				lines = append(lines, m.numbered(grouped))
+			}
+			d.Items = append(d.Items, DiagramItem{
+				Arrows: []DiagramArrow{{From: p, To: party(s), Label: strings.Join(lines, "\n"), Handoff: true}},
+				Time:   joinTimes(handed[s]),
+			})
 		}
 
 		// Transmissions, each with its deliveries.
@@ -336,10 +384,7 @@ func layoutDiagram(date, name string, parties []seqParty, steps []seqStep, trail
 			slices.SortStableFunc(unit, func(a, b seqMessage) int { return cmp.Compare(handlingRank[a.handling], handlingRank[b.handling]) })
 		}
 		for _, m := range unit {
-			label := m.label
-			if m.handling != "" {
-				label += " (" + m.handling + ")"
-			}
+			label := m.numbered(true)
 			var sends, deliveries []DiagramArrow
 			to := m.to
 			if m.external != "" {
@@ -351,16 +396,20 @@ func layoutDiagram(date, name string, parties []seqParty, steps []seqStep, trail
 					deliveries = append(deliveries, DiagramArrow{From: party(r), To: p, Handoff: true})
 				}
 			}
+			var tm string
+			if !timed[m.from+"\x00"+m.label] {
+				tm = m.time
+			}
 			switch {
 			case len(sends) > 1:
 				for i := range deliveries {
 					deliveries[i].Label = m.label
 				}
-				d.Items = append(d.Items, DiagramItem{Block: "linear", Arrows: append(sends, deliveries...)})
+				d.Items = append(d.Items, DiagramItem{Block: "linear", Arrows: append(sends, deliveries...), Time: tm})
 			case len(deliveries) > 0:
-				d.Items = append(d.Items, DiagramItem{Block: "parallel", Arrows: append(sends, deliveries...)})
+				d.Items = append(d.Items, DiagramItem{Block: "parallel", Arrows: append(sends, deliveries...), Time: tm})
 			case len(sends) > 0:
-				d.Items = append(d.Items, DiagramItem{Arrows: sends})
+				d.Items = append(d.Items, DiagramItem{Arrows: sends, Time: tm})
 			}
 		}
 	}
@@ -442,8 +491,22 @@ func (d Diagram) SequenceDiagram() string {
 			space("0.5")
 		}
 		prevNote = false
-		if it.Block != "" {
-			fmt.Fprintf(&b, "%s on\n", it.Block)
+		block := it.Block
+		if it.Time != "" {
+			// The time is a note at the left, on the same row as the
+			// arrows, except for a linear block, which it precedes.
+			timeNote := fmt.Sprintf("note left of %s: %s\n", sdName(d.Participants[0].Name), sdText(it.Time))
+			if block == "linear" {
+				b.WriteString(timeNote)
+			} else {
+				block = "parallel"
+				b.WriteString("parallel on\n" + timeNote)
+			}
+			if it.Block == "linear" {
+				b.WriteString("linear on\n")
+			}
+		} else if block != "" {
+			fmt.Fprintf(&b, "%s on\n", block)
 		}
 		for _, a := range it.Arrows {
 			arrow := "->"
@@ -456,8 +519,8 @@ func (d Diagram) SequenceDiagram() string {
 			}
 			b.WriteString("\n")
 		}
-		if it.Block != "" {
-			fmt.Fprintf(&b, "%s off\n", it.Block)
+		if block != "" {
+			fmt.Fprintf(&b, "%s off\n", block)
 		}
 	}
 	return b.String()
@@ -509,7 +572,7 @@ func (d Diagram) PlantUML(scenario string) string {
 			fmt.Fprintf(&b, " : %s\n", pumlText(it.Note))
 			continue
 		}
-		for _, a := range it.Arrows {
+		for k, a := range it.Arrows {
 			arrow := "->"
 			if a.Handoff {
 				arrow = "-->>"
@@ -517,6 +580,9 @@ func (d Diagram) PlantUML(scenario string) string {
 				arrow = "-->"
 			}
 			label := pumlText(a.Label)
+			if k == 0 && it.Time != "" {
+				label = pumlText(it.Time) + " " + label
+			}
 			if a.Detail != "" {
 				label += `\n` + pumlText(a.Detail)
 			}

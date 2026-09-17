@@ -8,6 +8,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"slices"
 	"strings"
 
 	"github.com/rothskeller/packet/v4/genmsg"
@@ -112,7 +113,7 @@ func (s *Server) servePostGenTrainingFlowDiagram(w http.ResponseWriter, r *http.
 		return
 	}
 	s.writeDiagramPage(w, d, "scenario", sf.Scenario,
-		"Message numbers are those the messages get in an incident with no earlier messages from their stations.")
+		"Times are at the left. Message numbers the scenario doesn't give are those the messages get in an incident with no earlier messages from their stations.")
 }
 
 // serveGetIncidentDiagram handles GET /incident-diagram requests, which have
@@ -161,11 +162,13 @@ const (
 	sdLine       = 15 // height of a line of text
 	sdGap        = 12 // space between rows
 	sdSection    = 24 // extra space before a section note
+	sdTimeColumn = 70 // width of the message time column, when there is one
 )
 
 // diagramSVG draws d as an SVG sequence diagram: a box and a lifeline for
 // each participant (rounded for principals), notes, and labeled arrows,
 // dashed for hand-offs and replies. Arrows drawn in parallel share a row.
+// Message times are in a column at the left, on their messages' first row.
 // A label line too long for its arrow is shortened, with the whole label
 // shown on hover.
 func diagramSVG(d genmsg.Diagram) string {
@@ -173,8 +176,12 @@ func diagramSVG(d genmsg.Diagram) string {
 	for _, p := range d.Participants {
 		col = max(col, len([]rune(p.Label))*sdCharWidth+24)
 	}
-	width := 2*sdMargin + col*len(d.Participants)
-	x := func(i int) int { return sdMargin + col*i + col/2 }
+	left := sdMargin
+	if slices.ContainsFunc(d.Items, func(it genmsg.DiagramItem) bool { return it.Time != "" }) {
+		left += sdTimeColumn
+	}
+	width := left + sdMargin + col*len(d.Participants)
+	x := func(i int) int { return left + col*i + col/2 }
 
 	var body strings.Builder
 	y := sdMargin + sdHeadHeight + sdGap
@@ -199,12 +206,15 @@ func diagramSVG(d genmsg.Diagram) string {
 				rows = append(rows, []genmsg.DiagramArrow{a})
 			}
 		}
-		for _, row := range rows {
+		for r, row := range rows {
 			lines := 1
 			for _, a := range row {
 				lines = max(lines, strings.Count(a.Label, "\n")+1)
 			}
 			y += lines * sdLine
+			if r == 0 && it.Time != "" {
+				fmt.Fprintf(&body, `<text x="%d" y="%d" font-weight="bold" fill="#555">%s</text>`, sdMargin, y+4, html.EscapeString(it.Time))
+			}
 			for _, a := range row {
 				drawArrow(&body, a, x(a.From), x(a.To), y, col)
 			}

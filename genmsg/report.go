@@ -52,6 +52,8 @@ type reportMessage struct {
 	id            string // message number
 	handling      string // R, P, I, or ""
 	date          string // message date, MM/DD/YYYY, if known
+	time          string // message time, HH:MM, if known
+	kind          string // abbreviated message type (see typeAbbrev)
 }
 
 // IncidentReport recounts, from the current content of every message in
@@ -136,12 +138,14 @@ func readIncidentMessages(inc *incident.Incident) ([]*reportMessage, []string, e
 			rm.handling = NormalizeHandling(commonValue(msg, "subjectHandling"))
 		}
 		rm.date = commonValue(msg, "messageDate")
+		rm.time = commonValue(msg, "messageTime")
 		for _, f := range ProwordFields(msg) {
 			for _, m := range f.Matches {
 				rm.counts[m.Category]++
 			}
 		}
 		if emt, ok := msg.Type().(message.EditableMType); ok {
+			rm.kind = typeAbbrev(emt)
 			rm.opToOp = opToOpTypes[strings.ToLower(emt.CreateTag())]
 		}
 		if rec, ok := records[le.Ident]; ok {

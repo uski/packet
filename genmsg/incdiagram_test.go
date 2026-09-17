@@ -38,20 +38,14 @@ func TestIncidentDiagram(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	// The same as the scenario's diagram, with the actual numbers.
-	for _, want := range []string{
-		"title 2026-09-26 Evaluation Net\n",
-		"rparticipant NetMgr\nparticipant NCO XND\nparticipant Shelter S21\nparticipant Shelter S22\nrparticipant FieldMgr\n",
-		"note over NCO XND: Open Net\nlinear on\nShelter S21->NCO XND: Check In\n",
-		"NetMgr-->>NCO XND: XND-101P\nlinear on\nNCO XND->Shelter S21: XND-101P\n",
-		"FieldMgr-->>Shelter S21: S21-101P (R)\\nS21-102P (P)\nFieldMgr-->>Shelter S22: S22-101P (R)\\nS22-102P (P)\n",
-		"parallel on\nShelter S21->NCO XND: S21-102P (P)\nNCO XND-->>NetMgr:\nparallel off\n",
-		"Shelter S21->Shelter S22: S21-103P\n",
-		"note over NCO XND: Net is closed.\n",
-	} {
-		if !strings.Contains(got, want) {
-			t.Errorf("diagram lacks %q:\n%s", want, got)
-		}
+	// The same as the scenario's diagram: the messages have the numbers,
+	// types, and times it shows.
+	scenario, err := FlowDiagram(fl)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := scenario.SequenceDiagram(); got != want {
+		t.Errorf("incident diagram:\n%s\nscenario diagram:\n%s", got, want)
 	}
 }
 

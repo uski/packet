@@ -64,7 +64,7 @@ func TestFlowMessageNumbers(t *testing.T) {
 			labels = append(labels, it.Arrows[0].Label)
 		}
 	}
-	if want := "S21-101|XND-108|S21-102|S22-102|S22-101R|S21-103"; strings.Join(labels, "|") != want {
+	if want := "S21-101 Plain|XND-108 Plain|S21-102 Plain|S22-102 Plain|S22-101R Plain|S21-103 Plain"; strings.Join(labels, "|") != want {
 		t.Errorf("diagram labels = %q, want %q", strings.Join(labels, "|"), want)
 	}
 }

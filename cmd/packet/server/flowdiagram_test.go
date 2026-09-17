@@ -12,7 +12,7 @@ import (
 
 const diagramTestFlow = `{"scenario":"Storm <b>","date":"2026-03-14","name":"Test Net",` +
 	`"parties":[{"role":"Net Control","principal":"NetMgr"},{"role":"Shelter <A>","credential":"F3","principal":"FieldMgr"}],` +
-	`"messages":[{"msgType":"plain","from":0,"to":1,"purpose":"status & more"},` +
+	`"messages":[{"msgType":"plain","from":0,"to":1,"purpose":"status & more","time":"09:15"},` +
 	`{"msgType":"plain","from":1,"to":0,"replyTo":1}]}`
 
 func TestServePostGenTrainingFlowUML(t *testing.T) {
@@ -48,7 +48,7 @@ func TestServePostGenTrainingFlowDiagram(t *testing.T) {
 		t.Fatalf("status %d, body:\n%s", rr.Code, body)
 	}
 	for _, want := range []string{"<svg", "2026-03-14 Test Net", "Shelter &lt;A&gt; [F3]", "status &amp; more", `stroke-dasharray="6 4"`, "window.print()", "Storm &lt;b&gt;",
-		"rparticipant NetMgr", `rx="14"`, "<tspan"} {
+		"rparticipant NetMgr", `rx="14"`, "<tspan", ">09:15</text>", "#1 Plain", "note left of NetMgr: 09:15"} {
 		if !strings.Contains(body, want) {
 			t.Errorf("diagram page lacks %q:\n%s", want, body)
 		}

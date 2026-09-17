@@ -38,10 +38,10 @@ func TestFlowDiagram(t *testing.T) {
 	if len(d.Items) != 4 {
 		t.Fatalf("got %d items, want 4: %+v", len(d.Items), d.Items)
 	}
-	if it := d.Items[0]; it.Block != "linear" || len(it.Arrows) != 2 || it.Arrows[0].Label != "EOC-101" {
+	if it := d.Items[0]; it.Block != "linear" || len(it.Arrows) != 2 || it.Arrows[0].Label != "EOC-101 Plain" {
 		t.Errorf("item 1 = %+v", it)
 	}
-	if a := d.Items[1].Arrows[0]; a.From != 1 || a.To != 0 || !a.Reply || a.Label != "#2a" || !strings.HasPrefix(a.Detail, "2a. plain text message, reply to EOC-101") {
+	if a := d.Items[1].Arrows[0]; a.From != 1 || a.To != 0 || !a.Reply || a.Label != "#2a Plain" || !strings.HasPrefix(a.Detail, "2a. plain text message, reply to EOC-101") {
 		t.Errorf("item 2 = %+v", a)
 	}
 	if a := d.Items[3].Arrows[0]; a.From != 2 || a.To != 3 || !strings.HasPrefix(a.Detail, "3. ") {
@@ -52,8 +52,8 @@ func TestFlowDiagram(t *testing.T) {
 	for _, s := range []string{
 		"@startuml\n", "title 2026-03-14 Training scenario\n", `caption Winter\nstorm` + "\n",
 		`participant "Shelter 'A' [F3]" as P1`,
-		`P0 -> P1 : EOC-101\n1. plain text message to All Stations: request\nstatus` + "\n",
-		`P1 --> P0 : #2a\n2a. plain text message, reply to EOC-101` + "\n",
+		`P0 -> P1 : EOC-101 Plain\n1. plain text message to All Stations: request\nstatus` + "\n",
+		`P1 --> P0 : #2a Plain\n2a. plain text message, reply to EOC-101` + "\n",
 		"@enduml\n",
 	} {
 		if !strings.Contains(uml, s) {
@@ -81,11 +81,11 @@ func sampleFlow() Flow {
 			{Event: "open-net"},
 			{Event: "check-ins"},
 			{Event: "note", Text: "XND-101 is an all-stations 213\nrequesting a shelter form"},
-			{MsgType: "ICS213", From: 0, To: -1, ToLabel: "All Stations"},
+			{MsgType: "ICS213", From: 0, To: -1, ToLabel: "All Stations", Time: "12:33"},
 			{Event: "note", Text: "Prioritization drill"},
-			{MsgType: "ICS213", From: fromEachStation, To: 0, Handling: "R", Group: 1},
-			{MsgType: "ICS213", From: fromEachStation, To: 0, Handling: "P", Group: 1, ReplyTo: 4},
-			{MsgType: "ICS213", From: 1, To: 2, OpToOp: true},
+			{MsgType: "ICS213", From: fromEachStation, To: 0, Handling: "R", Group: 1, Time: "12:41"},
+			{MsgType: "ICS213", From: fromEachStation, To: 0, Handling: "P", Group: 1, ReplyTo: 4, Time: "12:42"},
+			{MsgType: "ICS213", From: 1, To: 2, OpToOp: true, Time: "13:00"},
 			{Event: "closing"},
 			{Event: "check-outs"},
 			{Event: "net-closed"},
@@ -117,10 +117,13 @@ linear off
 entryspacing 2
 note over NetMgr,FieldMgr: XND-101 is an all-stations 213\nrequesting a shelter form
 entryspacing 0.5
-NetMgr-->>NCO XND: XND-101
+parallel on
+note left of NetMgr: 12:33
+NetMgr-->>NCO XND: XND-101 ICS213
+parallel off
 linear on
-NCO XND->Shelter S21: XND-101
-NCO XND->Shelter S22: XND-101
+NCO XND->Shelter S21: XND-101 ICS213
+NCO XND->Shelter S22: XND-101 ICS213
 Shelter S21-->>FieldMgr: XND-101
 Shelter S22-->>FieldMgr: XND-101
 linear off
@@ -128,25 +131,34 @@ linear off
 entryspacing 2
 note over NetMgr,FieldMgr: Prioritization drill
 entryspacing 0.5
-FieldMgr-->>Shelter S21: S21-101 (R)\nS21-102 (P)
-FieldMgr-->>Shelter S22: S22-101 (R)\nS22-102 (P)
 parallel on
-Shelter S21->NCO XND: S21-102 (P)
+note left of NetMgr: 12:41, 12:42
+FieldMgr-->>Shelter S21: S21-101 ICS213 (R)\nS21-102 ICS213 (P)
+parallel off
+parallel on
+note left of NetMgr: 12:41, 12:42
+FieldMgr-->>Shelter S22: S22-101 ICS213 (R)\nS22-102 ICS213 (P)
+parallel off
+parallel on
+Shelter S21->NCO XND: S21-102 ICS213 (P)
 NCO XND-->>NetMgr:
 parallel off
 parallel on
-Shelter S22->NCO XND: S22-102 (P)
+Shelter S22->NCO XND: S22-102 ICS213 (P)
 NCO XND-->>NetMgr:
 parallel off
 parallel on
-Shelter S21->NCO XND: S21-101 (R)
+Shelter S21->NCO XND: S21-101 ICS213 (R)
 NCO XND-->>NetMgr:
 parallel off
 parallel on
-Shelter S22->NCO XND: S22-101 (R)
+Shelter S22->NCO XND: S22-101 ICS213 (R)
 NCO XND-->>NetMgr:
 parallel off
-Shelter S21->Shelter S22: S21-103
+parallel on
+note left of NetMgr: 13:00
+Shelter S21->Shelter S22: S21-103 ICS213
+parallel off
 
 entryspacing 2
 note over NCO XND: Announce:\nNet is closing
