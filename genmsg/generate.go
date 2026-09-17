@@ -543,7 +543,7 @@ func buildBriefPrompt(req Request) string {
 	b.WriteString("\nWrite a concise exercise brief of at most 250 words, in plain text:\n" +
 		"1. The incident: what happened, where, and when.\n" +
 		"2. Shared facts every message must agree on: names of people, places and addresses, quantities, times, amateur call signs, and the specific details that make requests realistic (e.g. a generator's make, model number, and power rating). Use only the xanadu-city.org domain for any email or web address, and only fictitious call signs ending with a digit, like W6XRL4, never a real call sign.\n" +
-		"   "+fictionalPlacesPrompt+"\n" +
+		"   " + fictionalPlacesPrompt + "\n" +
 		"3. One line per message saying specifically what it reports, requests, or answers, so each reply answers what was actually asked.\n" +
 		"Do not write the messages themselves. Each message will be at most about 50 words.\n")
 	return b.String()
