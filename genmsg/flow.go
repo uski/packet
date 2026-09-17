@@ -73,6 +73,9 @@ type FlowMessage struct {
 	// generated, such as opening the net. The other fields but Text are
 	// then ignored.
 	Event string `json:"event,omitempty"`
+	// Time is the time the message is written (HH:MM), for its time
+	// fields; empty leaves them blank.
+	Time string `json:"time,omitempty"`
 	// Text is an event's text, replacing its default one. A "note" event
 	// needs one.
 	Text string `json:"text,omitempty"`
@@ -101,6 +104,13 @@ func eventText(fm FlowMessage) (string, bool) {
 		}
 	}
 	return "", false
+}
+
+// flowTime returns fm's time as HH:MM, or "" if it has none (or an invalid
+// one, which flowSenders rejects).
+func flowTime(fm FlowMessage) string {
+	t, _ := NormalizeTime(fm.Time)
+	return t
 }
 
 // isEvent says whether fm is an event rather than a message.
@@ -220,6 +230,9 @@ func flowSenders(fl Flow) ([][]int, error) {
 		if fm.Handling != "" && NormalizeHandling(fm.Handling) == "" {
 			return nil, fmt.Errorf("message %d: invalid handling order %q (use R, P, or I)", i+1, fm.Handling)
 		}
+		if _, err := NormalizeTime(fm.Time); err != nil {
+			return nil, fmt.Errorf("message %d: %s", i+1, err)
+		}
 		if fm.Group < 0 {
 			return nil, fmt.Errorf("message %d: invalid hand-off group %d", i+1, fm.Group)
 		}
@@ -332,6 +345,7 @@ func ResolveFlow(fl Flow) ([]MessageSpec, error) {
 				Level:        partyLevel(fl.Parties[p]),
 				Date:         date,
 				Handling:     NormalizeHandling(fm.Handling),
+				Time:         flowTime(fm),
 			}
 			spec.MsgType, _ = FindMsgType(fm.MsgType) // already validated above
 			rec := &TrainingRecord{

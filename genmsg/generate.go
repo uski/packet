@@ -83,6 +83,11 @@ type MessageSpec struct {
 	// or "I" (or ROUTINE, PRIORITY, IMMEDIATE). It is set by the tool,
 	// never asked of Claude.
 	Handling string
+
+	// Time, if non-empty, is the time the message is written, as HH:MM. It
+	// fills the message's time fields (see setIncidentDate), which are
+	// otherwise left blank when Date is set.
+	Time string
 }
 
 // Request describes one batch of training messages to generate. The
@@ -532,6 +537,9 @@ func buildBriefPrompt(req Request) string {
 		if m.To != "" {
 			fmt.Fprintf(&b, ", to %s", partyLabel(m.To, m.ToLocation))
 		}
+		if m.Time != "" {
+			fmt.Fprintf(&b, ", written at %s", m.Time)
+		}
 		if m.Purpose != "" {
 			fmt.Fprintf(&b, ", purpose: %s", m.Purpose)
 		}
@@ -742,6 +750,9 @@ func messagePrompt(req Request, specsPerMsg [][]FieldSpec, results []Result, pen
 				b.WriteString(partyLabel(m.To, m.ToLocation))
 			}
 			b.WriteString(".\n")
+		}
+		if m.Time != "" {
+			fmt.Fprintf(&b, "This message is written at %s (its time fields are filled in separately); any time it mentions must be consistent with that.\n", m.Time)
 		}
 		if m.Purpose != "" {
 			fmt.Fprintf(&b, "Purpose of this message: %s\n", m.Purpose)

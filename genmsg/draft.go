@@ -2,7 +2,9 @@ package genmsg
 
 import (
 	"fmt"
+	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -46,7 +48,7 @@ func buildDraft(inc *incident.Incident, m MessageSpec, values map[string]string)
 	applyHandling(draft, m)
 	// After the values, since they can make further dates/times required.
 	if m.Date != "" {
-		setIncidentDate(draft, m.Date)
+		setIncidentDate(draft, m.Date, m.Time)
 	} else {
 		fillRequiredDateTimes(draft, time.Now())
 	}
@@ -60,10 +62,13 @@ const (
 )
 
 // setIncidentDate sets every date field of msg that has a value or is
-// required to date, and clears every time field.
-func setIncidentDate(msg *message.DraftMessage, date string) {
+// required to date. If tm (HH:MM) is empty, it clears every time field;
+// otherwise, it sets the message time field and every other required time
+// field to tm, and clears the rest. The Radio Operator section is left
+// alone.
+func setIncidentDate(msg *message.DraftMessage, date, tm string) {
 	for f := range msg.Fields() {
-		if !f.Settable() {
+		if !f.Settable() || operatorCommon[f.Common()] || strings.HasPrefix(f.Label(), "Operator") {
 			continue
 		}
 		switch f.EditHint() {
@@ -77,9 +82,33 @@ func setIncidentDate(msg *message.DraftMessage, date string) {
 			if f.Value(msg) != "" {
 				f.SetValue(msg, "")
 			}
+			if tm != "" && (f.Common() == "messageTime" || f.Validate(msg, f, 0) != nil) {
+				f.SetValue(msg, f.FromHuman(msg, tm))
+			}
 		}
 	}
 }
+
+// NormalizeTime returns t (e.g. "9:05", "0905", or "09:05") as HH:MM, or an
+// error if it isn't a time of day. An empty t stays empty.
+func NormalizeTime(t string) (string, error) {
+	t = strings.TrimSpace(t)
+	if t == "" {
+		return "", nil
+	}
+	m := timeOfDayRE.FindStringSubmatch(t)
+	if m == nil {
+		return "", fmt.Errorf("invalid time %q (use HH:MM)", t)
+	}
+	h, _ := strconv.Atoi(m[1])
+	mm, _ := strconv.Atoi(m[2])
+	if h > 23 || mm > 59 {
+		return "", fmt.Errorf("invalid time %q (use HH:MM)", t)
+	}
+	return fmt.Sprintf("%02d:%02d", h, mm), nil
+}
+
+var timeOfDayRE = regexp.MustCompile(`^(\d{1,2}):?(\d{2})$`)
 
 // fillRequiredDateTimes sets every empty, required date or time field of
 // msg to now. The incident's defaults only fill the message date, and time

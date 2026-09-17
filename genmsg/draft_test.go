@@ -474,3 +474,49 @@ func TestHandlingIsTheTools(t *testing.T) {
 		t.Error("NormalizeHandling")
 	}
 }
+
+func TestMessageTime(t *testing.T) {
+	inc := draftTestIncident(t)
+	mt := formType(t, "ICS213")
+	timeOf := func(spec MessageSpec) (msgTime, opTime string) {
+		t.Helper()
+		d, err := buildDraft(inc, spec, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return commonValue(d, "messageTime"), commonValue(d, "operatorTime")
+	}
+	if m, op := timeOf(MessageSpec{MsgType: mt, Date: "09/26/2026", Time: "14:30"}); m != "14:30" || op != "" {
+		t.Errorf("with a time, message time = %q and operator time = %q, want 14:30 and blank", m, op)
+	}
+	if m, _ := timeOf(MessageSpec{MsgType: mt, Date: "09/26/2026"}); m != "" {
+		t.Errorf("without a time, message time = %q, want blank", m)
+	}
+
+	for in, want := range map[string]string{"": "", "9:05": "09:05", "0905": "09:05", " 23:59 ": "23:59"} {
+		if got, err := NormalizeTime(in); err != nil || got != want {
+			t.Errorf("NormalizeTime(%q) = %q, %v; want %q", in, got, err, want)
+		}
+	}
+	for _, in := range []string{"24:00", "12:60", "noon", "1:2"} {
+		if _, err := NormalizeTime(in); err == nil {
+			t.Errorf("NormalizeTime(%q) should fail", in)
+		}
+	}
+
+	fl := Flow{
+		Parties:  []FlowParty{{Role: "Net Control"}, {Role: "Shelter"}},
+		Messages: []FlowMessage{{MsgType: "ICS213", From: 0, To: 1, Time: "915"}},
+	}
+	specs, err := ResolveFlow(fl)
+	if err != nil || specs[0].Time != "09:15" {
+		t.Errorf("ResolveFlow time = %q, %v; want 09:15", specs[0].Time, err)
+	}
+	if !strings.Contains(buildBriefPrompt(Request{Messages: specs}), "written at 09:15") {
+		t.Error("the brief should give the message's time")
+	}
+	fl.Messages[0].Time = "25:00"
+	if _, err := ResolveFlow(fl); err == nil {
+		t.Error("an invalid time should be rejected")
+	}
+}

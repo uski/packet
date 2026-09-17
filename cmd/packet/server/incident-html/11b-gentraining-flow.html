@@ -195,6 +195,7 @@
           opToOp: row.querySelector('.mp-optoop').checked,
           handling: row.querySelector('.mp-handling').value,
           group: parseInt(row.querySelector('.mp-group').value, 10) || 0,
+          time: row.querySelector('.mp-time').value,
         }
         if (toVal === '-1') {
           msg.to = -1
@@ -208,6 +209,13 @@
         return msg
       })
       return { name: document.getElementById('mpname').value.trim(), date: document.getElementById('mpdate').value, parties, messages }
+    }
+
+    // mpTimeValue returns time (HH:MM, or as a hand-written file may have
+    // it, H:MM or HHMM) as the time input's HH:MM, or '' if it isn't one.
+    function mpTimeValue(time) {
+      const m = /^\s*(\d{1,2}):?(\d{2})\s*$/.exec(time || '')
+      return m ? `${m[1].padStart(2, '0')}:${m[2]}` : ''
     }
 
     // mpToday returns today's date as the date input's YYYY-MM-DD.
@@ -327,6 +335,7 @@
         row.querySelector('.mp-optoop').checked = !!m.opToOp
         row.querySelector('.mp-handling').value = m.handling || ''
         row.querySelector('.mp-group').value = m.group || ''
+        row.querySelector('.mp-time').value = mpTimeValue(m.time)
         row.querySelector('.mp-replyto').value = m.replyTo > 0 && rows[m.replyTo - 1] ? rows[m.replyTo - 1].dataset.rid : '0'
       })
       document.getElementById('mpname').value = data.name || ''
@@ -946,6 +955,7 @@
               <option value=P>Priority</option>
               <option value=I>Immediate</option>
             </select></label>
+          <label class=mpfield title="Fills the message's time fields; leave blank to leave them blank">Time (optional)<input type=time class=mp-time></label>
           <label class=mpfield title="Messages with the same group number are handed to their operators together, who should send them in handling order (immediate first).">Hand-off group<input type=number class=mp-group min=0 step=1 placeholder="none"></label>
         </div>
       </template>
@@ -973,7 +983,7 @@
       <p><label>Net or exercise name: <input type=text id=mpname placeholder="e.g. Evaluation Net"></label>
         <span class=mphint>Titles the diagram.</span></p>
       <p><label>Incident date: <input type=date id=mpdate required></label>
-        <span class=mphint>Used for every date field of the generated messages; time fields are left blank.</span></p>
+        <span class=mphint>Used for every date field of the generated messages. Their time fields get each message's time, if given, and are left blank otherwise.</span></p>
       <p>Overall scenario (optional):</p>
       <textarea id=mpscenario rows=2 placeholder="e.g. a magnitude 5.4 earthquake has just occurred (leave blank for a generic scenario)"></textarea>
       <div id=mperr></div>

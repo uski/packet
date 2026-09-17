@@ -143,6 +143,9 @@ func FlowDiagram(fl Flow) (Diagram, error) {
 			}
 			labels[i] = append(labels[i], label)
 			detail := entry + ". " + kind
+			if t := flowTime(fm); t != "" {
+				detail += " at " + t
+			}
 			if fm.OpToOp { // plain text and check-in/out messages say so by their type
 				detail += " (operator-to-operator)"
 			}

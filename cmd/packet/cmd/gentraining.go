@@ -57,7 +57,7 @@ An entry with "event" instead of "msgType" is a scenario event: drawn on the dia
 
 --uml prints the flow in the syntax of sequencediagram.org, and --plantuml in PlantUML's, without generating anything. Without --flow, they draw the messages in the current incident instead, with their actual numbers and handling orders; the principals, hand-off groups, and events are known for the messages generated from a flow. The GUI's Incident menu has the same diagram under "Message Flow Diagram".
 
-An optional top-level "date" gives the incident date (MM/DD/YYYY or YYYY-MM-DD, default today): every date field of the generated messages gets it, and their time fields are left blank.
+An optional top-level "date" gives the incident date (MM/DD/YYYY or YYYY-MM-DD, default today): every date field of the generated messages gets it. A message's optional "time" (HH:MM) fills its message time field (and any other required time field, such as a form's prepared time), and Claude keeps the message consistent with it; without one, the time fields are left blank.
 
 An optional top-level "scenario" gives the scenario text, used when --scenario isn't given. The "Save scenario…" button of the GUI's Generate Multi-Party Training Messages dialog writes a file in this format, and its "Load scenario…" button reads one.
 
