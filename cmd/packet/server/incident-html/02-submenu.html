@@ -43,7 +43,21 @@
       isOpen() { return this.matches(':popover-open') }
       open() {
         this.togglePopover({ force: true, source: this.parentElement })
+        this._position()
         this.focus()
+      }
+      // _position places the open menu just below its menu bar item. CSS
+      // anchor positioning would do this, but not every browser supports it.
+      _position() {
+        const anchor = this.parentElement.getBoundingClientRect()
+        let left = anchor.left
+        if (this.classList.contains('checkable')) {
+          left -= parseFloat(getComputedStyle(document.documentElement).fontSize) // room for the checkmarks
+        }
+        const width = this.getBoundingClientRect().width
+        left = Math.max(0, Math.min(left, document.documentElement.clientWidth - width))
+        this.style.left = `${left}px`
+        this.style.top = `${anchor.bottom}px`
       }
       _onItemClick() { this.close() }
       _onKeyDown(evt) {
@@ -79,18 +93,14 @@
   </script>
   <style>
     sub-menu:popover-open {
+      /* left and top are set by SubMenu._position */
       inset: unset;
-      position: absolute;
-      top: anchor(bottom);
-      left: anchor(left);
+      position: fixed;
+      margin: 0;
       border: var(--border-width) solid #888;
       padding: 0;
       display: flex;
       flex-direction: column;
-    }
-
-    sub-menu.checkable:popover-open {
-      left: calc(anchor(left) - 1rem);
     }
 
     sub-menu hr {
