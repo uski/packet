@@ -8,9 +8,14 @@ import (
 
 // Traffic counts messages of the kinds the Credentialing Program Handbook
 // sets minimums for, in one direction (sent or received).
+// Traffic counts a party's messages by kind. The Handbook's credentials
+// ask for so many 3rd party messages, of which so many are forms, and so
+// many operator-to-operator messages; here every 3rd party message is a
+// form, because plain text, check-in and check-out messages are all counted
+// as operator-to-operator traffic (see opToOpTypes), so the "of which are
+// forms" minimum is met by any flow that meets the 3rd party one.
 type Traffic struct {
-	ThirdParty int `json:"thirdParty"` // 3rd party messages
-	Forms      int `json:"forms"`      // of which forms
+	ThirdParty int `json:"thirdParty"` // 3rd party messages, all of which are forms
 	OpToOp     int `json:"opToOp"`     // operator-to-operator messages
 }
 
@@ -23,18 +28,18 @@ type Traffic struct {
 // credential is a party not being evaluated.
 var credentialNeeds = map[string]Traffic{
 	"":   {},
-	"F3": {ThirdParty: 2, Forms: 2, OpToOp: 2},
-	"F2": {ThirdParty: 3, Forms: 2, OpToOp: 2},
-	"F1": {ThirdParty: 3, Forms: 2, OpToOp: 2},
-	"N3": {ThirdParty: 2, Forms: 2, OpToOp: 2},
-	"N2": {ThirdParty: 3, Forms: 2, OpToOp: 3},
-	"N1": {ThirdParty: 3, Forms: 2, OpToOp: 3},
+	"F3": {ThirdParty: 2, OpToOp: 2},
+	"F2": {ThirdParty: 3, OpToOp: 2},
+	"F1": {ThirdParty: 3, OpToOp: 2},
+	"N3": {ThirdParty: 2, OpToOp: 2},
+	"N2": {ThirdParty: 3, OpToOp: 3},
+	"N1": {ThirdParty: 3, OpToOp: 3},
 	"S3": {ThirdParty: 2, OpToOp: 2},
 	"S2": {ThirdParty: 2, OpToOp: 2},
 	"S1": {ThirdParty: 2, OpToOp: 2},
-	"P3": {ThirdParty: 2, Forms: 2, OpToOp: 2},
-	"P2": {ThirdParty: 2, Forms: 2, OpToOp: 2},
-	"P1": {ThirdParty: 2, Forms: 2, OpToOp: 2},
+	"P3": {ThirdParty: 2, OpToOp: 2},
+	"P2": {ThirdParty: 2, OpToOp: 2},
+	"P1": {ThirdParty: 2, OpToOp: 2},
 }
 
 // Form types CompleteFlow picks from, by create tag, the least used in the
@@ -103,7 +108,6 @@ func countTraffic(t *Traffic, opToOp bool) {
 		t.OpToOp++
 	} else {
 		t.ThirdParty++
-		t.Forms++
 	}
 }
 
@@ -132,15 +136,9 @@ func trafficProblems(c PartyCompliance) []string {
 			problems = append(problems, fmt.Sprintf("%s %d of %d %s", verb, have, need, what))
 		}
 	}
-	check("sends", c.Sent.ThirdParty, c.Need.ThirdParty, "3rd party messages")
-	if c.Sent.ThirdParty >= c.Need.ThirdParty {
-		check("sends", c.Sent.Forms, c.Need.Forms, "forms")
-	}
+	check("sends", c.Sent.ThirdParty, c.Need.ThirdParty, "3rd party form messages")
 	check("sends", c.Sent.OpToOp, c.Need.OpToOp, "operator-to-operator messages")
-	check("receives", c.Received.ThirdParty, c.Need.ThirdParty, "3rd party messages")
-	if c.Received.ThirdParty >= c.Need.ThirdParty {
-		check("receives", c.Received.Forms, c.Need.Forms, "forms")
-	}
+	check("receives", c.Received.ThirdParty, c.Need.ThirdParty, "3rd party form messages")
 	check("receives", c.Received.OpToOp, c.Need.OpToOp, "operator-to-operator messages")
 	return problems
 }
@@ -155,7 +153,7 @@ func shortfall(c PartyCompliance, opToOp, received bool) int {
 	if opToOp {
 		return max(0, c.Need.OpToOp-t.OpToOp)
 	}
-	return max(0, c.Need.ThirdParty-t.ThirdParty, c.Need.Forms-t.Forms)
+	return max(0, c.Need.ThirdParty-t.ThirdParty)
 }
 
 // CompleteFlow returns fl with messages added after its existing ones until

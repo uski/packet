@@ -28,13 +28,13 @@ func TestCheckFlowCounts(t *testing.T) {
 		t.Fatal(err)
 	}
 	a, b := report[1], report[2]
-	if a.Sent != (Traffic{ThirdParty: 1, Forms: 1, OpToOp: 1}) || a.Received != (Traffic{ThirdParty: 1, Forms: 1}) {
+	if a.Sent != (Traffic{ThirdParty: 1, OpToOp: 1}) || a.Received != (Traffic{ThirdParty: 1}) {
 		t.Errorf("Shelter A sent %+v, received %+v", a.Sent, a.Received)
 	}
-	if b.Received != (Traffic{ThirdParty: 2, Forms: 2}) {
+	if b.Received != (Traffic{ThirdParty: 2}) {
 		t.Errorf("Shelter B received %+v, want the broadcast and Shelter A's form", b.Received)
 	}
-	if len(a.Problems) == 0 || !strings.Contains(strings.Join(a.Problems, "; "), "sends 1 of 2 3rd party messages") {
+	if len(a.Problems) == 0 || !strings.Contains(strings.Join(a.Problems, "; "), "sends 1 of 2 3rd party form messages") {
 		t.Errorf("Shelter A's problems = %v", a.Problems)
 	}
 	if len(report[0].Problems) != 0 {
@@ -163,11 +163,14 @@ func TestCompleteFlowErrors(t *testing.T) {
 // TestCredentialNeedsFollowHandbook pins the minimums to the Operator Skills
 // sections of the Credentialing Program Handbook v3.2.
 func TestCredentialNeedsFollowHandbook(t *testing.T) {
+	// Every 3rd party message the tool counts is a form (plain text counts
+	// as operator-to-operator), so the Handbook's "of which are forms"
+	// minimums are met by meeting the 3rd party ones.
 	for cred, want := range map[string]Traffic{
-		"F3": {2, 2, 2}, "F2": {3, 2, 2}, "F1": {3, 2, 2},
-		"N3": {2, 2, 2}, "N2": {3, 2, 3}, "N1": {3, 2, 3},
-		"S3": {2, 0, 2}, "S2": {2, 0, 2}, "S1": {2, 0, 2},
-		"P3": {2, 2, 2}, "P2": {2, 2, 2}, "P1": {2, 2, 2},
+		"F3": {ThirdParty: 2, OpToOp: 2}, "F2": {ThirdParty: 3, OpToOp: 2}, "F1": {ThirdParty: 3, OpToOp: 2},
+		"N3": {ThirdParty: 2, OpToOp: 2}, "N2": {ThirdParty: 3, OpToOp: 3}, "N1": {ThirdParty: 3, OpToOp: 3},
+		"S3": {ThirdParty: 2, OpToOp: 2}, "S2": {ThirdParty: 2, OpToOp: 2}, "S1": {ThirdParty: 2, OpToOp: 2},
+		"P3": {ThirdParty: 2, OpToOp: 2}, "P2": {ThirdParty: 2, OpToOp: 2}, "P1": {ThirdParty: 2, OpToOp: 2},
 	} {
 		if got := credentialNeeds[cred]; got != want {
 			t.Errorf("%s needs %+v, want %+v", cred, got, want)

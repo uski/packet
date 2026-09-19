@@ -85,10 +85,10 @@ func TestIncidentReportFromFlowRecords(t *testing.T) {
 	if a.Credential != "F3" || b.Credential != "S2" || nc.Credential != "" {
 		t.Errorf("credentials = %q, %q, %q; want the flow's", nc.Credential, a.Credential, b.Credential)
 	}
-	if nc.Sent != (Traffic{ThirdParty: 1, Forms: 1}) || nc.Received != (Traffic{OpToOp: 2}) {
+	if nc.Sent != (Traffic{ThirdParty: 1}) || nc.Received != (Traffic{OpToOp: 2}) {
 		t.Errorf("Net Control sent %+v, received %+v", nc.Sent, nc.Received)
 	}
-	if a.Sent != (Traffic{OpToOp: 1}) || a.Received != (Traffic{ThirdParty: 1, Forms: 1}) {
+	if a.Sent != (Traffic{OpToOp: 1}) || a.Received != (Traffic{ThirdParty: 1}) {
 		t.Errorf("Shelter A sent %+v, received %+v; the reply is marked operator-to-operator", a.Sent, a.Received)
 	}
 	if a.Counts[prowords.TelephoneFigures] == 0 {
@@ -99,7 +99,7 @@ func TestIncidentReportFromFlowRecords(t *testing.T) {
 		t.Fatalf("Shelter A shouldn't reach F3 with one message each way, got %+v", f3)
 	}
 	missing := strings.Join(f3.Missing, "; ")
-	if !strings.Contains(missing, "sends 0 of 2 3rd party messages") || strings.Contains(missing, "never sends") {
+	if !strings.Contains(missing, "sends 0 of 2 3rd party form messages") || strings.Contains(missing, "never sends") {
 		t.Errorf("F3 shortfall = %q; want the traffic shortfall and no missing F3 proword", missing)
 	}
 }
@@ -116,10 +116,10 @@ func TestIncidentReportGuessesWithoutRecords(t *testing.T) {
 	reports := applyForReport(t, specs, results)
 
 	c := reportByName(t, reports, "Shelter C S30")
-	if c.Messages != 2 || c.Sent != (Traffic{ThirdParty: 1, Forms: 1, OpToOp: 1}) {
+	if c.Messages != 2 || c.Sent != (Traffic{ThirdParty: 1, OpToOp: 1}) {
 		t.Errorf("Shelter C: %d messages, sent %+v; want its form and its plain message together", c.Messages, c.Sent)
 	}
-	if c.Received != (Traffic{ThirdParty: 1, Forms: 1}) {
+	if c.Received != (Traffic{ThirdParty: 1}) {
 		t.Errorf("Shelter C should receive Net Control's All Stations message, got %+v", c.Received)
 	}
 	nc := reportByName(t, reports, "Net Control")
