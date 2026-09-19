@@ -87,3 +87,19 @@ func TestAnnotatedPDF(t *testing.T) {
 		t.Errorf("pages = %d, %v; want a long message to run over", n, err)
 	}
 }
+
+func TestAnnGroupsOddSpacing(t *testing.T) {
+	// A non-breaking space and a tab: the groups and the positions used to
+	// be found by two different rules, which put the names under the wrong
+	// words when they disagreed.
+	f := genmsg.FieldProwords{Label: "Message", Value: "Need cots\tand 1 generator [220V]"}
+	f.Matches = prowordMatches(f.Value)
+	var got []string
+	for _, g := range annGroups(f) {
+		got = append(got, g.text+"="+strings.Join(g.prowords, "+"))
+	}
+	want := "Need cots=MIXED GROUP|and=|1=FIGURE(S)|generator=|[220V]=MIXED GROUP SYMBOL(S)"
+	if strings.Join(got, "|") != want {
+		t.Errorf("groups = %q,\nwant %q", strings.Join(got, "|"), want)
+	}
+}

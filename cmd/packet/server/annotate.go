@@ -2,6 +2,7 @@ package server
 
 import (
 	"os"
+	"strconv"
 	"strings"
 
 	"github.com/rothskeller/packet/v4/genmsg"
@@ -52,7 +53,7 @@ func annotatedPDF(msg message.Message, title, fname string) (err error) {
 	}
 	a.y -= annTitleSize + 10
 	if err = a.draw("Prowords are named under the text that calls for them; a bar follows every "+
-		itoa(annGroupBar)+" groups.", annMargin, a.y, annLabelSize, annFont, annGray); err != nil {
+		strconv.Itoa(annGroupBar)+" groups.", annMargin, a.y, annLabelSize, annFont, annGray); err != nil {
 		return err
 	}
 	a.y -= annLineHeight
@@ -66,8 +67,6 @@ func annotatedPDF(msg message.Message, title, fname string) (err error) {
 	}
 	return fh.Close()
 }
-
-func itoa(n int) string { return string(rune('0' + n)) }
 
 // annotator lays out an annotation page, tracking the current page and the
 // baseline of the line being written.
@@ -159,6 +158,13 @@ func (a *annotator) field(f genmsg.FieldProwords) error {
 	return nil
 }
 
+// annSpace says whether r separates two groups, by the same rule the
+// proword engine uses to find them: ASCII whitespace, so that a
+// non-breaking space keeps a group together there and here alike.
+func annSpace(r rune) bool {
+	return r == ' ' || r == '\t' || r == '\n' || r == '\f' || r == '\r'
+}
+
 // annGroup is one whitespace-delimited group of a field's value, with the
 // prowords its text calls for.
 type annGroup struct {
@@ -168,29 +174,34 @@ type annGroup struct {
 
 // annGroups splits f's value into groups, each with the prowords of the
 // matches that start in it. A match covering several groups (a two-word
-// name, say) is named under the first of them.
+// name, say) is named under the first of them. The text and the position
+// of each group come from one pass, so that whatever the field's spacing,
+// a name always lands under the group the match is in.
 func annGroups(f genmsg.FieldProwords) []annGroup {
-	var groups []annGroup
-	for _, field := range strings.Fields(f.Value) {
-		groups = append(groups, annGroup{text: field})
-	}
-	// Walk the value again to find where each group starts, so the
-	// matches can be assigned to them by position.
-	var starts []int
-	inGroup := false
-	for i, r := range f.Value {
-		switch {
-		case r == ' ' || r == '\t' || r == '\n' || r == '\r':
-			inGroup = false
-		case !inGroup:
-			starts = append(starts, i)
-			inGroup = true
+	var (
+		groups []annGroup
+		starts []int
+		start  = -1
+	)
+	end := func(at int) {
+		if start >= 0 {
+			groups = append(groups, annGroup{text: f.Value[start:at]})
+			starts = append(starts, start)
+			start = -1
 		}
 	}
+	for i, r := range f.Value {
+		if annSpace(r) {
+			end(i)
+		} else if start < 0 {
+			start = i
+		}
+	}
+	end(len(f.Value))
 	for _, m := range f.Matches {
 		name := prowords.ProwordName(m.Category)
 		for i := len(starts) - 1; i >= 0; i-- {
-			if starts[i] <= m.Start && i < len(groups) {
+			if starts[i] <= m.Start {
 				groups[i].prowords = append(groups[i].prowords, name)
 				break
 			}
