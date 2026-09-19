@@ -9,7 +9,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/rothskeller/packet/v4/message"
 	"github.com/rothskeller/packet/v4/message/messageid"
 	"github.com/rothskeller/packet/v4/prowords"
 )
@@ -231,19 +230,6 @@ func flowDate(fl Flow, now time.Time) (string, error) {
 		}
 	}
 	return "", fmt.Errorf("invalid incident date %q (use MM/DD/YYYY)", fl.Date)
-}
-
-// FindMsgType looks up a registered, editable message type by its create
-// tag or key (case-insensitively), e.g. "ICS213" or "plain".
-func FindMsgType(tag string) (message.EditableMType, bool) {
-	for mt := range message.AllTypes() {
-		if emt, ok := mt.(message.EditableMType); ok {
-			if strings.EqualFold(tag, emt.CreateTag()) || strings.EqualFold(tag, emt.CreateKey()) {
-				return emt, true
-			}
-		}
-	}
-	return nil, false
 }
 
 // partyLevel returns the proword level a party's messages should be

@@ -636,33 +636,6 @@ func generationOrder(msgs []MessageSpec) []int {
 	return order
 }
 
-// contentlessTypes are the message types (by create tag, lower case) whose
-// sending is the whole point: a check-in or check-out has nothing to write,
-// so it is created as is, without asking Claude for anything.
-var contentlessTypes = map[string]bool{"check-in": true, "check-out": true}
-
-// isContentless says whether m is a message with no content to generate.
-func isContentless(m MessageSpec) bool {
-	return IsContentlessType(m.MsgType)
-}
-
-// IsContentlessType says whether messages of type t have no content: a
-// check-in or check-out, whose sending is all that counts. Such a message
-// is never generated, and no proword is ever counted in it.
-func IsContentlessType(t message.MType) bool {
-	emt, ok := t.(message.EditableMType)
-	return ok && contentlessTypes[strings.ToLower(emt.CreateTag())]
-}
-
-// messageCounts counts the prowords in msg's content (see AllFieldValues);
-// a contentless message (see IsContentlessType) has none.
-func messageCounts(msg message.Message) map[prowords.Category]int {
-	if IsContentlessType(msg.Type()) {
-		return map[prowords.Category]int{}
-	}
-	return prowords.CountFields(AllFieldValues(msg))
-}
-
 // planByParty groups req.Messages by sender and effective proword level (a
 // message's own Level if set, else req.Level) and runs Plan independently
 // within each group, so that messages from parties evaluated at different

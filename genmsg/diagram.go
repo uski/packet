@@ -9,7 +9,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/rothskeller/packet/v4/message"
 	"github.com/rothskeller/packet/v4/message/messageid"
 )
 
@@ -202,18 +201,6 @@ func FlowDiagram(fl Flow) (Diagram, error) {
 		steps = append(steps, step)
 	}
 	return layoutDiagram(date, fl.Name, parties, steps, events), nil
-}
-
-// typeAbbrev returns the short name of message type mt: its form tag, as
-// in a subject line (e.g. "ICS213", "ResReq"), or "Plain".
-func typeAbbrev(mt message.EditableMType) string {
-	if mt == nil {
-		return ""
-	}
-	if tag := mt.CreateTag(); tag != "" && !strings.EqualFold(tag, "plain") {
-		return tag
-	}
-	return "Plain"
 }
 
 // numbered returns m's label with its type, and its handling order if

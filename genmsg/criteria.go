@@ -38,10 +38,6 @@ var credentialNeeds = map[string]Traffic{
 	"P1": {ThirdParty: 2, Forms: 2, OpToOp: 2},
 }
 
-// opToOpTypes are the message types (by create tag, lower case) counted as
-// operator-to-operator traffic; every other type is a 3rd party form.
-var opToOpTypes = map[string]bool{"plain": true, "check-in": true, "check-out": true}
-
 // Form types CompleteFlow picks from, by create tag, the least used in the
 // flow first; any not registered are skipped. All have few enough required
 // fields to fit a ~50-word message.
@@ -58,26 +54,6 @@ const (
 	autoRequestPurpose = "a request or instructions from the served agency"
 	autoReportPurpose  = "a report or request from the station's served agency"
 )
-
-// isOpToOp reports whether messages of the given type are always counted as
-// operator-to-operator traffic.
-func isOpToOp(msgType string) bool {
-	mt, ok := FindMsgType(msgType)
-	return ok && opToOpTypes[strings.ToLower(mt.CreateTag())]
-}
-
-// isOpToOpMessage reports whether fm is counted as operator-to-operator
-// traffic: marked so, or of a type that always is.
-func isOpToOpMessage(fm FlowMessage) bool {
-	return fm.OpToOp || isOpToOp(fm.MsgType)
-}
-
-// isAllStations reports whether a message whose To is -1 goes to every
-// other party.
-func isAllStations(toLabel string) bool {
-	label := strings.TrimSpace(toLabel)
-	return label == "" || strings.EqualFold(label, "All Stations")
-}
 
 // PartyCompliance reports how one flow party's traffic compares with what
 // its credential requires.
