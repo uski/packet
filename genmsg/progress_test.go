@@ -8,6 +8,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -250,11 +251,10 @@ func TestCheckInsAreSentAsIs(t *testing.T) {
 // the output limit is reported rather than silently dropped: the messages
 // are still written, but they don't share a scenario.
 func TestGenerateReportsCutOffPlan(t *testing.T) {
-	var calls int
+	var calls atomic.Int32
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		calls++
 		resp := claudeResponse{}
-		if calls == 1 { // the plan
+		if calls.Add(1) == 1 { // the plan
 			resp.StopReason = "max_tokens"
 			json.NewEncoder(w).Encode(resp)
 			return
