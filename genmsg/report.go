@@ -213,7 +213,7 @@ func readIncidentMessages(inc *incident.Incident) ([]*reportMessage, []string, e
 		addrPrefix, _, _ := strings.Cut(rm.toAddr, "@")
 		addrPrefix = strings.ToUpper(strings.TrimSpace(addrPrefix))
 		switch {
-		case isAllStations(rm.toRole) && rm.toRole != "":
+		case isAllStations(rm.toRole):
 			for _, name := range names {
 				if name != rm.senderName {
 					rm.recipientName = append(rm.recipientName, name)

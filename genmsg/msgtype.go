@@ -44,8 +44,7 @@ func isOpToOpMessage(fm FlowMessage) bool {
 // isAllStations reports whether a message whose To is -1 goes to every
 // other party.
 func isAllStations(toLabel string) bool {
-	label := strings.TrimSpace(toLabel)
-	return label == "" || strings.EqualFold(label, "All Stations")
+	return strings.EqualFold(strings.TrimSpace(toLabel), "All Stations")
 }
 
 // contentlessTypes are the message types (by create tag, lower case) whose

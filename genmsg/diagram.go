@@ -97,6 +97,7 @@ type seqStep struct {
 // senders, or by entry number for a party without a message number prefix.
 // The usual "P" suffix is left out.
 func FlowDiagram(fl Flow) (Diagram, error) {
+	normalizeMessages(&fl)
 	if err := normalizeParties(&fl); err != nil {
 		return Diagram{}, err
 	}

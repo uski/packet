@@ -308,3 +308,36 @@ func TestResolveFlowRecordsF3ForRecipients(t *testing.T) {
 		t.Errorf("as recipient, credential = %q, want F3", got)
 	}
 }
+
+// TestAllStationsMeansTheLabel verifies the one meaning of "All Stations":
+// a message addressed outside the parties with no label of its own is
+// normalized to it, so nothing else has to treat an empty label as if it
+// said so.
+func TestAllStationsMeansTheLabel(t *testing.T) {
+	if isAllStations("") || !isAllStations("all stations") || !isAllStations(" All Stations ") {
+		t.Error("isAllStations should recognize the label and nothing else")
+	}
+	fl := Flow{
+		Parties: []FlowParty{{Role: "Net Control", Prefix: "XND"}, {Role: "Shelter", Prefix: "S21"}},
+		Messages: []FlowMessage{
+			{MsgType: "plain", From: 0, To: -1},                           // no label
+			{MsgType: "plain", From: 0, To: -1, ToLabel: "County Health"}, // an outside recipient
+		},
+	}
+	specs, err := ResolveFlow(fl)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if specs[0].To != "All Stations" || specs[1].To != "County Health" {
+		t.Errorf("recipients = %q and %q", specs[0].To, specs[1].To)
+	}
+	// The Shelter receives the all-stations message, but not the one
+	// addressed outside the net.
+	report, err := CheckFlow(fl)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report[1].Received.OpToOp != 1 {
+		t.Errorf("the shelter received %+v", report[1].Received)
+	}
+}

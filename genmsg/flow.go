@@ -168,6 +168,18 @@ func flowDate(fl Flow, now time.Time) (string, error) {
 
 // normalizeParties replaces fl's parties with a validated copy, with
 // message number prefixes in upper case.
+// normalizeMessages replaces fl's messages with a validated copy: a
+// message addressed outside the parties with no label of its own goes to
+// All Stations, so that "no label" has one meaning everywhere after this.
+func normalizeMessages(fl *Flow) {
+	fl.Messages = slices.Clone(fl.Messages)
+	for i, fm := range fl.Messages {
+		if !isEvent(fm) && fm.To < 0 && strings.TrimSpace(fm.ToLabel) == "" {
+			fl.Messages[i].ToLabel = "All Stations"
+		}
+	}
+}
+
 func normalizeParties(fl *Flow) error {
 	fl.Parties = slices.Clone(fl.Parties)
 	for i := range fl.Parties {
@@ -288,6 +300,7 @@ func ResolveFlow(fl Flow) ([]MessageSpec, error) {
 	if !slices.ContainsFunc(fl.Messages, func(fm FlowMessage) bool { return !isEvent(fm) }) {
 		return nil, fmt.Errorf("at least one message is required")
 	}
+	normalizeMessages(&fl)
 	if err := normalizeParties(&fl); err != nil {
 		return nil, err
 	}

@@ -77,6 +77,7 @@ type PartyCompliance struct {
 // prowords each party must transmit are assigned when the messages are
 // generated (see planByParty), so only message counts are checked here.
 func CheckFlow(fl Flow) ([]PartyCompliance, error) {
+	normalizeMessages(&fl)
 	if err := normalizeParties(&fl); err != nil {
 		return nil, err
 	}
