@@ -379,7 +379,7 @@
       p.className = failing ? 'mp-bad' : 'mp-good'
       div.appendChild(p)
       const table = document.createElement('table')
-      table.className = 'mpptable'
+      table.className = 'gen-table'
       const head = table.createTHead().insertRow()
       for (const label of ['Party', 'Credential', 'Sent 3rd party', 'Sent op-to-op', 'Rcvd 3rd party', 'Rcvd op-to-op', 'Status']) {
         const th = document.createElement('th')
@@ -411,21 +411,6 @@
       div.appendChild(scroll)
     }
 
-    function mpShowProgress(msg, activities) {
-      document.getElementById('mpform').hidden = true
-      document.getElementById('mpresults').hidden = true
-      document.getElementById('mpsubrow').hidden = true
-      document.getElementById('mpdonerow').hidden = true
-      document.getElementById('mpprogress').hidden = false
-      document.getElementById('mpprogmsg').textContent = msg
-      genShowActivities(document.getElementById('mpactivities'), document.getElementById('mpactsummary'), activities)
-    }
-    function mpShowError(msg) {
-      document.getElementById('mpprogress').hidden = true
-      document.getElementById('mpform').hidden = false
-      document.getElementById('mpsubrow').hidden = false
-      document.getElementById('mperr').textContent = msg
-    }
     // mpPartyTable builds a table of how many times each party sent each
     // proword: F3 prowords on top, complete-list-only prowords below.
     function mpPartyTable(data) {
@@ -449,7 +434,7 @@
       const scroll = document.createElement('div')
       scroll.className = 'mpscroll'
       const table = document.createElement('table')
-      table.className = 'mpptable mppartytable'
+      table.className = 'gen-table mppartytable'
       const head = table.createTHead().insertRow()
       const corner = document.createElement('th')
       corner.textContent = 'Proword'
@@ -481,99 +466,8 @@
     }
 
     function mpShowResults(data) {
-      const div = document.getElementById('mpresults')
-      div.innerHTML = ''
-      if (data.prowords && data.prowords.length) div.appendChild(mpPartyTable(data))
-      data.messages.forEach(msg => {
-        const h = document.createElement('h2')
-        h.textContent = `${msg.id} — ${msg.type} — ${msg.words} words `
-        const view = document.createElement('a')
-        view.href = '#'
-        view.textContent = 'View prowords'
-        view.addEventListener('click', evt => {
-          evt.preventDefault()
-          const params = new URLSearchParams({ dir: document.body.dataset.dir, id: msg.ident })
-          window.open('/view-prowords?' + params.toString(), `vpw${msg.ident}`)
-        })
-        h.appendChild(view)
-        div.appendChild(h)
-        if (msg.missing && msg.missing.length) {
-          const warn = document.createElement('p')
-          warn.className = 'mpwarn'
-          warn.textContent = `May be missing: ${msg.missing.join(', ')}. Review before use.`
-          div.appendChild(warn)
-        }
-        if (msg.invalid && msg.invalid.length) {
-          const warn = document.createElement('p')
-          warn.className = 'mpwarn'
-          warn.textContent = `Unrecognized value for: ${msg.invalid.join(', ')}; left at default. Review before use.`
-          div.appendChild(warn)
-        }
-        if (msg.missingFields && msg.missingFields.length) {
-          const warn = document.createElement('p')
-          warn.className = 'mpwarn'
-          warn.textContent = `Missing required field(s): ${msg.missingFields.join(', ')}. Review before use.`
-          div.appendChild(warn)
-        }
-        if (msg.overLimit) {
-          const warn = document.createElement('p')
-          warn.className = 'mpwarn'
-          warn.textContent = `Over the ~50-word target (${msg.words} words). Review before use.`
-          div.appendChild(warn)
-        }
-        if (!msg.prowords || !msg.prowords.length) {
-          const none = document.createElement('p')
-          none.textContent = '(no prowords detected)'
-          div.appendChild(none)
-          return
-        }
-        const table = document.createElement('table')
-        table.className = 'mpptable'
-        const thead = table.createTHead().insertRow()
-        for (const label of ['Proword', 'Count']) {
-          const th = document.createElement('th')
-          th.textContent = label
-          thead.appendChild(th)
-        }
-        const tbody = table.createTBody()
-        msg.prowords.forEach(pw => {
-          const row = tbody.insertRow()
-          row.insertCell().textContent = pw.name
-          row.insertCell().textContent = pw.count
-        })
-        div.appendChild(table)
-      })
-      document.getElementById('mpform').hidden = true
-      document.getElementById('mpprogress').hidden = true
-      div.hidden = false
-      document.getElementById('mpsubrow').hidden = true
-      document.getElementById('mpdonerow').hidden = false
-    }
-    async function mpPoll(dir, seq) {
-      const params = new URLSearchParams({ dir, seq })
-      let resp
-      try {
-        resp = await fetch2('/gentrain-progress?' + params.toString())
-      } catch (e) {
-        mpShowError('Lost contact with the server while generating: ' + e)
-        return
-      }
-      if (resp.status === 410) {
-        mpShowError('The generation job ended unexpectedly. Please try again.')
-        return
-      }
-      if (!resp.ok) {
-        mpShowError((await resp.text()) || resp.statusText)
-        return
-      }
-      const update = await resp.json()
-      if (update.done) {
-        if (update.error) mpShowError(update.error)
-        else mpShowResults(update.result)
-        return
-      }
-      mpShowProgress(update.progress || 'Working…', update.activities)
-      mpPoll(dir, update.seq)
+      const lead = data.prowords && data.prowords.length ? mpPartyTable(data) : null
+      genShowResults('mp', data, lead)
     }
 
     function setupGenTrainingFlowDialog() {
@@ -624,9 +518,8 @@
         try {
           const resp = await fetch2('/gentrain-flow', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body })
           if (resp.status === 204) {
-            document.getElementById('mpactivities').innerHTML = ''
-            mpShowProgress('Starting…')
-            mpPoll(dir, 0)
+            genStartProgress('mp')
+            genPoll('mp', dir, 0, mpShowResults)
             return
           }
           document.getElementById('mperr').textContent = (await resp.text()) || resp.statusText
@@ -676,15 +569,6 @@
       z-index: 2;
       max-height: 90vh;
       overflow-y: auto;
-    }
-
-    #mpdlg h1 {
-      background-color: #a8e8a8;
-      margin: 0 -0.75rem;
-      padding: 0.5rem 0.75rem;
-      font-size: 1.5rem;
-      position: sticky;
-      top: 0;
     }
 
     #mpform {
@@ -738,7 +622,6 @@
     #mpmessages .mprow {
       grid-template-columns: 1fr 1fr;
     }
-
 
     .mpfield {
       display: flex;
@@ -833,77 +716,11 @@
       color: red;
     }
 
-    #mpprogress {
-      padding: 1rem 0;
-    }
-
-    #mpspinner {
-      width: 1.25rem;
-      height: 1.25rem;
-      flex: none;
-      border: 0.2rem solid #ccc;
-      border-top-color: #2a8;
-      border-radius: 50%;
-      animation: mpspin 0.8s linear infinite;
-    }
-
-    @keyframes mpspin {
-      to {
-        transform: rotate(360deg);
-      }
-    }
-
-    #mpresults h2 {
-      font-size: 1rem;
-      margin: 1rem 0 0.25rem;
-    }
-
-    .mpwarn {
-      color: #a15c00;
-      margin: 0 0 0.25rem;
-    }
-
-    .mpptable {
-      border-collapse: collapse;
-      width: 100%;
-      margin-bottom: 0.5rem;
-    }
-
-    .mpptable th,
-    .mpptable td {
-      border: 1px solid #ccc;
-      padding: 0.15rem 0.5rem;
-      text-align: left;
-    }
-
-    .mpptable td:last-child,
-    .mpptable th:last-child {
-      text-align: right;
-    }
-
-    #mpsubrow,
-    #mpdonerow {
-      margin-top: 1.5rem;
-      display: flex;
-      justify-content: end;
-      gap: 0.75rem;
-    }
-
-    #mpcan,
-    #mpsub,
-    #mpdone {
-      border-radius: 0.25rem;
-    }
-
-    #mpsub,
-    #mpdone {
-      background-color: #a8e8a8;
-    }
   </style>
 </head>
 
 <body>
-  <dialog id=mpdlg>
+  <dialog id=mpdlg class=gen-dlg>
     <h1>Generate Multi-Party Training Messages</h1>
     <form id=mpform>
       <div id=mpfilerow>
@@ -999,22 +816,22 @@
       <p>Overall scenario (optional):</p>
       <textarea id=mpscenario rows=2 placeholder="e.g. a magnitude 5.4 earthquake has just occurred (leave blank for a generic scenario)"></textarea>
       <div id=mperr></div>
-      <div id=mpsubrow>
+      <div id=mpsubrow class=gen-btnrow>
         <button id=mpcan type=button>Cancel</button>
-        <input id=mpsub type=submit value="Generate Messages">
+        <input id=mpsub class=gen-submit type=submit value="Generate Messages">
       </div>
     </form>
     <div id=mpprogress hidden>
       <div class=gen-progline>
-        <div id=mpspinner></div>
+        <div class=gen-spinner></div>
         <p id=mpprogmsg></p>
       </div>
       <p id=mpactsummary class=gen-actsummary></p>
       <ul id=mpactivities class=gen-activities hidden></ul>
     </div>
-    <div id=mpresults hidden></div>
-    <div id=mpdonerow hidden>
-      <button id=mpdone type=button>Done</button>
+    <div id=mpresults class=gen-results hidden></div>
+    <div id=mpdonerow class=gen-btnrow hidden>
+      <button id=mpdone class=gen-submit type=button>Done</button>
     </div>
   </dialog>
 </body>

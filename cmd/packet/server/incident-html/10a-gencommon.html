@@ -1,0 +1,313 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <script> // Shared by the message generation dialogs
+    // Both generation dialogs (Generate Training Messages, and the
+    // multi-party one) run the same job on the server and show its progress
+    // and results the same way. The helpers here do that work for both;
+    // each dialog passes the prefix of its own element ids ('gt' or 'mp'),
+    // whose elements are <prefix>form, <prefix>progress, <prefix>progmsg,
+    // <prefix>activities, <prefix>actsummary, <prefix>results,
+    // <prefix>subrow, <prefix>donerow, and <prefix>err.
+
+    function genEl(prefix, name) {
+      return document.getElementById(prefix + name)
+    }
+
+    // genTable makes a table with the given column headings, and returns it
+    // with its body for the caller to fill.
+    function genTable(headings, className) {
+      const table = document.createElement('table')
+      table.className = className || 'gen-table'
+      const head = table.createTHead().insertRow()
+      headings.forEach(label => {
+        const th = document.createElement('th')
+        th.textContent = label
+        head.appendChild(th)
+      })
+      return { table, body: table.createTBody() }
+    }
+
+    // genShowActivities shows, in list (a <ul>), one line per activity of a
+    // generation (planning, and drafting each message), each with its
+    // latest status, and a count of them by state in summary.
+    function genShowActivities(list, summary, activities) {
+      activities = activities || []
+      const icons = { waiting: '…', working: '⟳', done: '✓', failed: '✗' }
+      const rows = new Map([...list.children].map(li => [li.dataset.key, li]))
+      activities.forEach(a => {
+        let li = rows.get(a.key)
+        if (!li) {
+          li = document.createElement('li')
+          li.dataset.key = a.key
+          li.innerHTML = '<span class=gen-act-icon></span><span class=gen-act-label></span><span class=gen-act-status></span>'
+          list.appendChild(li)
+        }
+        li.className = `gen-act gen-act-${a.state}`
+        li.querySelector('.gen-act-icon').textContent = icons[a.state] || ''
+        li.querySelector('.gen-act-label').textContent = a.label
+        li.querySelector('.gen-act-status').textContent = a.status
+      })
+      list.hidden = !activities.length
+      const counts = {}
+      activities.forEach(a => { counts[a.state] = (counts[a.state] || 0) + 1 })
+      summary.textContent = ['working', 'waiting', 'done', 'failed'].filter(s => counts[s]).map(s => `${counts[s]} ${s}`).join(' · ')
+    }
+
+    // genShowProgress shows the progress panel of dialog prefix, with the
+    // overall status msg and one line per activity.
+    function genShowProgress(prefix, msg, activities) {
+      genEl(prefix, 'form').hidden = true
+      genEl(prefix, 'results').hidden = true
+      genEl(prefix, 'subrow').hidden = true
+      genEl(prefix, 'donerow').hidden = true
+      genEl(prefix, 'progress').hidden = false
+      genEl(prefix, 'progmsg').textContent = msg
+      genShowActivities(genEl(prefix, 'activities'), genEl(prefix, 'actsummary'), activities)
+    }
+
+    // genShowError returns dialog prefix to its form, showing msg.
+    function genShowError(prefix, msg) {
+      genEl(prefix, 'progress').hidden = true
+      genEl(prefix, 'form').hidden = false
+      genEl(prefix, 'subrow').hidden = false
+      genEl(prefix, 'err').textContent = msg
+    }
+
+    // genShowResults shows what a finished generation produced in dialog
+    // prefix: for each message, its number, type and word count, a link to
+    // its prowords, any warnings to review, and its proword counts. lead, if
+    // given, is put above them (the multi-party dialog's per-party table).
+    function genShowResults(prefix, data, lead) {
+      const div = genEl(prefix, 'results')
+      div.innerHTML = ''
+      if (lead) div.appendChild(lead)
+      data.messages.forEach(msg => {
+        const h = document.createElement('h2')
+        h.textContent = `${msg.id} — ${msg.type} — ${msg.words} words `
+        const view = document.createElement('a')
+        view.href = '#'
+        view.textContent = 'View prowords'
+        view.addEventListener('click', evt => {
+          evt.preventDefault()
+          const params = new URLSearchParams({ dir: document.body.dataset.dir, id: msg.ident })
+          window.open('/view-prowords?' + params.toString(), `vpw${msg.ident}`)
+        })
+        h.appendChild(view)
+        div.appendChild(h)
+        const warn = text => {
+          const p = document.createElement('p')
+          p.className = 'gen-warn'
+          p.textContent = text
+          div.appendChild(p)
+        }
+        if (msg.missing && msg.missing.length)
+          warn(`May be missing: ${msg.missing.join(', ')}. Review before use.`)
+        if (msg.invalid && msg.invalid.length)
+          warn(`Unrecognized value for: ${msg.invalid.join(', ')}; left at default. Review before use.`)
+        if (msg.missingFields && msg.missingFields.length)
+          warn(`Missing required field(s): ${msg.missingFields.join(', ')}. Review before use.`)
+        if (msg.overLimit)
+          warn(`Over the ~50-word target (${msg.words} words). Review before use.`)
+        if (!msg.prowords || !msg.prowords.length) {
+          const none = document.createElement('p')
+          none.textContent = '(no prowords detected)'
+          div.appendChild(none)
+          return
+        }
+        const { table, body } = genTable(['Proword', 'Count'])
+        msg.prowords.forEach(pw => {
+          const row = body.insertRow()
+          row.insertCell().textContent = pw.name
+          row.insertCell().textContent = pw.count
+        })
+        div.appendChild(table)
+      })
+      genEl(prefix, 'form').hidden = true
+      genEl(prefix, 'progress').hidden = true
+      div.hidden = false
+      genEl(prefix, 'subrow').hidden = true
+      genEl(prefix, 'donerow').hidden = false
+    }
+
+    // genPoll long-polls GET /gentrain-progress for dir, updating dialog
+    // prefix as updates arrive, until the job is done (showing the results,
+    // via showResults if given, or the error) or the poll itself fails (e.g.
+    // the server restarted).
+    async function genPoll(prefix, dir, seq, showResults) {
+      while (true) {
+        const params = new URLSearchParams({ dir, seq })
+        let resp
+        try {
+          resp = await fetch2('/gentrain-progress?' + params.toString())
+        } catch (e) {
+          genShowError(prefix, 'Lost contact with the server while generating: ' + e)
+          return
+        }
+        if (resp.status === 410) {
+          genShowError(prefix, 'The generation job ended unexpectedly. Please try again.')
+          return
+        }
+        if (!resp.ok) {
+          genShowError(prefix, (await resp.text()) || resp.statusText)
+          return
+        }
+        const update = await resp.json()
+        if (update.done) {
+          if (update.error) genShowError(prefix, update.error)
+          else if (showResults) showResults(update.result)
+          else genShowResults(prefix, update.result)
+          return
+        }
+        genShowProgress(prefix, update.progress || 'Working…', update.activities)
+        seq = update.seq
+      }
+    }
+
+    // genStartProgress clears the activity list of dialog prefix and shows
+    // its progress panel, for a job that has just been started.
+    function genStartProgress(prefix) {
+      genEl(prefix, 'activities').innerHTML = ''
+      genShowProgress(prefix, 'Starting…')
+    }
+  </script>
+  <style>
+    .gen-dlg h1 {
+      background-color: #a8e8a8;
+      margin: 0 -0.75rem;
+      padding: 0.5rem 0.75rem;
+      font-size: 1.5rem;
+    }
+
+    .gen-progline {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+    }
+
+    .gen-spinner {
+      width: 1.25rem;
+      height: 1.25rem;
+      flex: none;
+      border: 0.2rem solid #ccc;
+      border-top-color: #2a8;
+      border-radius: 50%;
+      animation: gen-spin 0.8s linear infinite;
+    }
+
+    @keyframes gen-spin {
+      to {
+        transform: rotate(360deg);
+      }
+    }
+
+    .gen-actsummary {
+      color: #666;
+      font-size: 0.85em;
+      margin: 0.25rem 0;
+    }
+
+    .gen-activities {
+      list-style: none;
+      margin: 0;
+      padding: 0;
+      max-height: 55vh;
+      overflow-y: auto;
+      border-top: 1px solid #ddd;
+      font-size: 0.85em;
+    }
+
+    .gen-act {
+      display: grid;
+      grid-template-columns: 1.25rem minmax(0, 1fr) minmax(0, 1fr);
+      gap: 0.5rem;
+      padding: 0.2rem 0.25rem;
+      border-bottom: 1px solid #eee;
+    }
+
+    .gen-act-status {
+      overflow-wrap: anywhere;
+    }
+
+    .gen-act-waiting {
+      color: #888;
+    }
+
+    .gen-act-working {
+      background-color: #eef8ee;
+    }
+
+    .gen-act-working .gen-act-icon {
+      color: #2a8;
+      font-weight: bold;
+    }
+
+    .gen-act-done .gen-act-icon {
+      color: #070;
+    }
+
+    .gen-act-failed {
+      color: #c00;
+    }
+
+    @media (max-width: 30rem) {
+      .gen-act {
+        grid-template-columns: 1.25rem minmax(0, 1fr);
+      }
+
+      .gen-act-status {
+        grid-column: 2;
+      }
+    }
+
+    .gen-warn {
+      color: #a15c00;
+      margin: 0 0 0.25rem;
+    }
+
+    .gen-table {
+      border-collapse: collapse;
+      width: 100%;
+      margin-bottom: 0.5rem;
+    }
+
+    .gen-table th,
+    .gen-table td {
+      border: 1px solid #ccc;
+      padding: 0.15rem 0.5rem;
+      text-align: left;
+    }
+
+    .gen-table td:last-child,
+    .gen-table th:last-child {
+      text-align: right;
+    }
+
+    .gen-results h2 {
+      font-size: 1rem;
+      margin: 1rem 0 0.25rem;
+    }
+
+    .gen-btnrow {
+      margin-top: 1.5rem;
+      display: flex;
+      justify-content: end;
+      gap: 0.75rem;
+    }
+
+    .gen-btnrow button,
+    .gen-btnrow input {
+      border-radius: 0.25rem;
+    }
+
+    .gen-submit {
+      background-color: #a8e8a8;
+    }
+  </style>
+</head>
+
+<body>
+</body>
+
+</html>

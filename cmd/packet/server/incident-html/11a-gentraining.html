@@ -20,148 +20,13 @@
       })
       document.getElementById('gtrows').appendChild(row)
     }
-    function gtShowResults(data) {
-      const div = document.getElementById('gtresults')
-      div.innerHTML = ''
-      data.messages.forEach(msg => {
-        const h = document.createElement('h2')
-        h.textContent = `${msg.id} — ${msg.type} — ${msg.words} words `
-        const view = document.createElement('a')
-        view.href = '#'
-        view.textContent = 'View prowords'
-        view.addEventListener('click', evt => {
-          evt.preventDefault()
-          const params = new URLSearchParams({ dir: document.body.dataset.dir, id: msg.ident })
-          window.open('/view-prowords?' + params.toString(), `vpw${msg.ident}`)
-        })
-        h.appendChild(view)
-        div.appendChild(h)
-        if (msg.missing && msg.missing.length) {
-          const warn = document.createElement('p')
-          warn.className = 'gtwarn'
-          warn.textContent = `May be missing: ${msg.missing.join(', ')}. Review before use.`
-          div.appendChild(warn)
-        }
-        if (msg.invalid && msg.invalid.length) {
-          const warn = document.createElement('p')
-          warn.className = 'gtwarn'
-          warn.textContent = `Unrecognized value for: ${msg.invalid.join(', ')}; left at default. Review before use.`
-          div.appendChild(warn)
-        }
-        if (msg.missingFields && msg.missingFields.length) {
-          const warn = document.createElement('p')
-          warn.className = 'gtwarn'
-          warn.textContent = `Missing required field(s): ${msg.missingFields.join(', ')}. Review before use.`
-          div.appendChild(warn)
-        }
-        if (msg.overLimit) {
-          const warn = document.createElement('p')
-          warn.className = 'gtwarn'
-          warn.textContent = `Over the ~50-word target (${msg.words} words). Review before use.`
-          div.appendChild(warn)
-        }
-        if (!msg.prowords || !msg.prowords.length) {
-          const none = document.createElement('p')
-          none.textContent = '(no prowords detected)'
-          div.appendChild(none)
-          return
-        }
-        const table = document.createElement('table')
-        table.className = 'gtptable'
-        const thead = table.createTHead().insertRow()
-        for (const label of ['Proword', 'Count']) {
-          const th = document.createElement('th')
-          th.textContent = label
-          thead.appendChild(th)
-        }
-        const tbody = table.createTBody()
-        msg.prowords.forEach(pw => {
-          const row = tbody.insertRow()
-          row.insertCell().textContent = pw.name
-          row.insertCell().textContent = pw.count
-        })
-        div.appendChild(table)
-      })
-      document.getElementById('gtform').hidden = true
-      document.getElementById('gtprogress').hidden = true
-      div.hidden = false
-      document.getElementById('gtsubrow').hidden = true
-      document.getElementById('gtdonerow').hidden = false
-    }
     // genShowActivities shows, in list (a <ul>), one line per activity of a
     // training message generation (planning, and drafting each message),
     // each with its latest status, and a count of them by state in summary.
-    function genShowActivities(list, summary, activities) {
-      activities = activities || []
-      const icons = { waiting: '…', working: '⟳', done: '✓', failed: '✗' }
-      const rows = new Map([...list.children].map(li => [li.dataset.key, li]))
-      activities.forEach(a => {
-        let li = rows.get(a.key)
-        if (!li) {
-          li = document.createElement('li')
-          li.dataset.key = a.key
-          li.innerHTML = '<span class=gen-act-icon></span><span class=gen-act-label></span><span class=gen-act-status></span>'
-          list.appendChild(li)
-        }
-        li.className = `gen-act gen-act-${a.state}`
-        li.querySelector('.gen-act-icon').textContent = icons[a.state] || ''
-        li.querySelector('.gen-act-label').textContent = a.label
-        li.querySelector('.gen-act-status').textContent = a.status
-      })
-      list.hidden = !activities.length
-      const counts = {}
-      activities.forEach(a => { counts[a.state] = (counts[a.state] || 0) + 1 })
-      summary.textContent = ['working', 'waiting', 'done', 'failed'].filter(s => counts[s]).map(s => `${counts[s]} ${s}`).join(' · ')
-    }
-    function gtShowProgress(msg, activities) {
-      document.getElementById('gtform').hidden = true
-      document.getElementById('gtresults').hidden = true
-      document.getElementById('gtsubrow').hidden = true
-      document.getElementById('gtdonerow').hidden = true
-      const prog = document.getElementById('gtprogress')
-      prog.hidden = false
-      document.getElementById('gtprogmsg').textContent = msg
-      genShowActivities(document.getElementById('gtactivities'), document.getElementById('gtactsummary'), activities)
-    }
-    function gtShowError(msg) {
-      document.getElementById('gtprogress').hidden = true
-      document.getElementById('gtform').hidden = false
-      document.getElementById('gtsubrow').hidden = false
-      document.getElementById('gterr').textContent = msg
-    }
     // gtPoll long-polls GET /gentrain-progress for dir, updating the
     // progress display as updates arrive, until the job is done (showing
     // the results or the error) or the poll itself fails (e.g. the server
     // restarted).
-    async function gtPoll(dir, seq) {
-      const params = new URLSearchParams({ dir, seq })
-      let resp
-      try {
-        resp = await fetch2('/gentrain-progress?' + params.toString())
-      } catch (e) {
-        gtShowError('Lost contact with the server while generating: ' + e)
-        return
-      }
-      if (resp.status === 410) {
-        gtShowError('The generation job ended unexpectedly. Please try again.')
-        return
-      }
-      if (!resp.ok) {
-        gtShowError((await resp.text()) || resp.statusText)
-        return
-      }
-      const update = await resp.json()
-      if (update.done) {
-        if (update.error) {
-          gtShowError(update.error)
-        } else {
-          gtShowResults(update.result)
-        }
-        return
-      }
-      gtShowProgress(update.progress || 'Working…', update.activities)
-      gtPoll(dir, update.seq)
-    }
     function setupGenTrainingDialog() {
       gtMessageTypeData.split(';').forEach(triplet => {
         const [tag, key, name] = triplet.split(':', 3)
@@ -183,9 +48,8 @@
         try {
           const resp = await fetch2('/gentrain-messages', { method: 'POST', body: data })
           if (resp.status === 204) {
-            document.getElementById('gtactivities').innerHTML = ''
-            gtShowProgress('Starting…')
-            gtPoll(dir, 0)
+            genStartProgress('gt')
+            genPoll('gt', dir, 0)
             return
           }
           document.getElementById('gterr').textContent = (await resp.text()) || resp.statusText
@@ -215,13 +79,6 @@
       margin: 4rem auto;
       padding: 0 0.75rem 0.75rem;
       z-index: 2;
-    }
-
-    #gtdlg h1 {
-      background-color: #a8e8a8;
-      margin: 0 -0.75rem;
-      padding: 0.5rem 0.75rem;
-      font-size: 1.5rem;
     }
 
     #gtform {
@@ -266,138 +123,11 @@
       padding: 1rem 0;
     }
 
-    .gen-progline {
-      display: flex;
-      align-items: center;
-      gap: 0.75rem;
-    }
-
-    .gen-actsummary {
-      color: #666;
-      font-size: 0.85em;
-      margin: 0.25rem 0;
-    }
-
-    .gen-activities {
-      list-style: none;
-      margin: 0;
-      padding: 0;
-      max-height: 55vh;
-      overflow-y: auto;
-      border-top: 1px solid #ddd;
-      font-size: 0.85em;
-    }
-
-    .gen-act {
-      display: grid;
-      grid-template-columns: 1.25rem minmax(0, 1fr) minmax(0, 1fr);
-      gap: 0.5rem;
-      padding: 0.2rem 0.25rem;
-      border-bottom: 1px solid #eee;
-    }
-
-    .gen-act-status {
-      overflow-wrap: anywhere;
-    }
-
-    .gen-act-waiting {
-      color: #888;
-    }
-
-    .gen-act-working {
-      background-color: #eef8ee;
-    }
-
-    .gen-act-working .gen-act-icon {
-      color: #2a8;
-      font-weight: bold;
-    }
-
-    .gen-act-done .gen-act-icon {
-      color: #070;
-    }
-
-    .gen-act-failed {
-      color: #c00;
-    }
-
-    @media (max-width: 30rem) {
-      .gen-act {
-        grid-template-columns: 1.25rem minmax(0, 1fr);
-      }
-
-      .gen-act-status {
-        grid-column: 2;
-      }
-    }
-
-    #gtspinner {
-      width: 1.25rem;
-      height: 1.25rem;
-      flex: none;
-      border: 0.2rem solid #ccc;
-      border-top-color: #2a8;
-      border-radius: 50%;
-      animation: gtspin 0.8s linear infinite;
-    }
-
-    @keyframes gtspin {
-      to {
-        transform: rotate(360deg);
-      }
-    }
-
-    #gtresults h2 {
-      font-size: 1rem;
-      margin: 1rem 0 0.25rem;
-    }
-
-    .gtwarn {
-      color: #a15c00;
-      margin: 0 0 0.25rem;
-    }
-
-    .gtptable {
-      border-collapse: collapse;
-      width: 100%;
-      margin-bottom: 0.5rem;
-    }
-
-    .gtptable th,
-    .gtptable td {
-      border: 1px solid #ccc;
-      padding: 0.15rem 0.5rem;
-      text-align: left;
-    }
-
-    .gtptable td:last-child,
-    .gtptable th:last-child {
-      text-align: right;
-    }
-
-    #gtsubrow,
-    #gtdonerow {
-      margin-top: 1.5rem;
-      display: flex;
-      justify-content: end;
-      gap: 0.75rem;
-    }
-
-    #gtcan,
-    #gtsub,
-    #gtdone {
-      border-radius: 0.25rem;
-    }
-
-    #gtsub,
-    #gtdone {
-      background-color: #a8e8a8;
-    }
   </style>
 </head>
 
 <body>
-  <dialog id=gtdlg>
+  <dialog id=gtdlg class=gen-dlg>
     <h1>Generate Training Messages</h1>
     <form id=gtform>
       <input type=hidden name=dir value="{{DIR}}">
@@ -418,22 +148,22 @@
       <p>Scenario (optional):</p>
       <textarea id=gtscenario name=scenario rows=2 placeholder="e.g. a downed power line on Kaczmarek Street (leave blank for a generic scenario)"></textarea>
       <div id=gterr></div>
-      <div id=gtsubrow>
+      <div id=gtsubrow class=gen-btnrow>
         <button id=gtcan type=button>Cancel</button>
-        <input id=gtsub type=submit value="Generate Messages">
+        <input id=gtsub class=gen-submit type=submit value="Generate Messages">
       </div>
     </form>
     <div id=gtprogress hidden>
       <div class=gen-progline>
-        <div id=gtspinner></div>
+        <div class=gen-spinner></div>
         <p id=gtprogmsg></p>
       </div>
       <p id=gtactsummary class=gen-actsummary></p>
       <ul id=gtactivities class=gen-activities hidden></ul>
     </div>
-    <div id=gtresults hidden></div>
-    <div id=gtdonerow hidden>
-      <button id=gtdone type=button>Done</button>
+    <div id=gtresults class=gen-results hidden></div>
+    <div id=gtdonerow class=gen-btnrow hidden>
+      <button id=gtdone class=gen-submit type=button>Done</button>
     </div>
   </dialog>
 </body>
