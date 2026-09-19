@@ -510,25 +510,3 @@ func completeWithHeartbeat(ctx context.Context, client *ClaudeClient, system, sh
 	})
 	return client.Complete(ctx, system, shared, prompt, maxTokens)
 }
-
-// shortNameField lists common field names for ICS position and location
-// fields, which should be kept short (a role or place name, not a
-// sentence) to read naturally over voice and fit real-world form fields.
-var shortNameField = map[string]bool{
-	"toICSPosition":   true,
-	"fromICSPosition": true,
-	"toLocation":      true,
-	"fromLocation":    true,
-}
-
-// missingCategories returns the subset of cats that counts shows zero
-// occurrences of.
-func missingCategories(cats []prowords.Category, counts map[prowords.Category]int) []prowords.Category {
-	var missing []prowords.Category
-	for _, c := range cats {
-		if counts[c] == 0 {
-			missing = append(missing, c)
-		}
-	}
-	return missing
-}

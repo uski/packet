@@ -245,3 +245,13 @@ func Generatable(specs []FieldSpec) []FieldSpec {
 	}
 	return out
 }
+
+// shortNameField lists common field names for ICS position and location
+// fields, which should be kept short (a role or place name, not a
+// sentence) to read naturally over voice and fit real-world form fields.
+var shortNameField = map[string]bool{
+	"toICSPosition":   true,
+	"fromICSPosition": true,
+	"toLocation":      true,
+	"fromLocation":    true,
+}

@@ -94,3 +94,15 @@ func planByParty(req Request) ([]MessagePlan, error) {
 	}
 	return plans, nil
 }
+
+// missingCategories returns the subset of cats that counts shows zero
+// occurrences of.
+func missingCategories(cats []prowords.Category, counts map[prowords.Category]int) []prowords.Category {
+	var missing []prowords.Category
+	for _, c := range cats {
+		if counts[c] == 0 {
+			missing = append(missing, c)
+		}
+	}
+	return missing
+}
