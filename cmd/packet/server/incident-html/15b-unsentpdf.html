@@ -59,6 +59,7 @@
           dir: document.body.dataset.dir, format,
           hideOrigin: document.getElementById('uphideorig').checked ? '1' : '0',
           hideDest: document.getElementById('uphidedest').checked ? '1' : '0',
+          annotate: document.getElementById('upannotate').checked ? '1' : '0',
         })
         upBoxes().filter(b => b.checked).forEach(b => params.append('id', b.value))
         const sub = document.getElementById('upsub')
@@ -186,6 +187,11 @@
       display: inline-block;
     }
 
+    .uphint {
+      color: #666;
+      font-size: 0.85em;
+    }
+
     #upcount {
       margin-top: 0.35rem;
       color: #666;
@@ -228,6 +234,8 @@
         <label><input type=checkbox id=uphideorig checked> Origin</label>
         <label><input type=checkbox id=uphidedest checked> Destination</label>
       </div>
+      <label><input type=checkbox id=upannotate> Annotate prowords
+        <span class=uphint>adds a page after each message naming the prowords its text calls for, with a bar every 5 groups</span></label>
       <div>Download as:</div>
       <label><input type=radio name=upformat value=pdf checked> One PDF with all the messages, one after another</label>
       <label><input type=radio name=upformat value=zip> A ZIP file with a separate PDF for each message</label>

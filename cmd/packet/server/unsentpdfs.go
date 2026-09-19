@@ -75,7 +75,9 @@ func (s *Server) serveGetUnsentMessages(w http.ResponseWriter, r *http.Request) 
 // serveGetUnsentPDFs handles GET /unsent-pdfs requests, which have a dir=
 // parameter, a format= parameter, optional repeated id= parameters naming
 // the messages to include (by default, all of them), and hideOrigin= and
-// hideDest= parameters ("1" to leave that message number off the PDFs). They render a fresh PDF of each unsent
+// hideDest= parameters ("1" to leave that message number off the PDFs),
+// and an annotate= parameter ("1" to add each message's proword
+// annotations after it). They render a fresh PDF of each unsent
 // message (drafts and queued messages, not receipts) in the incident, and
 // respond with them either as a ZIP file of separate PDFs named after their
 // subject lines (format=zip, the default), or concatenated into a single
@@ -112,9 +114,10 @@ func (s *Server) serveGetUnsentPDFs(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	hide := hiddenNumbers{origin: r.FormValue("hideOrigin") == "1", destination: r.FormValue("hideDest") == "1"}
+	annotate := r.FormValue("annotate") == "1"
 	var pdfs []renderedPDF
 	err = incident.Read(r.FormValue("dir"), func(i *incident.Incident) (err error) {
-		pdfs, err = renderUnsentPDFs(i, tmp, only, hide)
+		pdfs, err = renderUnsentPDFs(i, tmp, only, hide, annotate)
 		return err
 	})
 	if err != nil {
@@ -181,8 +184,9 @@ func hideNumbers(msg message.Message, hide hiddenNumbers) {
 // renderUnsentPDFs renders the PDF of each unsent message in i, in log
 // order, using directory tmp for scratch files. If only is not nil, just
 // the messages whose log entry idents it holds are rendered; hide says
-// which message numbers to leave off them.
-func renderUnsentPDFs(i *incident.Incident, tmp string, only map[int]bool, hide hiddenNumbers) (pdfs []renderedPDF, err error) {
+// which message numbers to leave off them, and annotate adds each
+// message's proword annotations after it (see annotatedPDF).
+func renderUnsentPDFs(i *incident.Incident, tmp string, only map[int]bool, hide hiddenNumbers, annotate bool) (pdfs []renderedPDF, err error) {
 	used := map[string]bool{}
 	for _, le := range unsentEntries(i) {
 		if only != nil && !only[le.Ident] {
@@ -203,6 +207,20 @@ func renderUnsentPDFs(i *incident.Incident, tmp string, only map[int]bool, hide 
 		data, err := os.ReadFile(fname)
 		if err != nil {
 			return nil, err
+		}
+		if annotate {
+			notes := filepath.Join(tmp, fmt.Sprintf("%d-prowords.pdf", le.Ident))
+			if err = annotatedPDF(msg, "Prowords in "+le.LocalMsgID, notes); err != nil {
+				return nil, fmt.Errorf("annotating %s: %w", le.LocalMsgID, err)
+			}
+			annotated, err := os.ReadFile(notes)
+			if err != nil {
+				return nil, err
+			}
+			joined := filepath.Join(tmp, fmt.Sprintf("%d-with-prowords.pdf", le.Ident))
+			if data, err = concatenatePDFs([]renderedPDF{{data: data}, {data: annotated}}, joined); err != nil {
+				return nil, fmt.Errorf("annotating %s: %w", le.LocalMsgID, err)
+			}
 		}
 		pdfs = append(pdfs, renderedPDF{name: name, data: data})
 	}
