@@ -40,8 +40,8 @@ func TestBuildProwordPage(t *testing.T) {
 		t.Fatal(err)
 	}
 	out := buf.String()
-	if !strings.Contains(out, `<span class="pw" title="TELEPHONE FIGURES">408-555-1212</span>`) {
-		t.Errorf("expected an underlined, titled phone number span:\n%s", out)
+	if !strings.Contains(out, `<span class="pw"><span class="pwtext">408-555-1212</span><span class="pwname">TELEPHONE FIGURES</span></span>`) {
+		t.Errorf("expected an underlined phone number span with its proword named below:\n%s", out)
 	}
 	if strings.Contains(out, "<all>") {
 		t.Error("message text must be HTML-escaped")
@@ -74,7 +74,7 @@ func TestServeGetViewProwords(t *testing.T) {
 	params := url.Values{"dir": {dir}, "id": {strconv.Itoa(ident)}}
 	rr := httptest.NewRecorder()
 	s.serveGetViewProwords(rr, httptest.NewRequest(http.MethodGet, "/view-prowords?"+params.Encode(), nil))
-	if rr.Code != http.StatusOK || !strings.Contains(rr.Body.String(), `title="TELEPHONE FIGURES"`) {
+	if rr.Code != http.StatusOK || !strings.Contains(rr.Body.String(), `<span class="pwname">TELEPHONE FIGURES</span>`) {
 		t.Errorf("status %d, body:\n%s", rr.Code, rr.Body)
 	}
 

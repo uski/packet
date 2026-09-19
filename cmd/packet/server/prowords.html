@@ -55,19 +55,39 @@
 
     .value {
       white-space: pre-wrap;
+      /* Room for the proword names written under the marked text. */
+      line-height: 2.6;
     }
 
+    /* A marked span is a column: the text, with the proword named under it.
+       The column is as wide as the wider of the two, so the names of two
+       marked spans can never overlap, however short the marked text. */
     .pw {
+      display: inline-flex;
+      flex-direction: column;
+      align-items: center;
+      vertical-align: baseline;
+      white-space: pre-wrap;
+    }
+
+    .pwtext {
       text-decoration: underline 2px red;
       text-underline-offset: 3px;
-      cursor: help;
+    }
+
+    .pwname {
+      font-size: 0.65rem;
+      line-height: 1.1;
+      color: #c00;
+      white-space: nowrap;
+      padding: 0 0.25rem;
     }
   </style>
 </head>
 
 <body>
   <h1>Prowords in {{.Title}}</h1>
-  <p class="hint">Text that calls for a proword is underlined in red. Hover over it to see which proword.</p>
+  <p class="hint">Text that calls for a proword is underlined in red, with the proword named under it.</p>
   {{if .Contentless}}<p class="hint">This is a check-in or check-out message: sending it is all that counts, so no proword is counted in it.</p>{{end}}
   {{if .Counts}}
   <table>
@@ -81,7 +101,7 @@
   {{range .Fields}}
   <div class="field">
     <div class="label">{{.Label}}</div>
-    <div class="value">{{range .Segments}}{{if .Proword}}<span class="pw" title="{{.Proword}}">{{.Text}}</span>{{else}}{{.Text}}{{end}}{{end}}</div>
+    <div class="value">{{range .Segments}}{{if .Proword}}<span class="pw"><span class="pwtext">{{.Text}}</span><span class="pwname">{{.Proword}}</span></span>{{else}}{{.Text}}{{end}}{{end}}</div>
   </div>
   {{end}}
 </body>
