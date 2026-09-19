@@ -174,3 +174,29 @@ func TestCredentialNeedsFollowHandbook(t *testing.T) {
 		}
 	}
 }
+
+// TestCompleteFlowNeedsAPartner verifies that auto-adding traffic for a
+// Net Control party with nobody to exchange it with fails with a clear
+// error: the "neediest partner" used to come back as -1, which means "each
+// station" in a message's From, quietly producing a fan-out message.
+func TestCompleteFlowNeedsAPartner(t *testing.T) {
+	formType(t, "ICS213")
+	fl := Flow{
+		Parties: []FlowParty{
+			{Role: "Net Control", Prefix: "XND", Credential: "N3"},
+			{Role: "Shelter", Prefix: "S21", Credential: "F3"},
+		},
+		Messages: []FlowMessage{{MsgType: "ICS213", From: 0, To: 1}},
+	}
+	// With a partner, it completes.
+	if _, added, err := CompleteFlow(fl); err != nil || added == 0 {
+		t.Fatalf("added %d, err %v", added, err)
+	}
+	// The Shelter's traffic is what Net Control has to exchange with; drop
+	// it to the one party and Net Control has nobody.
+	fl.Parties = fl.Parties[:1]
+	fl.Messages = nil
+	if _, _, err := CompleteFlow(fl); err == nil {
+		t.Error("completing a flow with only Net Control should fail")
+	}
+}

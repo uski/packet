@@ -190,9 +190,19 @@ func CompleteFlow(fl Flow) (Flow, int, error) {
 		var msg FlowMessage
 		switch {
 		case p == nc && received:
-			msg = FlowMessage{From: neediestPartner(report, nc, opToOp, false), To: nc}
+			// -1 as a sender would mean "each station", so a party
+			// to send it must really exist.
+			partner, ok := neediestPartner(report, nc, opToOp, false)
+			if !ok {
+				return fl, added, errors.New("auto-adding traffic needs another party besides Net Control")
+			}
+			msg = FlowMessage{From: partner, To: nc}
 		case p == nc:
-			msg = FlowMessage{From: nc, To: neediestPartner(report, nc, opToOp, true)}
+			partner, ok := neediestPartner(report, nc, opToOp, true)
+			if !ok {
+				return fl, added, errors.New("auto-adding traffic needs another party besides Net Control")
+			}
+			msg = FlowMessage{From: nc, To: partner}
 		case received:
 			msg = FlowMessage{From: nc, To: p}
 			if stationsShort(report, nc, opToOp) >= 2 {
@@ -338,7 +348,7 @@ func autoType(fl Flow, fromNetControl, opToOp, reply bool) (msgType, purpose str
 
 // neediestPartner returns the party other than p with the largest
 // shortfall of the given kind and direction, the lowest-numbered on a tie.
-func neediestPartner(report []PartyCompliance, p int, opToOp, received bool) int {
+func neediestPartner(report []PartyCompliance, p int, opToOp, received bool) (int, bool) {
 	best, bestNeed := -1, -1
 	for _, c := range report {
 		if c.Party == p {
@@ -348,5 +358,5 @@ func neediestPartner(report []PartyCompliance, p int, opToOp, received bool) int
 			best, bestNeed = c.Party, need
 		}
 	}
-	return best
+	return best, best >= 0
 }
