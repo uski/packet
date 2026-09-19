@@ -161,3 +161,24 @@ func TestCountFieldsAndTotal(t *testing.T) {
 		t.Errorf("TelephoneFigures = %d, want 1", counts[TelephoneFigures])
 	}
 }
+
+// TestFiguresCountOncePerGroup verifies that a group of digits calls for
+// FIGURE(S) once, however many digits it has -- it's voiced "figures two
+// five", one proword -- and that each separate number counts again.
+func TestFiguresCountOncePerGroup(t *testing.T) {
+	for text, want := range map[string]int{
+		"5":                            1,
+		"Send 25 cots":                 1,
+		"100 containers":               1,
+		"25 cots and 40 wool blankets": 2,
+		"no numbers here":              0,
+	} {
+		if got := Count(text)[Figures]; got != want {
+			t.Errorf("Count(%q)[FIGURE(S)] = %d, want %d", text, got, want)
+		}
+	}
+	m := Find("Send 25 cots")
+	if len(m) != 1 || m[0].Category != Figures || "Send 25 cots"[m[0].Start:m[0].End] != "25" {
+		t.Errorf("Find = %+v, want one FIGURE(S) match covering the whole number", m)
+	}
+}

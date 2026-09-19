@@ -127,3 +127,41 @@ func TestIncidentReportGuessesWithoutRecords(t *testing.T) {
 		t.Errorf("Net Control should receive Shelter C's form, got %+v", nc.Received)
 	}
 }
+
+// TestReportCountsOnlySentProwords verifies that a party's proword counts
+// come only from the messages it sends: the ones it receives are the
+// sender's, not its own.
+func TestReportCountsOnlySentProwords(t *testing.T) {
+	formType(t, "ICS213")
+	fl := Flow{
+		Parties: []FlowParty{
+			{Role: "Net Control", Prefix: "EOC"},
+			{Role: "Shelter A", Prefix: "S24"},
+		},
+		Messages: []FlowMessage{
+			{MsgType: "plain", From: 0, To: 1},
+			{MsgType: "plain", From: 1, To: 0},
+		},
+	}
+	specs, err := ResolveFlow(fl)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Only Net Control's message has any proword content.
+	results := []Result{
+		{Values: plainValues("Call 408-555-1212 about 25 cots.")},
+		{Values: plainValues("Received.")},
+	}
+	reports := applyForReport(t, specs, results)
+	nc := reportByName(t, reports, "Net Control EOC")
+	shelter := reportByName(t, reports, "Shelter A S24")
+	if nc.Counts[prowords.TelephoneFigures] != 1 || nc.Counts[prowords.Figures] != 1 {
+		t.Errorf("the sender should count its own prowords: %v", nc.Counts)
+	}
+	if shelter.Counts[prowords.TelephoneFigures] != 0 || shelter.Counts[prowords.Figures] != 0 {
+		t.Errorf("the recipient counted prowords it only received: %v", shelter.Counts)
+	}
+	if shelter.Received.OpToOp != 1 || shelter.Sent.OpToOp != 1 { // plain messages are operator-to-operator
+		t.Errorf("the recipient's traffic should still count both ways: %+v %+v", shelter.Sent, shelter.Received)
+	}
+}

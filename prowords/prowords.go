@@ -67,7 +67,7 @@ var catalog = map[Category]info{
 	Figures: {
 		Proword: "FIGURE(S)",
 		Prompt:  `Include at least one number written with digits only, standing alone (e.g. "100 containers"), so the sender must use the FIGURE(S) proword.`,
-		re:      regexp.MustCompile(`\d`),
+		re:      regexp.MustCompile(`\d+`),
 	},
 	MixedGroup: {
 		Proword: "MIXED GROUP",
