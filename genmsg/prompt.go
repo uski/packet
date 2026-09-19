@@ -123,14 +123,10 @@ func sharedPrompt(req Request, brief string) string {
 
 // messagePrompt returns the part of the prompt describing the pending
 // messages themselves (see buildPrompt), which follows sharedPrompt.
-func messagePrompt(req Request, specsPerMsg [][]FieldSpec, results []Result, pending []int, plans []MessagePlan, routedPerMsg []map[prowords.Category]string, baseWords []int, isRepair bool) string {
+func messagePrompt(req Request, specsPerMsg [][]FieldSpec, results []Result, idx int, plan MessagePlan, routedPerMsg []map[prowords.Category]string, baseWords []int, isRepair bool) string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "\nGenerate exactly %d message(s), described below in order.\n\n", len(pending))
-	pendingSet := make(map[int]bool, len(pending))
-	for _, idx := range pending {
-		pendingSet[idx] = true
-	}
-	for pos, idx := range pending {
+	b.WriteString("\nGenerate exactly 1 message(s), described below in order.\n\n")
+	{
 		m := req.Messages[idx]
 		label := idx + 1 // stable original 1-based number, independent of pending/round
 		fmt.Fprintf(&b, "Message %d -- type: %s\n", label, m.MsgType.Name())
@@ -152,7 +148,7 @@ func messagePrompt(req Request, specsPerMsg [][]FieldSpec, results []Result, pen
 		if m.ReplyTo > 0 {
 			fmt.Fprintf(&b, "This is a direct reply to Message %d: its content must specifically and consistently respond to that message (answer what it asked, reference the specifics it mentioned), not just share the same general scenario.\n", m.ReplyTo)
 			refIdx := m.ReplyTo - 1
-			if !pendingSet[refIdx] && results[refIdx].Values != nil {
+			if refIdx != idx && results[refIdx].Values != nil {
 				b.WriteString("For reference, Message ")
 				fmt.Fprintf(&b, "%d's already-generated content was:\n", m.ReplyTo)
 				for _, v := range results[refIdx].Values {
@@ -224,9 +220,9 @@ func messagePrompt(req Request, specsPerMsg [][]FieldSpec, results []Result, pen
 			}
 		}
 		b.WriteString("Requirements for this message (see above for how to meet each proword):\n")
-		for _, cat := range plans[pos].Categories {
+		for _, cat := range plan.Categories {
 			text := prowords.ProwordName(cat)
-			if slices.Contains(plans[pos].Unmet, cat) {
+			if slices.Contains(plan.Unmet, cat) {
 				text = "NOT MET IN YOUR PREVIOUS VERSION: " + text
 			}
 			if tag, ok := routed[cat]; ok {
@@ -235,19 +231,19 @@ func messagePrompt(req Request, specsPerMsg [][]FieldSpec, results []Result, pen
 				fmt.Fprintf(&b, "  - %s\n", text)
 			}
 		}
-		if plans[pos].CheckOne {
+		if plan.CheckOne {
 			text := `Check at least one checkbox on this form that fits the message, by giving it the value "checked", so the sender and receiver must handle a checked box.`
-			if plans[pos].CheckOneUnmet {
+			if plan.CheckOneUnmet {
 				text = "NOT MET IN YOUR PREVIOUS VERSION: " + text
 			}
 			fmt.Fprintf(&b, "  - %s\n", text)
 		}
 		budget := max(MaxWords-baseWords[idx], minValueWords)
 		fmt.Fprintf(&b, "Word budget: this whole message must total about %d words or fewer across ALL of its fields. Its pre-filled fields already use %d, so the values you give for it must total at most %d words (a phone number, email address, call sign, or other group without spaces counts as one word). Optional fields may stay empty; leave them out rather than go over.\n", MaxWords, baseWords[idx], budget)
-		if plans[pos].Words > 0 {
-			fmt.Fprintf(&b, "Your previous response made this message %d words in total: cut it to at most %d by shortening text and leaving optional fields empty (never leave a required field empty).\n", plans[pos].Words, MaxWords)
+		if plan.Words > 0 {
+			fmt.Fprintf(&b, "Your previous response made this message %d words in total: cut it to at most %d by shortening text and leaving optional fields empty (never leave a required field empty).\n", plan.Words, MaxWords)
 		}
-		for _, s := range plans[pos].LongFields {
+		for _, s := range plan.LongFields {
 			fmt.Fprintf(&b, "Your previous version's %q (%s) was %s: make it a short title of at most %d words and move the details into the message fields.\n", s.Tag, s.Label, s.Problem, maxSummaryWords)
 		}
 		if prev := results[idx].Values; isRepair && prev != nil {
@@ -255,10 +251,10 @@ func messagePrompt(req Request, specsPerMsg [][]FieldSpec, results []Result, pen
 				fmt.Fprintf(&b, "Your previous version of this message (field tag -> value). Revise it rather than starting over, keeping everything that already works:\n%s\n", data)
 			}
 		}
-		if len(plans[pos].MissingFields) > 0 {
+		if len(plan.MissingFields) > 0 {
 			b.WriteString("The following REQUIRED fields are empty or invalid. You MUST give every one of them a valid, non-empty value this time:\n")
 			reported := map[string]bool{}
-			for _, s := range plans[pos].MissingFields {
+			for _, s := range plan.MissingFields {
 				if s.Group != "" {
 					if !reported[s.Group] {
 						reported[s.Group] = true
@@ -288,8 +284,8 @@ func messagePrompt(req Request, specsPerMsg [][]FieldSpec, results []Result, pen
 // whole prompt. Generate sends the two separately, so that the shared half
 // is cached across the batch's calls; this is for tests, which check the
 // prompt a message gets as a whole.
-func buildPrompt(req Request, brief string, specsPerMsg [][]FieldSpec, results []Result, pending []int, plans []MessagePlan, routedPerMsg []map[prowords.Category]string, baseWords []int, isRepair bool) string {
-	return sharedPrompt(req, brief) + messagePrompt(req, specsPerMsg, results, pending, plans, routedPerMsg, baseWords, isRepair)
+func buildPrompt(req Request, brief string, specsPerMsg [][]FieldSpec, results []Result, idx int, plan MessagePlan, routedPerMsg []map[prowords.Category]string, baseWords []int, isRepair bool) string {
+	return sharedPrompt(req, brief) + messagePrompt(req, specsPerMsg, results, idx, plan, routedPerMsg, baseWords, isRepair)
 }
 
 // routedForTag returns the (sorted, for deterministic prompt text) proword

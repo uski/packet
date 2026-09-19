@@ -61,21 +61,20 @@ func TestBuildPromptIncludesFlowContext(t *testing.T) {
 	specs := []FieldSpec{{Tag: "defaultBody", Multiline: true}}
 	specsPerMsg := [][]FieldSpec{specs, specs}
 	results := make([]Result, 2)
-	pending := []int{0, 1}
-	plans := []MessagePlan{{}, {}}
 	routedPerMsg := make([]map[prowords.Category]string, 2)
 
-	prompt := buildPrompt(req, "", specsPerMsg, results, pending, plans, routedPerMsg, make([]int, 2), false)
-
-	for _, want := range []string{
-		"Message 1", "Net Control (County EOC)", "All Stations",
-		"request shelter status",
-		"Message 2", "Shelter Manager",
-		"report shelter status",
-		"direct reply to Message 1",
+	// Each message is asked for on its own, and carries its own flow
+	// context; the reply also names the message it answers.
+	first := buildPrompt(req, "", specsPerMsg, results, 0, MessagePlan{}, routedPerMsg, make([]int, 2), false)
+	second := buildPrompt(req, "", specsPerMsg, results, 1, MessagePlan{}, routedPerMsg, make([]int, 2), false)
+	for prompt, wants := range map[string][]string{
+		first:  {"Message 1", "Net Control (County EOC)", "All Stations", "request shelter status"},
+		second: {"Message 2", "Shelter Manager", "report shelter status", "direct reply to Message 1"},
 	} {
-		if !strings.Contains(prompt, want) {
-			t.Errorf("prompt missing %q\n--- prompt ---\n%s", want, prompt)
+		for _, want := range wants {
+			if !strings.Contains(prompt, want) {
+				t.Errorf("prompt missing %q\n--- prompt ---\n%s", want, prompt)
+			}
 		}
 	}
 }
@@ -89,18 +88,15 @@ func TestBuildPromptInjectsContextForNonPendingReplyTarget(t *testing.T) {
 	}
 	specs := []FieldSpec{{Tag: "defaultBody", Multiline: true}}
 	specsPerMsg := [][]FieldSpec{specs, specs}
-	// Message 1 already has a result and is NOT in pending this round
-	// (as would happen on a repair round where only message 2 still
-	// needs work); its content must still be surfaced as context.
+	// Message 1 is already written; its content must still be surfaced as
+	// context for the message that replies to it.
 	results := []Result{
 		{Values: map[string]string{"defaultBody": "How many beds are available at your shelter?"}},
 		{},
 	}
-	pending := []int{1}
-	plans := []MessagePlan{{}}
 	routedPerMsg := make([]map[prowords.Category]string, 2)
 
-	prompt := buildPrompt(req, "", specsPerMsg, results, pending, plans, routedPerMsg, make([]int, 2), true)
+	prompt := buildPrompt(req, "", specsPerMsg, results, 1, MessagePlan{}, routedPerMsg, make([]int, 2), true)
 
 	if !strings.Contains(prompt, "How many beds are available") {
 		t.Errorf("expected the non-pending replied-to message's content to be injected as context\n--- prompt ---\n%s", prompt)

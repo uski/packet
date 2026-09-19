@@ -18,24 +18,23 @@ import (
 // default it already had stands) rather than writing free-form text into a
 // field meant to hold one of a fixed set of choices, and the field's label
 // is reported in the corresponding entry of invalid.
-func parseResponse(text string, specsPerMsg [][]FieldSpec, pending []int) (values []map[string]string, invalid [][]string, err error) {
+func parseResponse(text string, specs []FieldSpec) (values map[string]string, invalid []string, err error) {
 	if strings.HasPrefix(text, "{") {
-		text = "[" + text + "]" // a single message sent as a bare object
+		text = "[" + text + "]" // the message sent as a bare object
 	}
 	var raw []map[string]any
 	if err := json.Unmarshal([]byte(text), &raw); err != nil {
 		return nil, nil, fmt.Errorf("parsing Claude's JSON response: %w", err)
 	}
-	values = make([]map[string]string, 0, len(raw))
-	invalid = make([][]string, 0, len(raw))
-	for pos, obj := range raw {
-		if pos >= len(pending) {
-			break // extra objects beyond what we asked for are ignored
-		}
-		specByTag := make(map[string]FieldSpec, len(specsPerMsg[pending[pos]]))
-		for _, s := range specsPerMsg[pending[pos]] {
-			specByTag[s.Tag] = s
-		}
+	if len(raw) == 0 {
+		return nil, nil, nil // no message object; the caller says so
+	}
+	specByTag := make(map[string]FieldSpec, len(specs))
+	for _, s := range specs {
+		specByTag[s.Tag] = s
+	}
+	{ // any object beyond the one message asked for is ignored
+		obj := raw[0]
 		vals := make(map[string]string, len(obj))
 		var bad []string
 		for k, v := range obj {
@@ -67,8 +66,7 @@ func parseResponse(text string, specsPerMsg [][]FieldSpec, pending []int) (value
 			}
 			vals[k] = sval
 		}
-		values = append(values, vals)
-		invalid = append(invalid, bad)
+		values, invalid = vals, bad
 	}
 	return values, invalid, nil
 }

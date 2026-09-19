@@ -10,98 +10,92 @@ import (
 )
 
 func TestParseResponse(t *testing.T) {
-	// Two pending messages of different types with different field sets,
-	// as would happen in a mixed-type batch (e.g. ICS-213 then plain
-	// text).
-	specsPerMsg := [][]FieldSpec{
-		{{Tag: "10."}, {Tag: "12."}},
-		{{Tag: "body"}},
-	}
-	pending := []int{0, 1}
-	text := `[{"10.":"Road closure","12.":"Main St is closed near 5th."},{"body":"Body two.","bogus":"dropped"}]`
-	out, invalid, err := parseResponse(text, specsPerMsg, pending)
+	specs := []FieldSpec{{Tag: "10."}, {Tag: "12."}}
+	// Claude answers with an array; any object past the one message asked
+	// for is ignored, as is a field the message doesn't have.
+	text := `[{"10.":"Road closure","12.":"Main St is closed near 5th.","bogus":"dropped"},{"body":"Body two."}]`
+	out, invalid, err := parseResponse(text, specs)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(out) != 2 {
-		t.Fatalf("got %d messages, want 2", len(out))
+	if out["12."] != "Main St is closed near 5th." || out["10."] != "Road closure" {
+		t.Errorf("values = %v", out)
 	}
-	if out[1]["bogus"] != "" {
-		t.Errorf("field not in message 2's specs should have been dropped, got %q", out[1]["bogus"])
+	if _, ok := out["bogus"]; ok {
+		t.Errorf("a field the message doesn't have should be dropped, got %v", out)
 	}
-	if out[0]["12."] != "Main St is closed near 5th." {
-		t.Errorf("unexpected value: %q", out[0]["12."])
-	}
-	if out[1]["body"] != "Body two." {
-		t.Errorf("unexpected value: %q", out[1]["body"])
-	}
-	if len(invalid[0]) != 0 || len(invalid[1]) != 0 {
+	if len(invalid) != 0 {
 		t.Errorf("expected no invalid fields, got %v", invalid)
+	}
+	// A bare object is taken as the message.
+	if out, _, err = parseResponse(`{"10.":"Road closure"}`, specs); err != nil || out["10."] != "Road closure" {
+		t.Errorf("bare object: %v, %v", out, err)
+	}
+	// Nothing at all is not an error here; the caller reports it.
+	if out, _, err = parseResponse(`[]`, specs); err != nil || out != nil {
+		t.Errorf("empty array: %v, %v", out, err)
 	}
 }
 
 func TestParseResponseInvalidJSON(t *testing.T) {
-	if _, _, err := parseResponse("not json", nil, nil); err == nil {
+	if _, _, err := parseResponse("not json", nil); err == nil {
 		t.Error("expected error for invalid JSON, got nil")
 	}
 }
 
 func TestParseResponseRestrictedChoice(t *testing.T) {
-	specsPerMsg := [][]FieldSpec{
-		{{Tag: "5.", Label: "Handling", Choices: []string{"ROUTINE", "PRIORITY", "IMMEDIATE"}}},
-	}
-	pending := []int{0}
+	specs := []FieldSpec{{Tag: "5.", Label: "Handling", Choices: []string{"ROUTINE", "PRIORITY", "IMMEDIATE"}}}
 
 	// Exact match passes through unchanged.
-	out, invalid, err := parseResponse(`[{"5.":"PRIORITY"}]`, specsPerMsg, pending)
+	out, invalid, err := parseResponse(`[{"5.":"PRIORITY"}]`, specs)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if out[0]["5."] != "PRIORITY" || len(invalid[0]) != 0 {
-		t.Errorf("exact match: got value=%q invalid=%v", out[0]["5."], invalid[0])
+	if out["5."] != "PRIORITY" || len(invalid) != 0 {
+		t.Errorf("exact match: got value=%q invalid=%v", out["5."], invalid)
 	}
 
 	// Case/whitespace-insensitive match is normalized to the canonical form.
-	out, invalid, err = parseResponse(`[{"5.": " priority "}]`, specsPerMsg, pending)
+	out, invalid, err = parseResponse(`[{"5.": " priority "}]`, specs)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if out[0]["5."] != "PRIORITY" || len(invalid[0]) != 0 {
-		t.Errorf("fuzzy match: got value=%q invalid=%v", out[0]["5."], invalid[0])
+	if out["5."] != "PRIORITY" || len(invalid) != 0 {
+		t.Errorf("fuzzy match: got value=%q invalid=%v", out["5."], invalid)
 	}
 
 	// A value outside the choices is dropped, not written verbatim, and
 	// reported as invalid.
-	out, invalid, err = parseResponse(`[{"5.":"Urgent"}]`, specsPerMsg, pending)
+	out, invalid, err = parseResponse(`[{"5.":"Urgent"}]`, specs)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, ok := out[0]["5."]; ok {
-		t.Errorf("expected field to be dropped for an out-of-choice value, got %q", out[0]["5."])
+	if _, ok := out["5."]; ok {
+		t.Errorf("expected field to be dropped for an out-of-choice value, got %q", out["5."])
 	}
-	if len(invalid[0]) != 1 || invalid[0][0] != "Handling" {
-		t.Errorf("expected invalid=[Handling], got %v", invalid[0])
+	if len(invalid) != 1 || invalid[0] != "Handling" {
+		t.Errorf("expected invalid=[Handling], got %v", invalid)
 	}
 }
 
 func TestParseResponseCheckbox(t *testing.T) {
-	specsPerMsg := [][]FieldSpec{{
+	specs := []FieldSpec{
 		{Tag: "a", Label: "A", Choices: []string{"checked"}},
 		{Tag: "b", Label: "B", Choices: []string{"checked"}},
 		{Tag: "c", Label: "C", Choices: []string{"checked"}},
-	}}
-	out, invalid, err := parseResponse(`[{"a": true, "b": "Yes", "c": false}]`, specsPerMsg, []int{0})
+	}
+	out, invalid, err := parseResponse(`[{"a": true, "b": "Yes", "c": false}]`, specs)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if out[0]["a"] != "checked" || out[0]["b"] != "checked" {
-		t.Errorf("true and \"Yes\" should check a checkbox, got %v", out[0])
+	if out["a"] != "checked" || out["b"] != "checked" {
+		t.Errorf("true and \"Yes\" should check a checkbox, got %v", out)
 	}
-	if _, ok := out[0]["c"]; ok {
-		t.Errorf("false should leave a checkbox unchecked, got %v", out[0])
+	if _, ok := out["c"]; ok {
+		t.Errorf("false should leave a checkbox unchecked, got %v", out)
 	}
-	if len(invalid[0]) != 0 {
-		t.Errorf("checkbox answers should not be reported invalid, got %v", invalid[0])
+	if len(invalid) != 0 {
+		t.Errorf("checkbox answers should not be reported invalid, got %v", invalid)
 	}
 }
 

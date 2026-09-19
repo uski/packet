@@ -100,7 +100,7 @@ func TestShelterRequiredCheckboxGroupIsSurfaced(t *testing.T) {
 	if labels := fieldLabels(problemSpecs(draft)); !slices.Contains(labels, "24. Type") {
 		t.Errorf("the unchecked required group should be reported once by its label, got %v", labels)
 	}
-	prompt := buildPrompt(Request{Messages: []MessageSpec{spec}}, "", [][]FieldSpec{specs}, make([]Result, 1), []int{0}, []MessagePlan{{}}, make([]map[prowords.Category]string, 1), make([]int, 1), false)
+	prompt := buildPrompt(Request{Messages: []MessageSpec{spec}}, "", [][]FieldSpec{specs}, make([]Result, 1), 0, MessagePlan{}, make([]map[prowords.Category]string, 1), make([]int, 1), false)
 	if !strings.Contains(prompt, `"24. Type": check AT LEAST ONE of these checkboxes`) {
 		t.Errorf("prompt should ask for at least one checkbox of the group:\n%s", prompt)
 	}
@@ -146,7 +146,7 @@ func TestLongFormMustCheckOneCheckbox(t *testing.T) {
 	if !checked {
 		t.Error("checking a checkbox should be detected")
 	}
-	prompt := buildPrompt(Request{Messages: []MessageSpec{spec}}, "", [][]FieldSpec{specs}, make([]Result, 1), []int{0}, []MessagePlan{{CheckOne: true, CheckOneUnmet: true}}, make([]map[prowords.Category]string, 1), make([]int, 1), true)
+	prompt := buildPrompt(Request{Messages: []MessageSpec{spec}}, "", [][]FieldSpec{specs}, make([]Result, 1), 0, MessagePlan{CheckOne: true, CheckOneUnmet: true}, make([]map[prowords.Category]string, 1), make([]int, 1), true)
 	if !strings.Contains(prompt, "NOT MET IN YOUR PREVIOUS VERSION: Check at least one checkbox") {
 		t.Errorf("revision prompt should flag the unchecked checkbox requirement:\n%s", prompt)
 	}
@@ -265,7 +265,7 @@ func TestBuildPromptSeparatesOptionalFields(t *testing.T) {
 		{Tag: "24n.", Label: "Item 2: Item Name", Optional: true},
 		{Tag: "60.", Label: "Comments", Multiline: true, Optional: true},
 	}}
-	prompt := buildPrompt(req, "", specs, make([]Result, 1), []int{0}, []MessagePlan{{}}, make([]map[prowords.Category]string, 1), make([]int, 1), false)
+	prompt := buildPrompt(req, "", specs, make([]Result, 1), 0, MessagePlan{}, make([]map[prowords.Category]string, 1), make([]int, 1), false)
 	must := strings.Index(prompt, "Fields you MUST fill in")
 	other := strings.Index(prompt, "Other fields on this form")
 	if must < 0 || other < must {

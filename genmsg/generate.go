@@ -349,7 +349,7 @@ func (g *generation) generateMessage(idx, n int, plan MessagePlan) error {
 		// (the one this replies to, for its content), which the other
 		// goroutines write there as they finish.
 		draftMu.Lock()
-		prompt := messagePrompt(g.req, g.specs, g.results, []int{idx}, []MessagePlan{plan}, g.routed, g.baseWords, res.Values != nil) + retryNote
+		prompt := messagePrompt(g.req, g.specs, g.results, idx, plan, g.routed, g.baseWords, res.Values != nil) + retryNote
 		draftMu.Unlock()
 		text, err := completeWithHeartbeat(g.ctx, g.client, systemPrompt, g.shared, prompt, maxOutputTokens, func(elapsed time.Duration) {
 			g.progress(fmt.Sprintf("%s... (%s elapsed)", label, elapsed))
@@ -363,12 +363,12 @@ func (g *generation) generateMessage(idx, n int, plan MessagePlan) error {
 		} else if err != nil {
 			return err
 		}
-		parsed, invalid, err := parseResponse(extractJSON(text), g.specs, []int{idx})
-		if err == nil && len(parsed) == 0 {
+		parsed, invalid, err := parseResponse(extractJSON(text), g.specs[idx])
+		if err == nil && parsed == nil {
 			err = errors.New("the response held no message object")
 		}
 		if err == nil {
-			parsed[0] = fictionalizeCallSigns(parsed[0])
+			parsed = fictionalizeCallSigns(parsed)
 		}
 		if err != nil {
 			lastErr, reason = err, "the previous response was unusable"
@@ -378,7 +378,7 @@ func (g *generation) generateMessage(idx, n int, plan MessagePlan) error {
 		retryNote = ""
 		act.Status = "checking the draft"
 		g.activity(act)
-		ev, err := g.evaluate(idx, parsed[0], invalid[0], checkOne)
+		ev, err := g.evaluate(idx, parsed, invalid, checkOne)
 		if err != nil {
 			return err
 		}
