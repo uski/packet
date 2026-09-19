@@ -8,8 +8,6 @@ import (
 	"strconv"
 	"strings"
 	"time"
-
-	"github.com/rothskeller/packet/v4/message/messageid"
 )
 
 // Diagram is a message flow laid out as a sequence diagram: its parties
@@ -122,15 +120,18 @@ func FlowDiagram(fl Flow) (Diagram, error) {
 	if err != nil {
 		return Diagram{}, err
 	}
-	reserved := map[string]bool{}
+	var reserved []MessageSpec
 	for _, nums := range msgNos {
 		for _, id := range nums {
-			if p, n, _, err := messageid.Decode(id, true, false); err == nil {
-				reserved[numberKey(p, n)] = true
+			if id != "" {
+				reserved = append(reserved, MessageSpec{MsgNo: id})
 			}
 		}
 	}
-	nextSeq := map[string]int{}
+	numbers, err := newNumberer(nil, reserved)
+	if err != nil {
+		return Diagram{}, err
+	}
 	labels := make([][]string, len(fl.Messages))
 	var steps []seqStep
 	var events []FlowMessage
@@ -155,16 +156,13 @@ func FlowDiagram(fl Flow) (Diagram, error) {
 			}
 			label := "#" + entry
 			if id := msgNos[i][j]; id != "" {
-				label = strings.TrimSuffix(id, "P")
+				label = displayNumber(id)
 			} else if pfx := fl.Parties[s].Prefix; pfx != "" {
-				if nextSeq[pfx] == 0 {
-					nextSeq[pfx] = 101
+				id, err := numbers.number(pfx, numberSuffix(fl.Packet))
+				if err != nil {
+					return Diagram{}, err
 				}
-				for reserved[numberKey(pfx, nextSeq[pfx])] {
-					nextSeq[pfx]++
-				}
-				label = numberKey(pfx, nextSeq[pfx])
-				nextSeq[pfx]++
+				label = displayNumber(id)
 			}
 			labels[i] = append(labels[i], label)
 			detail := entry + ". " + kind

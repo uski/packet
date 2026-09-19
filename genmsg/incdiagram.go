@@ -76,7 +76,7 @@ func IncidentDiagram(inc *incident.Incident, name string) (Diagram, error) {
 	var pending []FlowMessage
 	for k, rm := range msgs {
 		sm := seqMessage{
-			from: rm.senderName, to: rm.recipientName, label: strings.TrimSuffix(rm.id, "P"),
+			from: rm.senderName, to: rm.recipientName, label: displayNumber(rm.id),
 			kind: rm.kind, time: rm.time,
 			handling: rm.handling, opToOp: rm.opToOp, principal: true,
 		}

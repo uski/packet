@@ -5,11 +5,9 @@ import (
 	"fmt"
 	"regexp"
 	"slices"
-	"strconv"
 	"strings"
 	"time"
 
-	"github.com/rothskeller/packet/v4/message/messageid"
 	"github.com/rothskeller/packet/v4/prowords"
 )
 
@@ -111,68 +109,6 @@ func eventText(fm FlowMessage) (string, bool) {
 		}
 	}
 	return "", false
-}
-
-// msgNoRE matches a message number as a scenario gives it: PPP-NNN, the
-// sender's three-character prefix and the sequence number, with an optional
-// suffix letter.
-var msgNoRE = regexp.MustCompile(`^([A-Z0-9]{3})-(\d{3,4})([A-Z]?)$`)
-
-// flowMessageNumbers returns, for each message of fl and each of its
-// senders (see flowSenders), the message number the scenario gives it, or
-// "" to let the tool pick one. A number must be PPP-NNN, where PPP is the
-// sender's message number prefix, so only a message with a single sender
-// can have one. It fails if a number is malformed, doesn't match its
-// sender, or is given twice.
-func flowMessageNumbers(fl Flow, senders [][]int) ([][]string, error) {
-	nums := make([][]string, len(fl.Messages))
-	used := map[string]int{} // number without suffix -> 1-based message
-	for i, fm := range fl.Messages {
-		given := strings.ToUpper(strings.TrimSpace(fm.MsgNo))
-		nums[i] = make([]string, len(senders[i]))
-		if given == "" || isEvent(fm) {
-			continue
-		}
-		m := msgNoRE.FindStringSubmatch(given)
-		if m == nil {
-			return nil, fmt.Errorf("message %d: invalid message number %q (use PPP-NNN: the sender's prefix and a number, e.g. XND-101)", i+1, fm.MsgNo)
-		}
-		prefix, suffix := m[1], m[3]
-		if suffix == "" {
-			suffix = numberSuffix(fl.Packet)
-		}
-		seq, _ := strconv.Atoi(m[2])
-		if len(senders[i]) != 1 {
-			return nil, fmt.Errorf("message %d: a message from each station can't have one message number; give each station its own message to number it", i+1)
-		}
-		sender := fl.Parties[senders[i][0]]
-		if sender.Prefix == "" {
-			return nil, fmt.Errorf("message %d: %s has no message number prefix; give it one to number its messages", i+1, sender.Role)
-		}
-		if prefix != sender.Prefix {
-			return nil, fmt.Errorf("message %d: message number %s must start with its sender's prefix, %s", i+1, given, sender.Prefix)
-		}
-		id, err := messageid.Encode(prefix, seq, suffix)
-		if err != nil {
-			return nil, fmt.Errorf("message %d: invalid message number %q: %v", i+1, fm.MsgNo, err)
-		}
-		key := numberKey(prefix, seq)
-		if j, dup := used[key]; dup {
-			return nil, fmt.Errorf("message %d: message number %s is also given to message %d", i+1, key, j)
-		}
-		used[key] = i + 1
-		nums[i][0] = id
-	}
-	return nums, nil
-}
-
-// numberSuffix returns the suffix a message number gets: "P" for a packet
-// message, none otherwise.
-func numberSuffix(packet bool) string {
-	if packet {
-		return "P"
-	}
-	return ""
 }
 
 // flowTime returns fm's time as HH:MM, or "" if it has none (or an invalid
