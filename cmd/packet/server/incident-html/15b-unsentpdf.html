@@ -3,11 +3,60 @@
 
 <head>
   <script> // Download Unsent Messages Dialog
+    // upList fills the dialog with one checkbox per unsent message, showing
+    // it the way the message log does: status, number, recipient, subject.
+    function upList(messages) {
+      const list = document.getElementById('uplist')
+      list.innerHTML = ''
+      messages.forEach(m => {
+        const row = document.createElement('label')
+        row.className = 'uprow'
+        const box = document.createElement('input')
+        box.type = 'checkbox'
+        box.className = 'up-msg'
+        box.value = m.ident
+        box.checked = true
+        box.addEventListener('change', upCount)
+        row.appendChild(box)
+        const cells = [
+          ['upst ' + (m.status === 'READY' ? 'upready' : 'updraft'), m.status],
+          ['upid', m.id],
+          ['upto', m.to ? '\u2192 ' + m.to : ''],
+          ['upsubj', m.subject],
+        ]
+        cells.forEach(([cls, text]) => {
+          const span = document.createElement('span')
+          span.className = cls
+          span.textContent = text
+          row.appendChild(span)
+        })
+        list.appendChild(row)
+      })
+      upCount()
+    }
+    function upBoxes() {
+      return [...document.querySelectorAll('#uplist .up-msg')]
+    }
+    function upCount() {
+      const boxes = upBoxes()
+      const checked = boxes.filter(b => b.checked)
+      document.getElementById('upcount').textContent =
+        `${checked.length} of ${boxes.length} message(s) selected`
+      document.getElementById('upsub').disabled = checked.length === 0
+      const all = document.getElementById('upall')
+      all.checked = boxes.length > 0 && checked.length === boxes.length
+      all.indeterminate = checked.length > 0 && checked.length < boxes.length
+    }
     function setupUnsentPDFsDialog() {
+      document.getElementById('upall').addEventListener('change', evt => {
+        upBoxes().forEach(b => { b.checked = evt.target.checked })
+        upCount()
+      })
       document.getElementById('upform').addEventListener('submit', async evt => {
         evt.preventDefault()
         const format = document.querySelector('input[name=upformat]:checked').value
         const params = new URLSearchParams({ dir: document.body.dataset.dir, format })
+        upBoxes().filter(b => b.checked).forEach(b => params.append('id', b.value))
         const sub = document.getElementById('upsub')
         sub.disabled = true
         document.getElementById('upstatus').textContent = 'Creating the PDFs…'
@@ -35,8 +84,22 @@
         document.getElementById('updlg').close()
       })
     }
-    function openUnsentPDFsDialog() {
+    async function openUnsentPDFsDialog() {
       document.getElementById('upstatus').textContent = ''
+      document.getElementById('uplist').innerHTML = ''
+      document.getElementById('upcount').textContent = 'Loading…'
+      const params = new URLSearchParams({ dir: document.body.dataset.dir })
+      const resp = await fetch2('/unsent-messages?' + params.toString())
+      if (!resp.ok) {
+        openErrorDialog('Download Unsent Messages', await resp.text())
+        return
+      }
+      const messages = await resp.json()
+      if (!messages.length) {
+        openErrorDialog('Download Unsent Messages', 'There are no unsent messages to download.')
+        return
+      }
+      upList(messages)
       document.getElementById('updlg').showModal()
     }
   </script>
@@ -59,9 +122,60 @@
       margin-top: 1rem;
     }
 
-    #upform label {
+    #upform > label {
       display: block;
       margin-top: 0.5rem;
+    }
+
+    #uplist {
+      margin-top: 0.5rem;
+      max-height: 50vh;
+      overflow-y: auto;
+      border: 1px solid #ccc;
+    }
+
+    .uprow {
+      display: grid;
+      grid-template-columns: auto 3.5rem auto auto minmax(0, 1fr);
+      gap: 0.5rem;
+      align-items: baseline;
+      padding: 0.15rem 0.35rem;
+      border-bottom: 1px solid #eee;
+      font-size: 0.9em;
+    }
+
+    .uprow:hover {
+      background-color: #eef8ee;
+    }
+
+    .upst {
+      font-size: 0.75em;
+      font-weight: bold;
+    }
+
+    .updraft {
+      color: #888;
+    }
+
+    .upready {
+      color: #070;
+    }
+
+    .upid,
+    .upto {
+      white-space: nowrap;
+    }
+
+    .upsubj {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    #upcount {
+      margin-top: 0.35rem;
+      color: #666;
+      font-size: 0.85em;
     }
 
     #upstatus {
@@ -91,7 +205,11 @@
   <dialog id=updlg>
     <h1>Download Unsent Messages</h1>
     <form id=upform>
-      <div>Download a PDF of every unsent message as:</div>
+      <div>Messages to download:</div>
+      <div id=uplist></div>
+      <p id=upcount></p>
+      <label><input type=checkbox id=upall checked> Select all</label>
+      <div>Download as:</div>
       <label><input type=radio name=upformat value=pdf checked> One PDF with all the messages, one after another</label>
       <label><input type=radio name=upformat value=zip> A ZIP file with a separate PDF for each message</label>
       <div id=upstatus></div>

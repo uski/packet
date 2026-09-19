@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -21,8 +22,59 @@ import (
 // unsafeFileChars matches runs of characters not to put in a file name.
 var unsafeFileChars = regexp.MustCompile(`[^A-Za-z0-9._-]+`)
 
+// unsentMessage is one unsent message, as the download dialog lists it.
+type unsentMessage struct {
+	Ident   int    `json:"ident"`
+	Status  string `json:"status"` // "DRAFT" or "READY"
+	ID      string `json:"id"`     // local message number
+	To      string `json:"to"`     // the recipient's message number or call sign
+	Subject string `json:"subject"`
+}
+
+// unsentEntries returns the log entries of i's unsent messages (drafts and
+// queued messages, not receipts), in log order.
+func unsentEntries(i *incident.Incident) []*incident.LogEntry {
+	var out []*incident.LogEntry
+	for _, le := range i.Log {
+		if (le.Status == incident.StatusDraft || le.Status == incident.StatusQueued) && le.Flags&incident.FIsReceipt == 0 {
+			out = append(out, le)
+		}
+	}
+	return out
+}
+
+// serveGetUnsentMessages handles GET /unsent-messages requests, which have a
+// dir= parameter. It lists the incident's unsent messages, for the download
+// dialog to offer.
+func (s *Server) serveGetUnsentMessages(w http.ResponseWriter, r *http.Request) {
+	msgs := []unsentMessage{}
+	if err := incident.Read(r.FormValue("dir"), func(i *incident.Incident) error {
+		for _, le := range unsentEntries(i) {
+			m := unsentMessage{Ident: le.Ident, Status: "DRAFT", ID: le.LocalMsgID, Subject: le.Subject}
+			if le.Status == incident.StatusQueued {
+				m.Status = "READY"
+			}
+			if m.To = le.ToMsgID; m.To == "" {
+				m.To = le.ToCall
+			}
+			// The subject line repeats the message number; the log
+			// shows what follows it.
+			if m.Subject != "" && m.ID != "" {
+				m.Subject = strings.TrimPrefix(m.Subject, m.ID+"_")
+			}
+			msgs = append(msgs, m)
+		}
+		return nil
+	}); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	writeJSON(w, msgs)
+}
+
 // serveGetUnsentPDFs handles GET /unsent-pdfs requests, which have a dir=
-// parameter and a format= parameter. They render a fresh PDF of each unsent
+// parameter, a format= parameter, and optional repeated id= parameters
+// naming the messages to include (by default, all of them). They render a fresh PDF of each unsent
 // message (drafts and queued messages, not receipts) in the incident, and
 // respond with them either as a ZIP file of separate PDFs named after their
 // subject lines (format=zip, the default), or concatenated into a single
@@ -42,9 +94,25 @@ func (s *Server) serveGetUnsentPDFs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer os.RemoveAll(tmp)
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	var only map[int]bool
+	if ids := r.Form["id"]; len(ids) > 0 {
+		only = make(map[int]bool, len(ids))
+		for _, id := range ids {
+			n, err := strconv.Atoi(id)
+			if err != nil {
+				http.Error(w, fmt.Sprintf("invalid message ident %q", id), http.StatusBadRequest)
+				return
+			}
+			only[n] = true
+		}
+	}
 	var pdfs []renderedPDF
 	err = incident.Read(r.FormValue("dir"), func(i *incident.Incident) (err error) {
-		pdfs, err = renderUnsentPDFs(i, tmp)
+		pdfs, err = renderUnsentPDFs(i, tmp, only)
 		return err
 	})
 	if err != nil {
@@ -52,7 +120,7 @@ func (s *Server) serveGetUnsentPDFs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if len(pdfs) == 0 {
-		http.Error(w, "There are no unsent messages.", http.StatusNotFound)
+		http.Error(w, "There are no unsent messages to download.", http.StatusNotFound)
 		return
 	}
 	var (
@@ -83,12 +151,13 @@ type renderedPDF struct {
 	data []byte
 }
 
-// renderUnsentPDFs renders the PDF of every unsent message in i, in log
-// order, using directory tmp for scratch files.
-func renderUnsentPDFs(i *incident.Incident, tmp string) (pdfs []renderedPDF, err error) {
+// renderUnsentPDFs renders the PDF of each unsent message in i, in log
+// order, using directory tmp for scratch files. If only is not nil, just
+// the messages whose log entry idents it holds are rendered.
+func renderUnsentPDFs(i *incident.Incident, tmp string, only map[int]bool) (pdfs []renderedPDF, err error) {
 	used := map[string]bool{}
-	for _, le := range i.Log {
-		if le.Status != incident.StatusDraft && le.Status != incident.StatusQueued || le.Flags&incident.FIsReceipt != 0 {
+	for _, le := range unsentEntries(i) {
+		if only != nil && !only[le.Ident] {
 			continue
 		}
 		msg, err := i.GetMessageFromLogEntry(le)
