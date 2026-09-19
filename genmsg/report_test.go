@@ -165,3 +165,22 @@ func TestReportCountsOnlySentProwords(t *testing.T) {
 		t.Errorf("the recipient's traffic should still count both ways: %+v %+v", shelter.Sent, shelter.Received)
 	}
 }
+
+// TestRecordNamesSenderFromSpec verifies that the saved record names the
+// sender the same way the message itself does: the name used to be written
+// twice, once by ResolveFlow and once by the spec's From and FromPrefix.
+func TestRecordNamesSenderFromSpec(t *testing.T) {
+	formType(t, "ICS213")
+	specs, err := ResolveFlow(Flow{
+		Parties:  []FlowParty{{Role: "Net Control", Prefix: "XND"}, {Role: "Shelter", Prefix: "S21"}},
+		Messages: []FlowMessage{{MsgType: "plain", From: 1, To: 0}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	reports := applyForReport(t, specs, []Result{{Values: plainValues("Status.")}})
+	p := reportByName(t, reports, "Shelter S21")
+	if p.Messages != 1 {
+		t.Errorf("%s sent %d messages", p.Name, p.Messages)
+	}
+}

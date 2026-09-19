@@ -19,6 +19,8 @@ const trainingFileName = ".training.json"
 // operator-to-operator traffic. Parties are named as in the flow: role,
 // then message number prefix if any.
 type TrainingRecord struct {
+	// From is the sending party's name (see PartyName). Apply fills it in
+	// from the message's own From and FromPrefix when it saves the record.
 	From           string          `json:"from"`
 	FromCredential string          `json:"fromCredential,omitempty"`
 	To             []TrainingParty `json:"to,omitempty"`

@@ -87,7 +87,9 @@ func Apply(inc *incident.Incident, specs []MessageSpec, results []Result) ([]App
 		ids[i] = le.LocalMsgID
 		applied[i] = Applied{Ident: le.Ident, ID: le.LocalMsgID, MsgType: spec.MsgType, Result: res}
 		if spec.Training != nil {
-			records[le.Ident] = *spec.Training
+			rec := *spec.Training
+			rec.From = PartyName(spec.From, spec.FromPrefix)
+			records[le.Ident] = rec
 		}
 	}
 	if err := saveTrainingRecords(inc.Dir, records); err != nil {

@@ -341,9 +341,12 @@ func ResolveFlow(fl Flow) ([]MessageSpec, error) {
 				MsgNo:        msgNos[i][k],
 			}
 			spec.MsgType, _ = FindMsgType(fm.MsgType) // already validated above
+			// From is the sender's name, which the spec already
+			// carries as From and FromPrefix; Apply fills it in when
+			// it saves the record.
 			rec := &TrainingRecord{
-				From: partyName(fl.Parties[p]), FromCredential: partyCredential(fl.Parties[p]),
-				FromPrincipal: fl.Parties[p].Principal, OpToOp: isOpToOpMessage(fm),
+				FromCredential: partyCredential(fl.Parties[p]),
+				FromPrincipal:  fl.Parties[p].Principal, OpToOp: isOpToOpMessage(fm),
 				Batch: batch, Step: i + 1, Group: fm.Group, Events: events,
 			}
 			events = nil
