@@ -9,18 +9,41 @@ import (
 // This file implements the "proword engine": given arbitrary message text,
 // it reports which prowords a sending station would need to use to voice
 // it correctly, and how many times each would be used. It is a best-effort
-// heuristic built on the same regular expressions used by Validate, not a
-// substitute for an evaluator's own judgment or a real message-passing
-// parser -- it exists to give an evaluator (or the credential-evaluation
-// tooling) a quick, at-a-glance sense of proword coverage in a message,
-// generated or hand-written.
+// heuristic, not a substitute for an evaluator's own judgment or a real
+// message-passing parser -- it exists to give an evaluator (or the
+// credential-evaluation tooling) a quick, at-a-glance sense of proword
+// coverage in a message, generated or hand-written. Validate is built on
+// it, not the other way round.
+//
+// # Ordering
+//
+// Find works in three passes, each claiming text the later ones then can't
+// take (no two matches ever overlap):
+//
+//  1. The structured categories, in categoryPriority order: a GPS position,
+//     a packet, email or internet address, a phone number, a call sign, a
+//     subscript or superscript. They are recognized by their own patterns,
+//     and go first because their text would otherwise be read as several
+//     lesser prowords -- a phone number's digits as bare FIGURE(S), say.
+//  2. The groups: each run of non-space characters the Procedures treat as
+//     a unit. A group that is a time or a date calls for no proword at all
+//     and is set aside here (so nothing later claims its digits), and one
+//     holding more than one kind of character is a SYMBOL(S) or one of the
+//     MIXED GROUP kinds (see classifyGroup). Note that pass 1 runs first,
+//     so a time or date that looks like one of those structured categories
+//     is claimed as that instead; none of their patterns matches a time or
+//     date as the Procedures write them.
+//  3. The word categories, in wordCategories order: what is left of a group
+//     once the group itself was not claimed -- initials, figures,
+//     punctuation, spelled-out names, paragraph breaks, and the capitals
+//     within a word.
 
-// categoryPriority lists categories in the order they claim matching text
-// when two categories' patterns overlap the same span, most specific and
-// structured first. This keeps e.g. a phone number's digits from being
-// counted once as TELEPHONE FIGURES and then a second time as bare
-// FIGURE(S): TELEPHONE FIGURES claims that span first, so FIGURE(S) never
-// sees it.
+// categoryPriority lists the categories of pass 1 (see Ordering), in the
+// order they claim matching text when two of their patterns cover the same
+// span, most specific and structured first. This keeps e.g. a phone
+// number's digits from being counted once as TELEPHONE FIGURES and then a
+// second time as bare FIGURE(S): TELEPHONE FIGURES claims that span first,
+// so FIGURE(S) never sees it.
 var categoryPriority = []Category{
 	GPSCoordinates,
 	PacketAddress,
@@ -31,10 +54,11 @@ var categoryPriority = []Category{
 	SubscriptSuperscript,
 }
 
-// wordCategories claim what's left after groups are classified (see
-// classifyGroup). SYMBOL(S) and the MIXED GROUP kinds describe a whole
-// group, so they're settled before CaseSensitive or FIGURE(S) could take
-// part of one, such as the "kW" in "5kW".
+// wordCategories lists the categories of pass 3 (see Ordering), which
+// claim what is left once the groups are classified (see classifyGroup).
+// SYMBOL(S) and the MIXED GROUP kinds describe a whole group, so they are
+// settled in pass 2, before CaseSensitive or FIGURE(S) could take part of
+// one, such as the "kW" in "5kW".
 var wordCategories = []Category{
 	CaseSensitive,
 	Initials,
@@ -66,6 +90,9 @@ func Find(text string) []Match {
 	}
 	claimPatterns := func(cats []Category) {
 		for _, cat := range cats {
+			if catalog[cat].re == nil {
+				continue // classified by classifyGroup, not by a pattern
+			}
 			for _, loc := range catalog[cat].re.FindAllStringIndex(text, -1) {
 				// A call sign with "/..." is a MIXED GROUP, per the Procedures.
 				if cat == AmateurCall && strings.HasPrefix(text[loc[1]:], "/") {
@@ -83,9 +110,9 @@ func Find(text string) []Match {
 			}
 		}
 	}
-	claimPatterns(categoryPriority)
+	claimPatterns(categoryPriority) // pass 1: the structured categories
 	matches = splitCasedPaths(text, matches)
-	for _, loc := range groupRE.FindAllStringIndex(text, -1) {
+	for _, loc := range groupRE.FindAllStringIndex(text, -1) { // pass 2: the groups
 		if overlaps(loc[0], loc[1]) {
 			continue
 		}
@@ -98,7 +125,9 @@ func Find(text string) []Match {
 			matches = append(matches, Match{loc[0] + s, loc[0] + e, cat})
 		}
 	}
-	claimPatterns(wordCategories)
+	claimPatterns(wordCategories) // pass 3: what is left of a group
+	// The passes each work in text order, but claim across one another, so
+	// the matches are only in order once they are sorted.
 	slices.SortFunc(matches, func(a, b Match) int { return cmp.Compare(a.Start, b.Start) })
 	return matches
 }

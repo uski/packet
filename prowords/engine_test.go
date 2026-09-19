@@ -266,3 +266,25 @@ func TestSingleInitials(t *testing.T) {
 		}
 	}
 }
+
+// TestGroupCategoriesHaveNoPattern pins the engine's third rule: SYMBOL(S)
+// and the MIXED GROUP kinds are settled by classifying a whole group, so
+// they have no pattern of their own, and listing one among the pattern
+// categories would have dereferenced a nil.
+func TestGroupCategoriesHaveNoPattern(t *testing.T) {
+	for _, cat := range []Category{Symbols, MixedGroup, MixedGroupFigures, MixedGroupSymbols} {
+		if catalog[cat].re != nil {
+			t.Errorf("%s should be classified by group, not by a pattern", ProwordName(cat))
+		}
+	}
+	for _, cat := range append(append([]Category{}, categoryPriority...), wordCategories...) {
+		if catalog[cat].re == nil {
+			t.Errorf("%s is listed as a pattern category but has no pattern", ProwordName(cat))
+		}
+	}
+	// A time is set aside in the group pass, so nothing later takes its
+	// digits, while a structured category still wins over it.
+	if got := Count("Send at 16:41 to 408-555-1212"); len(got) != 1 || got[TelephoneFigures] != 1 {
+		t.Errorf("Count = %v, want the phone number only", got)
+	}
+}

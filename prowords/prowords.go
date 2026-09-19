@@ -55,7 +55,11 @@ const (
 type info struct {
 	Proword string
 	Prompt  string
-	re      *regexp.Regexp
+	// re recognizes the category in message text. It is nil for the
+	// categories the engine settles by classifying a whole group rather
+	// than by matching a pattern (see classifyGroup): SYMBOL(S) and the
+	// three MIXED GROUP kinds.
+	re *regexp.Regexp
 }
 
 var catalog = map[Category]info{
@@ -70,14 +74,17 @@ var catalog = map[Category]info{
 		re:      regexp.MustCompile(`\d+`),
 	},
 	MixedGroup: {
+		// No re: classifyGroup settles this one.
 		Proword: "MIXED GROUP",
 		Prompt:  `Include at least one group that STARTS WITH A LETTER and also holds numbers or symbols (e.g. a truck model like "F150", a call sign with a slash like "W6XRL4/VA", or "abc-123"), so the sender must use the MIXED GROUP proword.`,
 	},
 	MixedGroupFigures: {
+		// No re: classifyGroup settles this one.
 		Proword: "MIXED GROUP FIGURE(S)",
 		Prompt:  `Include at least one group that STARTS WITH A DIGIT and also holds letters or symbols (e.g. "2C", a decimal measurement like "2.5", a rating like "5kW", a temperature like "28°F", or "50%"), so the sender must use the MIXED GROUP FIGURE(S) proword.`,
 	},
 	MixedGroupSymbols: {
+		// No re: classifyGroup settles this one.
 		Proword: "MIXED GROUP SYMBOL(S)",
 		Prompt:  `Include at least one group that STARTS WITH A SYMBOL and also holds numbers or letters (e.g. "-10 degrees", "$32", "#4", or "-32°F"), so the sender must use the MIXED GROUP SYMBOL(S) proword.`,
 	},
@@ -90,6 +97,7 @@ var catalog = map[Category]info{
 		re: regexp.MustCompile(`\b[A-Z]{2,5}\b|\b[A-Z]\.`),
 	},
 	Symbols: {
+		// No re: classifyGroup settles this one.
 		Proword: "SYMBOL(S)",
 		Prompt:  `Include a symbol standing alone, apart from any word or number (e.g. "Replace all ? with a value", "This != that", "Smith & Jones"), so the sender must use the SYMBOL(S) proword.`,
 	},
