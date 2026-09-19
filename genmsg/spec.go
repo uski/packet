@@ -77,8 +77,10 @@ type MessageSpec struct {
 	Level string
 
 	// Handling, if non-empty, is the message's handling order: "R", "P",
-	// or "I" (or ROUTINE, PRIORITY, IMMEDIATE). It is set by the tool,
-	// never asked of Claude.
+	// or "I" (or ROUTINE, PRIORITY, IMMEDIATE). The tool then sets it
+	// itself and leaves the handling fields out of the prompt; left
+	// empty, the handling is Claude's to choose with the rest of the
+	// content.
 	Handling string
 
 	// MsgNo, if non-empty, is the message's number, used instead of the

@@ -147,16 +147,15 @@ func FindFieldByCommon(msg message.Message, common string) field.Field {
 	return nil
 }
 
-// AllFieldValues returns the current value of every field of msg that has
-// an addressable key (as computed by Describe: its PIFO tag, or its Common
-// name if it has none), regardless of whether the field is editable or was
-// ever asked of the LLM. Unlike Describe, which only looks at what the LLM
-// might need to fill in, this is for measuring what the message actually
-// contains once finished -- the incident's own defaults (message ID, date,
-// operator name and call, etc.) and the deterministic party fields are just
-// as much a part of what a candidate reads aloud as the LLM-generated
-// content, so a proword category already satisfied by one of them doesn't
-// need to be redundantly woven into the free-text body too.
+// AllFieldValues returns the value of every field of msg that counts
+// toward proword coverage, by the key Describe uses (its PackItForms tag,
+// or its Common name if it has none). Unlike Describe, which lists what
+// Claude might fill in, this measures what the finished message holds, so
+// a requirement a pre-filled field already satisfies needn't be woven into
+// the body as well. Two kinds of field are left out: the administrative
+// ones the incident fills in itself (see contentFields), and the ICS
+// position and location names, which a candidate reads aloud but which
+// would falsely read as I SPELL names here.
 func AllFieldValues(msg message.Message) map[string]string {
 	values := make(map[string]string)
 	for f := range contentFields(msg) {

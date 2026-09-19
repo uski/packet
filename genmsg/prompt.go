@@ -284,17 +284,10 @@ func messagePrompt(req Request, specsPerMsg [][]FieldSpec, results []Result, pen
 	return b.String()
 }
 
-// buildPrompt describes each pending message (its type, its own fields, its
-// From/To/purpose flow context, and its assigned proword requirements) so
-// the model can generate content appropriate to a mixed-type, possibly
-// multi-party batch. results holds whatever has already been generated in
-// prior rounds, used to give a reply message the content of the message
-// it's replying to even when that message isn't itself pending this round.
-// routedPerMsg (indexed the same way as specsPerMsg, by absolute message
-// index) names, for a category with a dedicated field to hold it (see
-// SelectFields/ClassifyField), that field's tag -- so the prompt tells
-// Claude to put that content only there, rather than leaving it to be woven
-// into the free-text body, keeping the message shorter.
+// buildPrompt is sharedPrompt and messagePrompt together, as one message's
+// whole prompt. Generate sends the two separately, so that the shared half
+// is cached across the batch's calls; this is for tests, which check the
+// prompt a message gets as a whole.
 func buildPrompt(req Request, brief string, specsPerMsg [][]FieldSpec, results []Result, pending []int, plans []MessagePlan, routedPerMsg []map[prowords.Category]string, baseWords []int, isRepair bool) string {
 	return sharedPrompt(req, brief) + messagePrompt(req, specsPerMsg, results, pending, plans, routedPerMsg, baseWords, isRepair)
 }
