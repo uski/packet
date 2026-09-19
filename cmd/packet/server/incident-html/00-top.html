@@ -142,6 +142,17 @@
     }
   </style>
   <script>
+    // downloadBlob hands the user a file the page has in hand.
+    function downloadBlob(blob, filename) {
+      const a = document.createElement('a')
+      a.href = URL.createObjectURL(blob)
+      a.download = filename
+      document.body.appendChild(a)
+      a.click()
+      a.remove()
+      setTimeout(() => URL.revokeObjectURL(a.href), 1000)
+    }
+
     function fetch2(a, b) {
       return fetch(a, b).catch(e => {
         return Promise.resolve({

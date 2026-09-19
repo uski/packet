@@ -134,7 +134,7 @@
       const textInput = row.querySelector('.mp-text')
       const placeholder = () => {
         const e = mpEvents.find(e => e.kind === kindSel.value)
-        textInput.placeholder = e && e.text ? `default: ${e.text.replace('\n', ' / ')}` : 'e.g. Prioritization drill: each station is given a routine and a priority message'
+        textInput.placeholder = e && e.text ? `default: ${e.text.replace(/\n/g, ' / ')}` : 'e.g. Prioritization drill: each station is given a routine and a priority message'
         textInput.required = kindSel.value === 'note'
       }
       kindSel.addEventListener('change', placeholder)
@@ -248,21 +248,11 @@
     // as a JSON file (the same format "packet gentrain --flow" reads).
     function mpSaveScenario() {
       const blob = new Blob([JSON.stringify(mpScenarioData(), null, 2) + '\n'], { type: 'application/json' })
-      mpDownload(blob, 'scenario.json')
+      downloadBlob(blob, 'scenario.json')
     }
 
     function mpScenarioData() {
       return { scenario: document.getElementById('mpscenario').value, ...mpBuildFlow() }
-    }
-
-    function mpDownload(blob, filename) {
-      const a = document.createElement('a')
-      a.href = URL.createObjectURL(blob)
-      a.download = filename
-      document.body.appendChild(a)
-      a.click()
-      a.remove()
-      setTimeout(() => URL.revokeObjectURL(a.href), 1000)
     }
 
     // mpExportUML downloads the scenario as a sequence diagram for
@@ -275,7 +265,7 @@
         err.textContent = (await resp.text()) || resp.statusText
         return
       }
-      mpDownload(await resp.blob(), 'scenario.uml')
+      downloadBlob(await resp.blob(), 'scenario.uml')
     }
 
     // mpViewDiagram opens the scenario as a printable diagram in a new tab.
@@ -305,32 +295,39 @@
       }
     }
 
-    // mpApplyScenario fills the dialog from scenario data (see
-    // mpSaveScenario); source names it in error messages.
-    function mpApplyScenario(data, source) {
-      const err = document.getElementById('mperr')
+    // mpScenarioProblem returns why data can't be loaded, or '' if it can.
+    function mpScenarioProblem(data, source) {
       const parties = Array.isArray(data.parties) ? data.parties : []
       const messages = Array.isArray(data.messages) ? data.messages : []
       if (!parties.length || !messages.some(m => !m.event)) {
-        err.textContent = `${source} has no parties or no messages.`
-        return
+        return `${source} has no parties or no messages.`
       }
       const unknown = messages.filter(m => !m.event).map(m => m.msgType).filter(t => !mpMessageTypes.some(mt => mt.tag === t))
       if (unknown.length) {
-        err.textContent = `${source} uses message types this program doesn't have: ${[...new Set(unknown)].join(', ')}.`
-        return
+        return `${source} uses message types this program doesn't have: ${[...new Set(unknown)].join(', ')}.`
       }
+      return ''
+    }
+
+    // mpFillParties replaces the party rows with parties, and returns a
+    // function giving the row id of the party at a given index, which is how
+    // the message rows refer to them.
+    function mpFillParties(parties) {
       document.getElementById('mpparties').innerHTML = ''
-      document.getElementById('mpmessages').innerHTML = ''
-      document.getElementById('mpcheck').innerHTML = ''
-      const partyRows = parties.map(p => {
+      const rows = parties.map(p => {
         const row = mpAddPartyRow(p.role || '', p.location || '')
         row.querySelector('.mp-cred').value = p.credential || (p.f3 ? 'F3' : '')
         row.querySelector('.mp-prefix').value = p.prefix || ''
         row.querySelector('.mp-principal').value = p.principal || ''
         return row
       })
-      const pid = i => partyRows[i] ? partyRows[i].dataset.pid : (partyRows[0] || {}).dataset?.pid
+      return i => rows[i] ? rows[i].dataset.pid : (rows[0] || {}).dataset?.pid
+    }
+
+    // mpFillMessages replaces the message and event rows with messages,
+    // and returns the replies it could not keep (see mpApplyScenario).
+    function mpFillMessages(messages, pid) {
+      document.getElementById('mpmessages').innerHTML = ''
       const lost = []
       const rows = messages.map(m => m.event ? mpAddEventRow(m.event, m.text) : mpAddMessageRow())
       // Type and From first: the To and Replying-to choices depend on them.
@@ -369,9 +366,11 @@
           lost.push(`#${i + 1} replied to #${m.replyTo}`)
         }
       })
-      if (lost.length) {
-        err.textContent = `${source}: these replies could not be kept, because their target can't be replied to: ${lost.join(', ')}.`
-      }
+      return lost
+    }
+
+    // mpFillHeader fills in what describes the whole scenario.
+    function mpFillHeader(data) {
       document.getElementById('mpname').value = data.name || ''
       document.getElementById('mppacket').checked = !!data.packet
       if (data.scenario !== undefined) document.getElementById('mpscenario').value = data.scenario
@@ -379,6 +378,23 @@
         // The date input wants YYYY-MM-DD; a file written by hand may use MM/DD/YYYY.
         const m = /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/.exec(data.date)
         document.getElementById('mpdate').value = m ? `${m[3]}-${m[1].padStart(2, '0')}-${m[2].padStart(2, '0')}` : data.date
+      }
+    }
+
+    // mpApplyScenario fills the dialog from scenario data (see
+    // mpSaveScenario); source names it in error messages.
+    function mpApplyScenario(data, source) {
+      const err = document.getElementById('mperr')
+      const problem = mpScenarioProblem(data, source)
+      if (problem) {
+        err.textContent = problem
+        return
+      }
+      document.getElementById('mpcheck').innerHTML = ''
+      const lost = mpFillMessages(data.messages, mpFillParties(data.parties))
+      mpFillHeader(data)
+      if (lost.length) {
+        err.textContent = `${source}: these replies could not be kept, because their target can't be replied to: ${lost.join(', ')}.`
       }
     }
 
@@ -505,7 +521,9 @@
       document.getElementById('mppartyadd').addEventListener('click', () => mpAddPartyRow())
       document.getElementById('mpmsgadd').addEventListener('click', () => mpAddMessageRow())
       document.getElementById('mpevtadd').addEventListener('click', () => mpAddEventRow())
-      document.getElementById('mpparties').addEventListener('input', mpSyncOptions)
+      // 'change' rather than 'input': the party menus only need rebuilding
+      // once a field is done being typed in, not on every keystroke.
+      document.getElementById('mpparties').addEventListener('change', mpSyncOptions)
       document.getElementById('mpsave').addEventListener('click', mpSaveScenario)
       document.getElementById('mpuml').addEventListener('click', mpExportUML)
       document.getElementById('mpview').addEventListener('click', mpViewDiagram)
@@ -534,12 +552,7 @@
       document.getElementById('mpform').addEventListener('submit', async evt => {
         evt.preventDefault()
         const dir = document.body.dataset.dir
-        const flow = mpBuildFlow()
-        const body = JSON.stringify({
-          dir,
-          scenario: document.getElementById('mpscenario').value,
-          ...flow,
-        })
+        const body = JSON.stringify({ dir, ...mpScenarioData() })
         const sub = document.getElementById('mpsub')
         sub.disabled = true
         try {

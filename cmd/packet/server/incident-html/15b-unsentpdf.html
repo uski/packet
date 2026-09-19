@@ -54,7 +54,7 @@
       })
       document.getElementById('upform').addEventListener('submit', async evt => {
         evt.preventDefault()
-        const format = document.querySelector('input[name=upformat]:checked').value
+        const format = document.querySelector('#upform input[name=upformat]:checked').value
         const params = new URLSearchParams({
           dir: document.body.dataset.dir, format,
           hideOrigin: document.getElementById('uphideorig').checked ? '1' : '0',
@@ -72,13 +72,7 @@
             openErrorDialog('Download Unsent Messages', await resp.text())
             return
           }
-          const a = document.createElement('a')
-          a.href = URL.createObjectURL(await resp.blob())
-          a.download = format === 'pdf' ? 'unsent-messages.pdf' : 'unsent-messages.zip'
-          document.body.appendChild(a)
-          a.click()
-          a.remove()
-          setTimeout(() => URL.revokeObjectURL(a.href), 1000)
+          downloadBlob(await resp.blob(), format === 'pdf' ? 'unsent-messages.pdf' : 'unsent-messages.zip')
           document.getElementById('updlg').close()
         } finally {
           sub.disabled = false
