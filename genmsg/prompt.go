@@ -19,12 +19,20 @@ const systemPrompt = `You are helping a Santa Clara County ARES/RACES credential
 
 // incidentDate returns the incident date req's messages use, if any.
 func incidentDate(req Request) string {
+	var date string
 	for _, m := range req.Messages {
-		if m.Date != "" {
-			return m.Date
+		switch {
+		case m.Date == "":
+		case date == "":
+			date = m.Date
+		case m.Date != date:
+			// The messages of one request come from one scenario
+			// and share its date; if they somehow disagree, say
+			// nothing rather than tell Claude the wrong one.
+			return ""
 		}
 	}
-	return ""
+	return date
 }
 
 // buildBriefPrompt asks Claude to plan the exercise every message in req

@@ -41,8 +41,11 @@ type MessageSpec struct {
 	ToPrefix   string
 
 	// Date, if set (MM/DD/YYYY), is the incident date: every filled date
-	// field gets it, and time fields are left blank. Otherwise dates and
-	// times are the current ones.
+	// field gets it, and a time field gets Time, or is left blank.
+	// Otherwise dates and times are the current ones. Date and Packet
+	// describe the exercise rather than this one message, so the messages
+	// of one request carry the same values (ResolveFlow sets them from
+	// the flow); Claude is told the date only when they agree.
 	Date string
 
 	// Training, if set, is saved with the incident when the message is
@@ -82,8 +85,8 @@ type MessageSpec struct {
 	// one Apply would pick (see FromPrefix).
 	MsgNo string
 
-	// Packet says the message is sent by packet, so the number Apply
-	// picks for it gets the "P" suffix.
+	// Packet says the message is sent by packet, so the number Apply picks
+	// for it gets the "P" suffix (see Date for why it is per message).
 	Packet bool
 
 	// Time, if non-empty, is the time the message is written, as HH:MM. It

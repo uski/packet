@@ -275,3 +275,23 @@ func TestPromptsSetContentRules(t *testing.T) {
 		}
 	}
 }
+
+func TestIncidentDate(t *testing.T) {
+	mt := formType(t, "ICS213")
+	spec := func(date string) MessageSpec { return MessageSpec{MsgType: mt, Date: date} }
+	for _, tc := range []struct {
+		name  string
+		specs []MessageSpec
+		want  string
+	}{
+		{"none", []MessageSpec{spec(""), spec("")}, ""},
+		{"agreed", []MessageSpec{spec("09/26/2026"), spec("09/26/2026")}, "09/26/2026"},
+		{"one set", []MessageSpec{spec(""), spec("09/26/2026")}, "09/26/2026"},
+		// Rather than tell Claude a date half the messages don't have.
+		{"disagreeing", []MessageSpec{spec("09/26/2026"), spec("09/27/2026")}, ""},
+	} {
+		if got := incidentDate(Request{Messages: tc.specs}); got != tc.want {
+			t.Errorf("%s: incidentDate = %q, want %q", tc.name, got, tc.want)
+		}
+	}
+}
