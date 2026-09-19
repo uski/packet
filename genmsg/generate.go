@@ -340,7 +340,12 @@ func (g *generation) generateMessage(idx, n int, plan MessagePlan) error {
 		status := act.Status
 		g.progress(label + "...")
 		g.activity(act)
+		// Under draftMu: the prompt reads the results of other messages
+		// (the one this replies to, for its content), which the other
+		// goroutines write there as they finish.
+		draftMu.Lock()
 		prompt := messagePrompt(g.req, g.specs, g.results, []int{idx}, []MessagePlan{plan}, g.routed, g.baseWords, res.Values != nil) + retryNote
+		draftMu.Unlock()
 		text, err := completeWithHeartbeat(g.ctx, g.client, systemPrompt, g.shared, prompt, maxOutputTokens, func(elapsed time.Duration) {
 			g.progress(fmt.Sprintf("%s... (%s elapsed)", label, elapsed))
 			act.Status = fmt.Sprintf("%s (%s)", status, elapsed)

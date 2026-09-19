@@ -293,3 +293,40 @@ func TestGenerateReportsCutOffPlan(t *testing.T) {
 		t.Errorf("the cut-off plan was not reported: %+v", activities)
 	}
 }
+
+// TestGenerateWithReplyCycle exercises two messages that reply to each
+// other, which generationOrder deliberately tolerates: one of them is
+// written before the message it answers, so its prompt reads a result that
+// another goroutine may still be writing (hence the lock in
+// generateMessage). This checks that such a flow completes rather than
+// deadlocking; the -race detector will not always see the read itself,
+// since a two-message cycle makes one wait for the other.
+func TestGenerateWithReplyCycle(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		time.Sleep(5 * time.Millisecond)
+		resp := claudeResponse{}
+		resp.Content = []struct {
+			Type string `json:"type"`
+			Text string `json:"text"`
+		}{{Type: "text", Text: `[{"subjectSummary":"Test","subjectHandling":"ROUTINE","defaultBody":"Body with 5 units and a phone 408-555-1212."}]`}}
+		json.NewEncoder(w).Encode(resp)
+	}))
+	defer srv.Close()
+	inc := draftTestIncident(t)
+	results, err := Generate(context.Background(), &ClaudeClient{APIKey: "k", URL: srv.URL}, Request{
+		Incident: inc,
+		Messages: []MessageSpec{
+			{MsgType: message.PlainMessage, From: "Net Control", ReplyTo: 2},
+			{MsgType: message.PlainMessage, From: "Shelter", ReplyTo: 1},
+		},
+		Level: "f3",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i, r := range results {
+		if len(r.Values) == 0 {
+			t.Errorf("message %d has no values", i+1)
+		}
+	}
+}
