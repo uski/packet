@@ -187,7 +187,7 @@ func (g *generation) generateAll(plans []MessagePlan, cancel context.CancelFunc)
 		done[i] = make(chan struct{})
 	}
 	for n, idx := range order {
-		a := g.messageActivity(idx, n+1)
+		a := g.messageActivity(idx)
 		a.Status, a.State = "waiting to start", ActivityWaiting
 		if isContentless(g.req.Messages[idx]) {
 			a.Status, a.State = "nothing to write: sending it is what counts", ActivityDone
@@ -223,11 +223,11 @@ func (g *generation) generateAll(plans []MessagePlan, cancel context.CancelFunc)
 				select {
 				case <-done[r-1]:
 				case <-g.ctx.Done():
-					g.stopped(idx, n+1)
+					g.stopped(idx)
 					return
 				}
 			}
-			a := g.messageActivity(idx, n+1)
+			a := g.messageActivity(idx)
 			select {
 			case sem <- struct{}{}:
 			default:
@@ -236,12 +236,12 @@ func (g *generation) generateAll(plans []MessagePlan, cancel context.CancelFunc)
 				select {
 				case sem <- struct{}{}:
 				case <-g.ctx.Done():
-					g.stopped(idx, n+1)
+					g.stopped(idx)
 					return
 				}
 			}
 			defer func() { <-sem }()
-			err := g.generateMessage(idx, n+1, plans[idx])
+			err := g.generateMessage(idx, plans[idx])
 			mu.Lock()
 			defer mu.Unlock()
 			if err != nil {
@@ -264,7 +264,7 @@ func (g *generation) generateAll(plans []MessagePlan, cancel context.CancelFunc)
 				a.Status = fmt.Sprintf("done, with warnings to review (%d words)", res.Words)
 			}
 			g.activity(a)
-			g.progress(fmt.Sprintf("Finished message %d of %d (%d of %d done)", n+1, len(order), finished, len(order)))
+			g.progress(fmt.Sprintf("Finished message %d of %d (%d of %d done)", idx+1, len(order), finished, len(order)))
 		})
 	}
 	wg.Wait()
@@ -300,31 +300,32 @@ func (g *generation) createAsIs(idx int) error {
 	return nil
 }
 
-// stopped reports that message idx, the n-th in generation order, won't be
-// drafted, as another failed.
-func (g *generation) stopped(idx, n int) {
-	a := g.messageActivity(idx, n)
+// stopped reports that message idx won't be drafted, as another failed.
+func (g *generation) stopped(idx int) {
+	a := g.messageActivity(idx)
 	a.Status, a.State = "stopped", ActivityFailed
 	g.activity(a)
 }
 
-// messageActivity returns the activity of message idx, the n-th in
-// generation order, with only its Key and Label set.
-func (g *generation) messageActivity(idx, n int) Activity {
+// messageActivity returns the activity of message idx, with only its Key
+// and Label set. Messages are numbered as the request lists them, which is
+// how the prompt and the scenario dialog number them too; they are drafted
+// in another order (see generationOrder), which nothing outside needs to
+// know.
+func (g *generation) messageActivity(idx int) Activity {
 	m := g.req.Messages[idx]
-	label := fmt.Sprintf("Message %d of %d: %s", n, len(g.req.Messages), strings.TrimPrefix(strings.TrimPrefix(m.MsgType.Name(), "a "), "an "))
+	label := fmt.Sprintf("Message %d of %d: %s", idx+1, len(g.req.Messages), strings.TrimPrefix(strings.TrimPrefix(m.MsgType.Name(), "a "), "an "))
 	if from := PartyName(m.From, m.FromPrefix); from != "" {
 		label += " from " + from
 	}
 	return Activity{Key: fmt.Sprintf("message-%d", idx+1), Label: label}
 }
 
-// generateMessage generates message idx, the n-th in generation order, in
-// its own Claude call. It asks again, up to maxRounds times in all, while
+// generateMessage generates message idx in its own Claude call. It asks again, up to maxRounds times in all, while
 // the response is unusable (cut off or unparseable), too long, or missing
 // required fields or assigned proword categories. It fails only if no
 // usable response arrives at all.
-func (g *generation) generateMessage(idx, n int, plan MessagePlan) error {
+func (g *generation) generateMessage(idx int, plan MessagePlan) error {
 	count := len(g.req.Messages)
 	res := &g.results[idx]
 	wanted, checkOne := plan.Categories, plan.CheckOne
@@ -333,11 +334,11 @@ func (g *generation) generateMessage(idx, n int, plan MessagePlan) error {
 	var retryNote, reason string
 	var lastErr error
 	for round := range maxRounds {
-		label := fmt.Sprintf("Drafting message %d of %d", n, count)
+		label := fmt.Sprintf("Drafting message %d of %d", idx+1, count)
 		if round > 0 {
-			label = fmt.Sprintf("Revising message %d of %d, attempt %d of %d: %s", n, count, round+1, maxRounds, reason)
+			label = fmt.Sprintf("Revising message %d of %d, attempt %d of %d: %s", idx+1, count, round+1, maxRounds, reason)
 		}
-		act := g.messageActivity(idx, n)
+		act := g.messageActivity(idx)
 		act.State, act.Status = ActivityWorking, "drafting"
 		if round > 0 {
 			act.Status = fmt.Sprintf("revising, attempt %d of %d: %s", round+1, maxRounds, reason)

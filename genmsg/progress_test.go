@@ -147,6 +147,9 @@ func TestGenerateReportsActivities(t *testing.T) {
 	var sawReplyWait, sawLabel, sawElapsed bool
 	for _, a := range events {
 		sawReplyWait = sawReplyWait || a.Key == "message-2" && strings.Contains(a.Status, "waiting for message 1")
+		// Message 2 is the reply, drafted second in the request but
+		// first in generation order; the activity names it as the
+		// request does.
 		sawLabel = sawLabel || a.Label == "Message 2 of 2: plain text message from Shelter S21"
 		sawElapsed = sawElapsed || a.State == ActivityWorking && strings.Contains(a.Status, "drafting (")
 	}
