@@ -184,3 +184,19 @@ func TestRecordNamesSenderFromSpec(t *testing.T) {
 		t.Errorf("%s sent %d messages", p.Name, p.Messages)
 	}
 }
+
+func TestPartyReportReached(t *testing.T) {
+	p := PartyReport{Reach: []CredentialCheck{
+		{Credential: "F3", Met: true},
+		{Credential: "F2", Missing: []string{"sends 1 of 3"}},
+	}}
+	if c, ok := p.Reached("F3"); !ok || !c.Met {
+		t.Errorf("F3 = %+v, %v", c, ok)
+	}
+	if c, ok := p.Reached("F2"); !ok || c.Met || len(c.Missing) != 1 {
+		t.Errorf("F2 = %+v, %v", c, ok)
+	}
+	if _, ok := p.Reached("N1"); ok {
+		t.Error("a credential the report doesn't cover should say so")
+	}
+}

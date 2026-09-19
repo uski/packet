@@ -21,6 +21,18 @@ type PartyReport struct {
 	Reach      []CredentialCheck
 }
 
+// Reached returns what the party's traffic and prowords make of the named
+// credential (see ReportCredentials), and whether that credential is one a
+// report covers.
+func (p PartyReport) Reached(credential string) (CredentialCheck, bool) {
+	for _, c := range p.Reach {
+		if c.Credential == credential {
+			return c, true
+		}
+	}
+	return CredentialCheck{}, false
+}
+
 // CredentialCheck says whether a party's traffic meets one credential's
 // criteria, and if not, what's missing.
 type CredentialCheck struct {

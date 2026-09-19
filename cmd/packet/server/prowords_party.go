@@ -116,10 +116,10 @@ func buildPartyPage(incidentName string, reports []genmsg.PartyReport) partyPage
 		}
 		page.Traffic = append(page.Traffic, row)
 	}
-	for i, c := range genmsg.ReportCredentials {
+	for _, c := range genmsg.ReportCredentials {
 		row := partyRow{Label: c.Label}
 		for _, p := range reports {
-			check := p.Reach[i]
+			check, _ := p.Reached(c.Code)
 			cell := partyCell{Text: "✓ reached", Class: "pp-good"}
 			if !check.Met {
 				cell = partyCell{Text: strings.Join(check.Missing, "; "), Class: "pp-short"}
