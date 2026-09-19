@@ -242,3 +242,27 @@ func TestBracketsBelongToTheirGroup(t *testing.T) {
 		t.Errorf(`Count("16:41.") = %v, want punctuation only`, got)
 	}
 }
+
+// TestSingleInitials verifies that a single capital letter followed by a
+// period is an initial, with the period counted as punctuation of its own.
+func TestSingleInitials(t *testing.T) {
+	got := Find("Diego M. Marchetti")
+	var names []string
+	for _, m := range got {
+		names = append(names, ProwordName(m.Category)+":"+"Diego M. Marchetti"[m.Start:m.End])
+	}
+	if strings.Join(names, "|") != "INITIAL(S):M|(punctuation):." {
+		t.Errorf("Find = %v", names)
+	}
+	for text, want := range map[string]int{
+		"M.":          1,
+		"J. R. Smith": 2,
+		"EOC.":        1, // the acronym, whose period is punctuation
+		"A shelter":   0, // a capital word, not an initial
+		"the shelter": 0,
+	} {
+		if got := Count(text)[Initials]; got != want {
+			t.Errorf("Count(%q)[INITIAL(S)] = %d, want %d", text, got, want)
+		}
+	}
+}

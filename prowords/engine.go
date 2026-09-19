@@ -71,6 +71,12 @@ func Find(text string) []Match {
 				if cat == AmateurCall && strings.HasPrefix(text[loc[1]:], "/") {
 					continue
 				}
+				// An initial's period is punctuation of its own ("Fire
+				// Capt." is spoken "INITIALS charlie alpha papa
+				// tango period"), so it is left out of the match.
+				if cat == Initials && text[loc[1]-1] == '.' {
+					loc[1]--
+				}
 				if !overlaps(loc[0], loc[1]) {
 					matches = append(matches, Match{loc[0], loc[1], cat})
 				}

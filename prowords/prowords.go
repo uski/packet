@@ -83,8 +83,11 @@ var catalog = map[Category]info{
 	},
 	Initials: {
 		Proword: "INITIAL(S)",
-		Prompt:  `Include at least one abbreviation or acronym written as two to five capital letters with no periods (e.g. "EOC", "ARRL"), so the sender must use the INITIAL(S) proword.`,
-		re:      regexp.MustCompile(`\b[A-Z]{2,5}\b`),
+		Prompt:  `Include at least one abbreviation or acronym written as two to five capital letters with no periods (e.g. "EOC", "ARRL"), or a person's middle initial (e.g. "Diego M. Marchetti"), so the sender must use the INITIAL(S) proword.`,
+		// A single capital letter counts when it is an initial, that is,
+		// followed by a period; the period itself stays punctuation (see
+		// Find).
+		re: regexp.MustCompile(`\b[A-Z]{2,5}\b|\b[A-Z]\.`),
 	},
 	Symbols: {
 		Proword: "SYMBOL(S)",
