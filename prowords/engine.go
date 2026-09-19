@@ -78,6 +78,7 @@ func Find(text string) []Match {
 		}
 	}
 	claimPatterns(categoryPriority)
+	matches = splitCasedPaths(text, matches)
 	for _, loc := range groupRE.FindAllStringIndex(text, -1) {
 		if overlaps(loc[0], loc[1]) {
 			continue
@@ -94,6 +95,42 @@ func Find(text string) []Match {
 	claimPatterns(wordCategories)
 	slices.SortFunc(matches, func(a, b Match) int { return cmp.Compare(a.Start, b.Start) })
 	return matches
+}
+
+// splitCasedPaths splits an internet address whose path (what follows the
+// domain name) has a capital letter into two matches: the address through
+// its domain, which calls for INTERNET ADDRESS, and the path, which the
+// sender must spell out with the UPPERCASE and LOWERCASE prowords, since a
+// path's capitalization matters (unlike a domain name's).
+func splitCasedPaths(text string, matches []Match) []Match {
+	var out []Match
+	for _, m := range matches {
+		if m.Category == InternetAddress {
+			if slash := pathStart(text[m.Start:m.End]); slash > 0 && strings.ContainsAny(text[m.Start+slash:m.End], upperLetters) {
+				out = append(out, Match{m.Start, m.Start + slash, InternetAddress})
+				m = Match{m.Start + slash, m.End, CaseSensitive}
+			}
+		}
+		out = append(out, m)
+	}
+	return out
+}
+
+const upperLetters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+
+// pathStart returns the index in internet address addr where its path
+// begins (the "/" after its domain name), or -1 if it has none.
+func pathStart(addr string) int {
+	rest := addr
+	var offset int
+	if i := strings.Index(addr, "://"); i >= 0 {
+		offset = i + 3
+		rest = addr[offset:]
+	}
+	if i := strings.IndexByte(rest, '/'); i >= 0 {
+		return offset + i
+	}
+	return -1
 }
 
 // Count analyzes text and returns, for each proword category found, how

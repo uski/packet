@@ -128,7 +128,7 @@ var catalog = map[Category]info{
 	},
 	CaseSensitive: {
 		Proword: "UPPERCASE/LOWERCASE",
-		Prompt:  `Include a case-sensitive value where capitalization matters, such as a password or a mixed-case portmanteau word (e.g. "PackItForms", "pasSWOrd"), so the sender must use the UPPERCASE and LOWERCASE prowords.`,
+		Prompt:  `Include a case-sensitive value where capitalization matters, such as a password, a mixed-case portmanteau word, or a web address path with capitals (e.g. "PackItForms", "pasSWOrd", "https://xanadu-city.org/ShelterStatus"), so the sender must use the UPPERCASE and LOWERCASE prowords.`,
 		re:      regexp.MustCompile(`[a-z][A-Z]|[A-Z][a-z]+[A-Z]`),
 	},
 	SubscriptSuperscript: {

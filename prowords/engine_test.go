@@ -1,6 +1,9 @@
 package prowords
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestCountBasic(t *testing.T) {
 	text := "Please call 408-555-1212 or email harry@aol.com about 5 units at the shelter."
@@ -180,5 +183,29 @@ func TestFiguresCountOncePerGroup(t *testing.T) {
 	m := Find("Send 25 cots")
 	if len(m) != 1 || m[0].Category != Figures || "Send 25 cots"[m[0].Start:m[0].End] != "25" {
 		t.Errorf("Find = %+v, want one FIGURE(S) match covering the whole number", m)
+	}
+}
+
+// TestCasedURLPath verifies that the capitalized part of a web address
+// after its domain calls for UPPERCASE/LOWERCASE, as well as the address
+// itself calling for INTERNET ADDRESS.
+func TestCasedURLPath(t *testing.T) {
+	for _, tc := range []struct {
+		text string
+		want []string // "CATEGORY:text" per match
+	}{
+		{"https://xanadu-city.org/ShelterStatus", []string{"INTERNET ADDRESS:https://xanadu-city.org", "UPPERCASE/LOWERCASE:/ShelterStatus"}},
+		{"see https://www.Xanadu-City.org/shelters now", []string{"INTERNET ADDRESS:https://www.Xanadu-City.org/shelters"}},
+		{"https://xanadu-city.org/SHELTERS", []string{"INTERNET ADDRESS:https://xanadu-city.org", "UPPERCASE/LOWERCASE:/SHELTERS"}},
+		{"https://xanadu-city.org", []string{"INTERNET ADDRESS:https://xanadu-city.org"}},
+		{"www.xanadu-city.org/Shelter/Status", []string{"INTERNET ADDRESS:www.xanadu-city.org", "UPPERCASE/LOWERCASE:/Shelter/Status"}},
+	} {
+		var got []string
+		for _, m := range Find(tc.text) {
+			got = append(got, ProwordName(m.Category)+":"+tc.text[m.Start:m.End])
+		}
+		if strings.Join(got, "|") != strings.Join(tc.want, "|") {
+			t.Errorf("Find(%q) = %v, want %v", tc.text, got, tc.want)
+		}
 	}
 }
