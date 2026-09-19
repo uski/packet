@@ -1,11 +1,3 @@
-// Package genmsg generates realistic third-party training messages for SCCo
-// RACES credential evaluations, using Claude to draft content that exercises
-// a given credential level's required prowords (see the prowords package),
-// and materializes the results as normal draft messages in an incident.
-//
-// It works generically with any registered message.EditableMType: it
-// introspects the type's editable fields at runtime rather than hard-coding
-// knowledge of any particular form (ICS-213, Road Closure, Shelter, etc.).
 package genmsg
 
 import (
