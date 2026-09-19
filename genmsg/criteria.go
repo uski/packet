@@ -57,6 +57,13 @@ const (
 	autoOpToOpType     = "ICS213"
 	autoRequestPurpose = "a request or instructions from the served agency"
 	autoReportPurpose  = "a report or request from the station's served agency"
+	// Check-ins and check-outs happen once per station per net, so the
+	// operator-to-operator traffic added to meet a credential's minimums
+	// is health and welfare: Net Control asks after the operator, and the
+	// operator answers.
+	autoOpToOpAsk    = "a health and welfare check of the station's radio operator"
+	autoOpToOpReply  = "the operator's own health, welfare, and station status, answering the health and welfare check"
+	autoOpToOpReport = "the operator's own status: health and welfare, power and batteries, and whether relief is needed"
 )
 
 // PartyCompliance reports how one flow party's traffic compares with what
@@ -298,10 +305,18 @@ func unanswered(fl Flow, nc, s int, opToOp bool) (int, error) {
 // gets no purpose, since it answers its target.
 func autoType(fl Flow, fromNetControl, opToOp, reply bool) (msgType, purpose string) {
 	if opToOp {
-		if mt, ok := FindMsgType(autoOpToOpType); ok {
-			return mt.CreateTag(), ""
+		mt, ok := FindMsgType(autoOpToOpType)
+		if !ok {
+			return "", ""
 		}
-		return "", ""
+		switch {
+		case fromNetControl:
+			return mt.CreateTag(), autoOpToOpAsk
+		case reply:
+			return mt.CreateTag(), autoOpToOpReply
+		default:
+			return mt.CreateTag(), autoOpToOpReport
+		}
 	}
 	pool, purpose := autoStationForms, autoReportPurpose
 	if fromNetControl {

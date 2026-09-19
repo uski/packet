@@ -18,6 +18,11 @@
       { kind: 'net-closed', label: 'Net closed', text: 'Net is closed.' },
     ]
 
+    // These message types are operator-to-operator traffic whatever the
+    // dialog says, so their checkbox is shown checked and left alone (see
+    // opToOpTypes in the genmsg package).
+    const mpAlwaysOpToOp = ['check-in', 'check-out', 'plain']
+
     function mpEntryRows() {
       return [...document.querySelectorAll('#mpmessages .mprow')]
     }
@@ -62,6 +67,13 @@
       const partyOptions = mpPartyOptions()
       const entries = mpEntryRows()
       entries.forEach((row, i) => { row.querySelector('.mpnum').textContent = `#${i + 1}` })
+      mpMessageRows().forEach(row => {
+        const always = mpAlwaysOpToOp.includes(row.querySelector('.mp-type').value.toLowerCase())
+        const box = row.querySelector('.mp-optoop')
+        if (always) box.checked = true
+        box.disabled = always
+        box.title = always ? 'This message type is always operator-to-operator traffic.' : ''
+      })
       const msgRows = mpMessageRows()
       msgRows.forEach(row => {
         // "Each Station" last, so a new row defaults to a single party.
@@ -814,7 +826,7 @@
           <label class=mpfield>If "Other" above<input type=text class=mp-to-custom placeholder="Custom recipient"></label>
           <label class="mpfield mpwide">Purpose (optional)<input type=text class=mp-purpose placeholder="e.g. request shelter capacity status"></label>
           <label class=mpfield>Replying to<select class=mp-replyto></select></label>
-          <label class="mpfield mpcheck" title="Traffic between the radio operators, such as a status report, rather than a served agency's message. Plain text, check-in, and check-out messages always are."><input type=checkbox class=mp-optoop><span>Operator-to-operator</span></label>
+          <label class="mpfield mpcheck" title="Traffic between the radio operators themselves about running the net: checking in or out, a health and welfare check, or the station's own status (power, batteries, relief). Not the agency's work. Check-in, check-out, and plain text messages always count as this."><input type=checkbox class=mp-optoop><span>Operator-to-operator</span></label>
           <label class=mpfield>Handling<select class=mp-handling>
               <option value="">Claude chooses</option>
               <option value=R>Routine</option>

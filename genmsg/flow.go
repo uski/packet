@@ -119,8 +119,11 @@ func flowTime(fm FlowMessage) string {
 // isEvent says whether fm is an event rather than a message.
 func isEvent(fm FlowMessage) bool { return fm.Event != "" }
 
-// opToOpPurpose describes operator-to-operator traffic to Claude.
-const opToOpPurpose = "operator-to-operator traffic between the radio operators themselves, such as a status report or health and welfare message, not a served agency's message"
+// opToOpPurpose describes operator-to-operator traffic to Claude. It is
+// the traffic the operators have between themselves about running the net:
+// the Credentialing Program Handbook's examples are check-in and check-out,
+// health and welfare checks, and status reports.
+const opToOpPurpose = "operator-to-operator traffic: a message between the radio operators themselves about running the net, never a served agency's message. Write one of: checking in or out of the net, a health and welfare check of the operator (are they well, fed, rested, relieved), or the station's own status (power, batteries, antenna, equipment, relief). Nothing about the agency's work: no shelter status, no resource requests, no damage reports"
 
 // flowPurpose returns the purpose to give Claude for fm.
 func flowPurpose(fm FlowMessage) string {

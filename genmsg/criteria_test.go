@@ -203,3 +203,56 @@ func TestCompleteFlowNeedsAPartner(t *testing.T) {
 		t.Error("completing a flow with only Net Control should fail")
 	}
 }
+
+// TestAutoAddedOpToOpIsHealthAndWelfare verifies what auto-added
+// operator-to-operator traffic is about: the operators themselves, not the
+// agency's work. Check-ins and check-outs happen once per station, so what
+// is added is a health and welfare check and its answer.
+func TestAutoAddedOpToOpIsHealthAndWelfare(t *testing.T) {
+	formType(t, "ICS213")
+	fl := Flow{
+		Parties: []FlowParty{
+			{Role: "Net Control", Prefix: "XND", Credential: "N3"},
+			{Role: "Shelter", Prefix: "S21", Credential: "F3"},
+		},
+		Messages: []FlowMessage{{MsgType: "ICS213", From: 0, To: 1}},
+	}
+	out, added, err := CompleteFlow(fl)
+	if err != nil || added == 0 {
+		t.Fatalf("added %d, err %v", added, err)
+	}
+	var asks, answers int
+	for _, m := range out.Messages[1:] {
+		if !m.OpToOp {
+			continue
+		}
+		switch {
+		case strings.Contains(m.Purpose, "health and welfare check of the station's radio operator"):
+			asks++ // Net Control asking after an operator
+		case strings.Contains(m.Purpose, "answering the health and welfare check"),
+			strings.Contains(m.Purpose, "the operator's own status"):
+			answers++ // the operator's own health, welfare and station status
+		default:
+			t.Errorf("operator-to-operator message added with purpose %q", m.Purpose)
+		}
+	}
+	if asks == 0 || answers == 0 {
+		t.Errorf("added %d from Net Control and %d from the stations, want both", asks, answers)
+	}
+	// And the content rules Claude is given say what such a message may
+	// hold, and what it may not.
+	specs, err := ResolveFlow(out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var sawRules bool
+	for _, s := range specs {
+		if strings.Contains(s.Purpose, "never a served agency's message") &&
+			strings.Contains(s.Purpose, "health and welfare") {
+			sawRules = true
+		}
+	}
+	if !sawRules {
+		t.Error("an operator-to-operator message's purpose should say what it may hold")
+	}
+}
