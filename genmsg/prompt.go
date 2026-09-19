@@ -3,6 +3,7 @@ package genmsg
 import (
 	"encoding/json"
 	"fmt"
+	"math/rand/v2"
 	"slices"
 	"strings"
 
@@ -43,7 +44,7 @@ func buildBriefPrompt(req Request) string {
 	if req.Scenario != "" {
 		fmt.Fprintf(&b, "Scenario: %s\n\n", req.Scenario)
 	} else {
-		b.WriteString("No scenario was given: invent a plausible emergency-response scenario set in the fictitious Xanadu City (e.g. a downed power line, a fallen tree blocking a road, traffic congestion near a shelter, storm damage, a utility outage).\n\n")
+		b.WriteString(inventedScenario() + "\n\n")
 	}
 	if date := incidentDate(req); date != "" {
 		fmt.Fprintf(&b, "The incident takes place on %s.\n\n", date)
@@ -74,6 +75,7 @@ func buildBriefPrompt(req Request) string {
 	b.WriteString("\nWrite a concise exercise brief of at most 250 words, in plain text:\n" +
 		"1. The incident: what happened, where, and when.\n" +
 		"2. Shared facts every message must agree on: names of people, places and addresses, quantities, times, amateur call signs, and the specific details that make requests realistic (e.g. a generator's make, model number, and power rating). Use only the xanadu-city.org domain for any email or web address, and only fictitious call signs ending with a digit, like W6XRL4, never a real call sign.\n" +
+		"   " + varietyPrompt + "\n" +
 		"   " + fictionalPlacesPrompt + "\n" +
 		"   " + contentRulesPrompt + "\n" +
 		"3. One line per message saying specifically what it reports, requests, or answers, so each reply answers what was actually asked (nothing for a message sent as is).\n" +
@@ -84,6 +86,59 @@ func buildBriefPrompt(req Request) string {
 // fictionalPlacesPrompt keeps exercise traffic from naming real places, so
 // it can't be mistaken for a report about one.
 const fictionalPlacesPrompt = `Every place must be fictitious, so exercise traffic can't be confused with a real incident: invent street names, cross streets, building names, and street numbers freely, but the city is ALWAYS "Xanadu City" and the county, whenever one is mentioned, is ALWAYS "Xanadu County" -- even when the scenario mentions a real place. Never name a real city, county, street address, highway, or facility (such as a real school, hospital, or business location).`
+
+// incidentKinds are the emergencies an exercise is built around when the
+// evaluator doesn't name one. The tool picks rather than leaving it to
+// Claude, which left to itself keeps reaching for the same storm and power
+// outage; an evaluation is more useful when its traffic is not the traffic
+// the candidate saw last time.
+var incidentKinds = []string{
+	"a magnitude 6.1 earthquake, with structural damage across the city",
+	"a wind-driven wildfire in the hills at the city's edge, with evacuations under way",
+	"flooding after days of heavy rain, with creeks over their banks",
+	"a multi-day power outage after a substation fire",
+	"a cyber attack that has taken the county's own systems offline",
+	"a water main break flooding streets and cutting supply to a neighborhood",
+	"a hazardous materials spill from an overturned tanker",
+	"a natural gas leak that has emptied several blocks",
+	"an extreme heat wave, with cooling centers open",
+	"a winter storm, with downed trees and blocked roads",
+	"a landslide after saturated ground gave way above a residential street",
+	"a crowd emergency at a large public event, with many minor injuries",
+	"a passenger rail derailment with casualties",
+	"a multi-vehicle collision in dense fog that has closed a highway",
+	"a dam release warning for the neighborhoods downstream",
+	"a small aircraft crash short of the runway",
+	"a communications outage, with cell service and internet down county-wide",
+	"a boil-water notice after a contamination scare",
+	"a respiratory illness outbreak straining the clinics",
+	"a structure fire in an apartment block that has displaced its residents",
+	"a levee breach threatening low-lying neighborhoods",
+	"a fuel shortage affecting response vehicles and generators",
+}
+
+// incidentStages say how far along the incident is, which changes what the
+// traffic is about as much as the incident itself does.
+var incidentStages = []string{
+	"It is the first hour, and the picture is still forming.",
+	"It is the second day of a sustained operation, and the shelters are filling.",
+	"It is an overnight shift, with fewer staff and slower traffic.",
+	"It is the third day: some services are back, others are not.",
+	"The response is winding down, sites are closing and resources are going home.",
+}
+
+// inventedScenario returns the instruction to invent a scenario, naming the
+// incident and how far along it is, so that two exercises generated the
+// same day are about different emergencies.
+func inventedScenario() string {
+	kind := incidentKinds[rand.IntN(len(incidentKinds))]
+	stage := incidentStages[rand.IntN(len(incidentStages))]
+	return fmt.Sprintf("No scenario was given. Base the exercise on this one, in the fictitious Xanadu City, and invent its specifics: %s. %s", kind, stage)
+}
+
+// varietyPrompt keeps the traffic of one exercise from being the same
+// request over and over, whatever the incident is.
+const varietyPrompt = `Vary what the messages are about. Emergency traffic covers far more than generators and cots: staffing and relief, transport, fuel, food and water, medical supplies, sanitation, power and batteries, shelter capacity, animal sheltering, interpreters, accessibility needs, security, road and bridge status, debris clearance, utility restoration, welfare inquiries, equipment repair, deliveries, volunteers, damage assessment, evacuation routes, traffic control, and radio equipment. Give each message its own subject, fitting the incident and the party sending it, rather than repeating one subject across the exercise.`
 
 // contentRulesPrompt gives rules for what exercise traffic may contain.
 const contentRulesPrompt = `Never mention an amateur radio frequency (no frequencies, repeaters, or channels in MHz or kHz). Every web address (URL) MUST start with "https://".`
@@ -104,13 +159,13 @@ func sharedPrompt(req Request, brief string) string {
 	} else if req.Scenario != "" {
 		fmt.Fprintf(&b, "Scenario to base all of the messages on: %s\n\n", req.Scenario)
 	} else {
-		b.WriteString("No specific scenario was given. Invent a plausible emergency-response scenario set in the fictitious Xanadu City (e.g. a downed power line, a fallen tree blocking a road, traffic congestion near a shelter, storm damage assessment, a utility outage) and use it consistently across all the messages in this batch.\n\n")
+		b.WriteString(inventedScenario() + " Use it consistently across all the messages in this batch.\n\n")
 	}
 	if date := incidentDate(req); date != "" {
 		fmt.Fprintf(&b, "The incident takes place on %s; any date a message mentions must be consistent with that. Date and time fields are filled in separately, so they aren't listed.\n\n", date)
 	}
 	b.WriteString("Messages may be different form types with different fields (a training session can mix, for example, an ICS-213, a plain text message, and a Road Closure form). Weave each message's listed requirements naturally into that message's own field values -- they must fit the scenario and read like real, professional emergency radio traffic, not like a checklist. Proword content in ANY field counts, so each requirement only needs to be met ONCE, in the single field that suits it best (a person's name in a name field, an email address or phone number in a contact field) -- never repeat it in another field, and never add a sentence to the free-text body just to carry it (e.g. not \"Contact Jane Doe at jane@xanadu-city.org for logistics.\" when there are name and contact fields to hold them). Requirements already satisfied by pre-filled fields have been left out. Fill each form the way a trained operator fills out the real form: put every piece of information in the field made for it -- for example each requested item in its own item row (Item 1's name and quantity, then Item 2's), a person in a name field, a phone number in a phone field -- and use a free-text field such as Comments or Special Instructions only for information no other field holds, never to restate other fields (e.g. not \"Need 50 blankets, generator\" in Comments when the form has item fields). A subject, title, or summary field is only a short headline of a few words: the message's details go in its message body or the form's other fields, never in the subject.\n")
-	b.WriteString(realismPrompt + "\n\n" + fictionalPlacesPrompt + "\n\n" + contentRulesPrompt + "\n\n")
+	b.WriteString(realismPrompt + "\n\n" + varietyPrompt + "\n\n" + fictionalPlacesPrompt + "\n\n" + contentRulesPrompt + "\n\n")
 	b.WriteString("How to meet each proword requirement a message lists:\n")
 	full, _ := prowords.Profile(prowords.LevelFull)
 	for _, cat := range full {

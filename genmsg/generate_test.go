@@ -289,3 +289,29 @@ func TestIncidentDate(t *testing.T) {
 		}
 	}
 }
+
+// TestInventedScenariosVary verifies that an exercise with no scenario of
+// its own is not the same emergency every time: the tool picks the incident
+// and how far along it is, rather than leaving both to Claude.
+func TestInventedScenariosVary(t *testing.T) {
+	seen := map[string]bool{}
+	for range 40 {
+		seen[inventedScenario()] = true
+	}
+	if len(seen) < 10 {
+		t.Errorf("40 invented scenarios gave only %d different ones", len(seen))
+	}
+	for s := range seen {
+		if !strings.Contains(s, "Xanadu City") {
+			t.Errorf("scenario without the fictitious city: %q", s)
+		}
+	}
+	// And the messages of one exercise are told to differ from each other.
+	mt := formType(t, "ICS213")
+	req := Request{Messages: []MessageSpec{{MsgType: mt}, {MsgType: mt}}}
+	for name, prompt := range map[string]string{"message": sharedPrompt(req, ""), "brief": buildBriefPrompt(req)} {
+		if !strings.Contains(prompt, "Vary what the messages are about") {
+			t.Errorf("the %s prompt doesn't ask for variety", name)
+		}
+	}
+}
