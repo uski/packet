@@ -132,14 +132,24 @@ func Generate(ctx context.Context, client *ClaudeClient, req Request) ([]Result,
 			plan.Status = fmt.Sprintf("planning (%s)", elapsed)
 			activity(plan)
 		})
-		if err != nil && !errors.Is(err, ErrOutputCutOff) {
+		switch {
+		case errors.Is(err, ErrOutputCutOff):
+			// The messages can still be written, each on its own,
+			// but they won't share a scenario, so say so rather
+			// than let it look like the plan was made.
+			slog.Warn("the scenario plan was cut off; the messages will not share one", "err", err)
+			plan.Status, plan.State = "cut off: the messages will not share a scenario", ActivityFailed
+			activity(plan)
+			progress("The scenario plan was cut off; each message will be written on its own.")
+		case err != nil:
 			plan.Status, plan.State = "failed: "+err.Error(), ActivityFailed
 			activity(plan)
 			return nil, err
+		default:
+			brief = strings.TrimSpace(text)
+			plan.Status, plan.State = "done", ActivityDone
+			activity(plan)
 		}
-		brief = strings.TrimSpace(text)
-		plan.Status, plan.State = "done", ActivityDone
-		activity(plan)
 	}
 
 	ctx, cancel := context.WithCancel(ctx)

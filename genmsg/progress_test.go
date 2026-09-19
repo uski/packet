@@ -245,3 +245,51 @@ func TestCheckInsAreSentAsIs(t *testing.T) {
 		}
 	}
 }
+
+// TestGenerateReportsCutOffPlan verifies that a scenario plan cut off at
+// the output limit is reported rather than silently dropped: the messages
+// are still written, but they don't share a scenario.
+func TestGenerateReportsCutOffPlan(t *testing.T) {
+	var calls int
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		resp := claudeResponse{}
+		if calls == 1 { // the plan
+			resp.StopReason = "max_tokens"
+			json.NewEncoder(w).Encode(resp)
+			return
+		}
+		resp.Content = []struct {
+			Type string `json:"type"`
+			Text string `json:"text"`
+		}{{Type: "text", Text: `[{"subjectSummary":"Test","subjectHandling":"ROUTINE","defaultBody":"Body."}]`}}
+		json.NewEncoder(w).Encode(resp)
+	}))
+	defer srv.Close()
+	inc := draftTestIncident(t)
+	var activities []Activity
+	results, err := Generate(context.Background(), &ClaudeClient{APIKey: "k", URL: srv.URL}, Request{
+		Incident: inc,
+		Messages: []MessageSpec{{MsgType: message.PlainMessage}, {MsgType: message.PlainMessage}},
+		Level:    "f3",
+		Activity: func(a Activity) { activities = append(activities, a) },
+	})
+	if err != nil {
+		t.Fatalf("a cut-off plan should not fail the generation: %v", err)
+	}
+	if len(results) != 2 {
+		t.Errorf("got %d results, want 2", len(results))
+	}
+	var reported bool
+	for _, a := range activities {
+		if a.Key == "plan" && a.State == ActivityFailed && strings.Contains(a.Status, "cut off") {
+			reported = true
+		}
+		if a.Key == "plan" && a.State == ActivityDone {
+			t.Error("a cut-off plan should not be reported as done")
+		}
+	}
+	if !reported {
+		t.Errorf("the cut-off plan was not reported: %+v", activities)
+	}
+}
