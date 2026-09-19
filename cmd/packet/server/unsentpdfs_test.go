@@ -234,3 +234,35 @@ func TestHideMessageNumbers(t *testing.T) {
 		t.Errorf("hiding the destination: origin %q, subject %q, destination %q", o, s, d)
 	}
 }
+
+func TestUnsentPDFsSelectionErrors(t *testing.T) {
+	dir := t.TempDir()
+	if err := incident.Create(dir, func(i *incident.Incident) error {
+		i.Config.TxMessageID = "YUY-100P"
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	s := &Server{stop: make(chan struct{})}
+	get := func(query url.Values) *httptest.ResponseRecorder {
+		rr := httptest.NewRecorder()
+		s.serveGetUnsentPDFs(rr, httptest.NewRequest(http.MethodGet, "/unsent-pdfs?"+query.Encode(), nil))
+		return rr
+	}
+	// An unknown format is refused before any work is done.
+	if rr := get(url.Values{"dir": {dir}, "format": {"doc"}}); rr.Code != http.StatusBadRequest {
+		t.Errorf("unknown format: status %d", rr.Code)
+	}
+	if rr := get(url.Values{"dir": {dir}, "id": {"x"}}); rr.Code != http.StatusBadRequest {
+		t.Errorf("bad ident: status %d", rr.Code)
+	}
+	// Selecting messages that aren't there says so, rather than claiming
+	// the incident has no unsent messages at all.
+	rr := get(url.Values{"dir": {dir}, "id": {"42"}})
+	if rr.Code != http.StatusNotFound || !strings.Contains(rr.Body.String(), "selected") {
+		t.Errorf("status %d, body %q", rr.Code, rr.Body.String())
+	}
+	if rr := get(url.Values{"dir": {dir}}); rr.Code != http.StatusNotFound || !strings.Contains(rr.Body.String(), "no unsent messages") {
+		t.Errorf("status %d, body %q", rr.Code, rr.Body.String())
+	}
+}

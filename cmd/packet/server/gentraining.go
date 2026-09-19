@@ -374,7 +374,7 @@ RESTART:
 		job.mutex.Unlock()
 		if done {
 			genTrainingJobsMutex.Lock()
-			genTrainingJobs[dir] = nil
+			delete(genTrainingJobs, dir)
 			genTrainingJobsMutex.Unlock()
 		}
 	} else {

@@ -91,16 +91,6 @@ func (s *Server) serveGetUnsentPDFs(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, fmt.Sprintf("unknown format %q", format), http.StatusBadRequest)
 		return
 	}
-	tmp, err := os.MkdirTemp("", "packet-unsent-pdfs")
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-	defer os.RemoveAll(tmp)
-	if err := r.ParseForm(); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
 	var only map[int]bool
 	if ids := r.Form["id"]; len(ids) > 0 {
 		only = make(map[int]bool, len(ids))
@@ -115,6 +105,12 @@ func (s *Server) serveGetUnsentPDFs(w http.ResponseWriter, r *http.Request) {
 	}
 	hide := hiddenNumbers{origin: r.FormValue("hideOrigin") == "1", destination: r.FormValue("hideDest") == "1"}
 	annotate := r.FormValue("annotate") == "1"
+	tmp, err := os.MkdirTemp("", "packet-unsent-pdfs")
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	defer os.RemoveAll(tmp)
 	var pdfs []renderedPDF
 	err = incident.Read(r.FormValue("dir"), func(i *incident.Incident) (err error) {
 		pdfs, err = renderUnsentPDFs(i, tmp, only, hide, annotate)
@@ -125,7 +121,11 @@ func (s *Server) serveGetUnsentPDFs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if len(pdfs) == 0 {
-		http.Error(w, "There are no unsent messages to download.", http.StatusNotFound)
+		msg := "There are no unsent messages to download."
+		if only != nil {
+			msg = "None of the selected messages could be downloaded; they may have been sent or deleted."
+		}
+		http.Error(w, msg, http.StatusNotFound)
 		return
 	}
 	var (
@@ -134,7 +134,7 @@ func (s *Server) serveGetUnsentPDFs(w http.ResponseWriter, r *http.Request) {
 		filename string
 	)
 	if format == "pdf" {
-		data, err = concatenatePDFs(pdfs, filepath.Join(tmp, "all.pdf"))
+		data, err = concatenatePDFs(pdfs, "Unsent messages", filepath.Join(tmp, "all.pdf"))
 		ctype, filename = "application/pdf", "unsent-messages.pdf"
 	} else {
 		data, err = zipPDFs(pdfs)
@@ -193,8 +193,11 @@ func renderUnsentPDFs(i *incident.Incident, tmp string, only map[int]bool, hide 
 			continue
 		}
 		msg, err := i.GetMessageFromLogEntry(le)
-		if err != nil || msg == nil {
-			return nil, fmt.Errorf("reading message %s: %v", le.LocalMsgID, err)
+		if err != nil {
+			return nil, fmt.Errorf("reading message %s: %w", le.LocalMsgID, err)
+		}
+		if msg == nil {
+			return nil, fmt.Errorf("message %s has no content to render", le.LocalMsgID)
 		}
 		name := pdfName(le, used)
 		hideNumbers(msg, hide)
@@ -218,7 +221,7 @@ func renderUnsentPDFs(i *incident.Incident, tmp string, only map[int]bool, hide 
 				return nil, err
 			}
 			joined := filepath.Join(tmp, fmt.Sprintf("%d-with-prowords.pdf", le.Ident))
-			if data, err = concatenatePDFs([]renderedPDF{{data: data}, {data: annotated}}, joined); err != nil {
+			if data, err = concatenatePDFs([]renderedPDF{{name: name, data: data}, {name: name, data: annotated}}, le.LocalMsgID, joined); err != nil {
 				return nil, fmt.Errorf("annotating %s: %w", le.LocalMsgID, err)
 			}
 		}
@@ -250,14 +253,14 @@ func zipPDFs(pdfs []renderedPDF) ([]byte, error) {
 // using fname as its scratch file. The rendered PDFs have no form fields
 // (their values are drawn on the pages), so their pages can be combined
 // without their fields clashing.
-func concatenatePDFs(pdfs []renderedPDF, fname string) ([]byte, error) {
+func concatenatePDFs(pdfs []renderedPDF, title, fname string) ([]byte, error) {
 	fh, err := os.Create(fname)
 	if err != nil {
 		return nil, err
 	}
 	defer fh.Close()
 	out := pdf.New(fh)
-	out.Info["Title"] = "Unsent messages"
+	out.Info["Title"] = title
 	out.Info["Producer"] = "https://github.com/rothskeller/packet"
 	var pages int
 	for _, p := range pdfs {
