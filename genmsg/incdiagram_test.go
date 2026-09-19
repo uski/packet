@@ -63,3 +63,46 @@ func TestFlowOrder(t *testing.T) {
 		t.Errorf("order = %s", got)
 	}
 }
+
+// TestIncidentDiagramTwoFlows verifies that each flow's closing events are
+// drawn after that flow's own messages: they all used to be collected and
+// drawn at the very end, so the first flow's "net closed" landed below the
+// second flow's traffic.
+func TestIncidentDiagramTwoFlows(t *testing.T) {
+	formType(t, "ICS213")
+	flow := func(name string) Flow {
+		return Flow{
+			Parties: []FlowParty{{Role: "NCO", Prefix: "XND", Credential: "N3"}, {Role: "Shelter", Prefix: "S21"}},
+			Messages: []FlowMessage{
+				{Event: "open-net", Text: name + " open"},
+				{MsgType: "ICS213", From: 0, To: 1, Purpose: name},
+				{Event: "net-closed", Text: name + " closed"},
+			},
+		}
+	}
+	dir := t.TempDir()
+	if err := incident.Create(dir, func(i *incident.Incident) error { i.Config.TxMessageID = "YUY-100P"; return nil }); err != nil {
+		t.Fatal(err)
+	}
+	var got string
+	if err := incident.Write(dir, func(i *incident.Incident) error {
+		for _, name := range []string{"First net", "Second net"} {
+			specs, err := ResolveFlow(flow(name))
+			if err != nil {
+				return err
+			}
+			if _, err = Apply(i, specs, make([]Result, len(specs))); err != nil {
+				return err
+			}
+		}
+		d, err := IncidentDiagram(i, "Two nets")
+		got = d.SequenceDiagram()
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	first, second := strings.Index(got, "First net closed"), strings.Index(got, "Second net open")
+	if first < 0 || second < 0 || first > second {
+		t.Errorf("the first net should close before the second opens:\n%s", got)
+	}
+}

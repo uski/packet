@@ -69,7 +69,11 @@ func IncidentDiagram(inc *incident.Incident, name string) (Diagram, error) {
 	}
 
 	var steps []seqStep
-	var trailing []FlowMessage
+	// The events after a flow's last message belong before whatever comes
+	// next, not at the end of the diagram: with two flows in one incident,
+	// the first flow's closing events would otherwise be drawn below the
+	// second flow's traffic.
+	var pending []FlowMessage
 	for k, rm := range msgs {
 		sm := seqMessage{
 			from: rm.senderName, to: rm.recipientName, label: strings.TrimSuffix(rm.id, "P"),
@@ -79,8 +83,8 @@ func IncidentDiagram(inc *incident.Incident, name string) (Diagram, error) {
 		st := seqStep{msgs: []seqMessage{sm}}
 		rec := rm.record
 		if rec != nil {
-			st.events = rec.Events
-			trailing = append(trailing, rec.EventsAfter...)
+			st.events = append(pending, rec.Events...)
+			pending = rec.EventsAfter
 			if rec.Group > 0 {
 				st.group = rec.Batch + "/" + strconv.Itoa(rec.Group)
 			}
@@ -92,13 +96,16 @@ func IncidentDiagram(inc *incident.Incident, name string) (Diagram, error) {
 					continue
 				}
 			}
-		} else if len(rm.recipientName) == 0 && rm.toRole != "" {
-			sm.external = rm.toRole
-			st.msgs[0] = sm
+		} else {
+			st.events, pending = pending, nil
+			if len(rm.recipientName) == 0 && rm.toRole != "" {
+				sm.external = rm.toRole
+				st.msgs[0] = sm
+			}
 		}
 		steps = append(steps, st)
 	}
-	return layoutDiagram(date, name, parties, steps, trailing), nil
+	return layoutDiagram(date, name, parties, steps, pending), nil
 }
 
 func setIfEmpty(m map[string]string, key, value string) {
