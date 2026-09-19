@@ -2,6 +2,7 @@ package genmsg
 
 import (
 	"fmt"
+	"log/slog"
 	"strings"
 
 	"github.com/rothskeller/packet/v4/incident"
@@ -68,6 +69,8 @@ func Apply(inc *incident.Incident, specs []MessageSpec, results []Result) ([]App
 		if spec.ToPrefix != "" {
 			if addrs, err := address.ParseList(spec.ToPrefix); err == nil && len(addrs) > 0 {
 				setCommonField(newmsg, "headerTo", spec.ToPrefix)
+			} else {
+				slog.Warn("generated message: unusable To address, left blank", "to", spec.ToPrefix, "err", err)
 			}
 		}
 		if r := spec.ReplyTo; r > 0 && ids[r-1] != "" {

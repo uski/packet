@@ -330,3 +330,25 @@ func TestGenerateWithReplyCycle(t *testing.T) {
 		}
 	}
 }
+
+// TestCheckInHasNoWarnings verifies that a check-in, whose fields the tool
+// deliberately leaves for the candidate, is not reported as missing them.
+func TestCheckInHasNoWarnings(t *testing.T) {
+	checkIn := formType(t, "Check-In")
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Error("a check-in should not be sent to Claude")
+	}))
+	defer srv.Close()
+	results, err := Generate(context.Background(), &ClaudeClient{APIKey: "k", URL: srv.URL}, Request{
+		Incident: draftTestIncident(t),
+		Messages: []MessageSpec{{MsgType: checkIn, From: "Shelter", FromPrefix: "S21"}},
+		Level:    "full",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(results[0].MissingFields) != 0 || len(results[0].Missing) != 0 {
+		t.Errorf("a check-in reported %v missing fields and %v missing prowords",
+			results[0].MissingFields, results[0].Missing)
+	}
+}

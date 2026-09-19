@@ -289,10 +289,15 @@ type generation struct {
 }
 
 // createAsIs records message idx, which has no content to generate (see
-// isContentless), as it is.
+// isContentless), as it is. Nothing is reported as missing from it: its
+// fields are the ones the tool has decided never to fill.
 func (g *generation) createAsIs(idx int) error {
-	_, err := g.evaluate(idx, map[string]string{}, nil, false)
-	return err
+	if _, err := g.evaluate(idx, map[string]string{}, nil, false); err != nil {
+		return err
+	}
+	res := &g.results[idx]
+	res.MissingFields, res.Missing = nil, nil
+	return nil
 }
 
 // stopped reports that message idx, the n-th in generation order, won't be
