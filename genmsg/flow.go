@@ -418,17 +418,14 @@ func ResolveFlow(fl Flow) ([]MessageSpec, error) {
 			}
 			spec.MsgType, _ = FindMsgType(fm.MsgType) // already validated above
 			rec := &TrainingRecord{
-				From: partyName(fl.Parties[p]), FromCredential: fl.Parties[p].Credential,
+				From: partyName(fl.Parties[p]), FromCredential: partyCredential(fl.Parties[p]),
 				FromPrincipal: fl.Parties[p].Principal, OpToOp: isOpToOpMessage(fm),
 				Batch: batch, Step: i + 1, Group: fm.Group, Events: events,
 			}
 			events = nil
-			if rec.FromCredential == "" && fl.Parties[p].F3 {
-				rec.FromCredential = "F3"
-			}
 			if r := flowRecipients(fl, fm, p); len(r) > 0 {
 				for _, q := range r {
-					rec.To = append(rec.To, TrainingParty{Name: partyName(fl.Parties[q]), Credential: fl.Parties[q].Credential, Principal: fl.Parties[q].Principal})
+					rec.To = append(rec.To, TrainingParty{Name: partyName(fl.Parties[q]), Credential: partyCredential(fl.Parties[q]), Principal: fl.Parties[q].Principal})
 				}
 			} else if to.Role != "" {
 				rec.To = []TrainingParty{{Name: to.Role}}

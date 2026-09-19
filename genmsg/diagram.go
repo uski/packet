@@ -235,7 +235,9 @@ func replyLabel(labels []string, entry int) string {
 	return "#" + strconv.Itoa(entry)
 }
 
-// partyCredential returns the credential p is evaluated for, if any.
+// partyCredential returns the credential p is evaluated for, if any. A
+// party marked "f3" without a credential of its own is evaluated for F3,
+// whether it is sending the message or receiving it.
 func partyCredential(p FlowParty) string {
 	if p.Credential == "" && p.F3 {
 		return "F3"

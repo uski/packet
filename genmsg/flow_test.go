@@ -282,3 +282,29 @@ func TestFindMsgType(t *testing.T) {
 		t.Error("expected not to find a bogus type")
 	}
 }
+
+// TestResolveFlowRecordsF3ForRecipients verifies that a party marked "f3"
+// with no credential of its own is recorded as F3 wherever it appears: the
+// fallback used to be applied only to the sender, so the same party had a
+// credential in the messages it sent and none in those it received.
+func TestResolveFlowRecordsF3ForRecipients(t *testing.T) {
+	specs, err := ResolveFlow(Flow{
+		Parties: []FlowParty{
+			{Role: "Net Control", Prefix: "XND"},
+			{Role: "Shelter", Prefix: "S21", F3: true},
+		},
+		Messages: []FlowMessage{
+			{MsgType: "plain", From: 1, To: 0},
+			{MsgType: "plain", From: 0, To: 1},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := specs[0].Training.FromCredential; got != "F3" {
+		t.Errorf("as sender, credential = %q, want F3", got)
+	}
+	if got := specs[1].Training.To[0].Credential; got != "F3" {
+		t.Errorf("as recipient, credential = %q, want F3", got)
+	}
+}
