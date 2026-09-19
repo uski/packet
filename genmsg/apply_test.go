@@ -58,9 +58,9 @@ func TestApplyNumbersAddressesAndReferencesByPrefix(t *testing.T) {
 	}
 	ics := map[string]string{"5.": "ROUTINE", "10.": "Shelter status", "12.": "Report shelter status."}
 	specs := []MessageSpec{
-		{MsgType: mt, From: "Shelter Manager", FromPrefix: "S24", To: "Net Control", ToPrefix: "EOC", ReplyTo: 2},
-		{MsgType: mt, From: "Net Control", FromPrefix: "EOC", To: "All Stations"},
-		{MsgType: message.PlainMessage, FromPrefix: "S24", ToPrefix: "EOC"},
+		{MsgType: mt, From: "Shelter Manager", FromPrefix: "S24", To: "Net Control", ToPrefix: "EOC", ReplyTo: 2, Packet: true},
+		{MsgType: mt, From: "Net Control", FromPrefix: "EOC", To: "All Stations", Packet: true},
+		{MsgType: message.PlainMessage, FromPrefix: "S24", ToPrefix: "EOC", Packet: true},
 	}
 	results := []Result{
 		{Values: ics},

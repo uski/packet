@@ -88,6 +88,10 @@ type MessageSpec struct {
 	// one Apply would pick (see FromPrefix).
 	MsgNo string
 
+	// Packet says the message is sent by packet, so the number Apply
+	// picks for it gets the "P" suffix.
+	Packet bool
+
 	// Time, if non-empty, is the time the message is written, as HH:MM. It
 	// fills the message's time fields (see setIncidentDate), which are
 	// otherwise left blank when Date is set.

@@ -79,7 +79,7 @@ type FlowMessage struct {
 	// tool would pick: PPP-NNN, where PPP is the sender's message number
 	// prefix and NNN the sequence number, e.g. "XND-101". Only a message
 	// with a single sender can have one. Without a suffix letter, it gets
-	// "P", like the tool's own numbers.
+	// the flow's own (see Flow.Packet).
 	MsgNo string `json:"msgNo,omitempty"`
 	// Time is the time the message is written (HH:MM), for its time
 	// fields; empty leaves them blank.
@@ -139,10 +139,10 @@ func flowMessageNumbers(fl Flow, senders [][]int) ([][]string, error) {
 			return nil, fmt.Errorf("message %d: invalid message number %q (use PPP-NNN: the sender's prefix and a number, e.g. XND-101)", i+1, fm.MsgNo)
 		}
 		prefix, suffix := m[1], m[3]
-		seq, _ := strconv.Atoi(m[2])
 		if suffix == "" {
-			suffix = "P"
+			suffix = numberSuffix(fl.Packet)
 		}
+		seq, _ := strconv.Atoi(m[2])
 		if len(senders[i]) != 1 {
 			return nil, fmt.Errorf("message %d: a message from each station can't have one message number; give each station its own message to number it", i+1)
 		}
@@ -165,6 +165,15 @@ func flowMessageNumbers(fl Flow, senders [][]int) ([][]string, error) {
 		nums[i][0] = id
 	}
 	return nums, nil
+}
+
+// numberSuffix returns the suffix a message number gets: "P" for a packet
+// message, none otherwise.
+func numberSuffix(packet bool) string {
+	if packet {
+		return "P"
+	}
+	return ""
 }
 
 // flowTime returns fm's time as HH:MM, or "" if it has none (or an invalid
@@ -196,6 +205,10 @@ func flowPurpose(fm FlowMessage) string {
 // and the messages exchanged between them. ResolveFlow validates it and
 // resolves it into a []MessageSpec.
 type Flow struct {
+	// Packet says the messages are sent by packet, so their numbers get
+	// the "P" suffix (e.g. "ABC-123P"); without it, they have no suffix
+	// (e.g. "ABC-123").
+	Packet bool `json:"packet,omitempty"`
 	// Name names the net or exercise, e.g. "Evaluation Net", for diagram
 	// titles.
 	Name string `json:"name,omitempty"`
@@ -414,6 +427,7 @@ func ResolveFlow(fl Flow) ([]MessageSpec, error) {
 				Date:         date,
 				Handling:     NormalizeHandling(fm.Handling),
 				Time:         flowTime(fm),
+				Packet:       fl.Packet,
 				MsgNo:        msgNos[i][k],
 			}
 			spec.MsgType, _ = FindMsgType(fm.MsgType) // already validated above

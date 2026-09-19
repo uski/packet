@@ -209,7 +209,12 @@
         }
         return msg
       })
-      return { name: document.getElementById('mpname').value.trim(), date: document.getElementById('mpdate').value, parties, messages }
+      return {
+        name: document.getElementById('mpname').value.trim(),
+        packet: document.getElementById('mppacket').checked,
+        date: document.getElementById('mpdate').value,
+        parties, messages,
+      }
     }
 
     // mpTimeValue returns time (HH:MM, or as a hand-written file may have
@@ -341,6 +346,7 @@
         row.querySelector('.mp-replyto').value = m.replyTo > 0 && rows[m.replyTo - 1] ? rows[m.replyTo - 1].dataset.rid : '0'
       })
       document.getElementById('mpname').value = data.name || ''
+      document.getElementById('mppacket').checked = !!data.packet
       if (data.scenario !== undefined) document.getElementById('mpscenario').value = data.scenario
       if (data.date) {
         // The date input wants YYYY-MM-DD; a file written by hand may use MM/DD/YYYY.
@@ -636,6 +642,7 @@
       document.getElementById('mperr').textContent = ''
       document.getElementById('mpscenario').value = ''
       document.getElementById('mpname').value = ''
+      document.getElementById('mppacket').checked = false
       document.getElementById('mpdate').value = mpToday()
       document.getElementById('mpparties').innerHTML = ''
       document.getElementById('mpmessages').innerHTML = ''
@@ -985,6 +992,8 @@
 
       <p><label>Net or exercise name: <input type=text id=mpname placeholder="e.g. Evaluation Net"></label>
         <span class=mphint>Titles the diagram.</span></p>
+      <p><label><input type=checkbox id=mppacket> Packet messages</label>
+        <span class=mphint>Adds the P suffix to the message numbers (ABC-123P); without it, they have none (ABC-123).</span></p>
       <p><label>Incident date: <input type=date id=mpdate required></label>
         <span class=mphint>Used for every date field of the generated messages. Their time fields get each message's time, if given, and are left blank otherwise.</span></p>
       <p>Overall scenario (optional):</p>

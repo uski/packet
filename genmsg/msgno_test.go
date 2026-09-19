@@ -9,6 +9,7 @@ import (
 
 func msgNoFlow() Flow {
 	return Flow{
+		Packet: true,
 		Parties: []FlowParty{
 			{Role: "Net Control", Prefix: "XND"},
 			{Role: "Shelter", Prefix: "S21"},
@@ -118,5 +119,50 @@ func TestApplyMessageNumbers(t *testing.T) {
 		return err
 	}); err == nil || !strings.Contains(err.Error(), "XND-108P is already used") {
 		t.Errorf("reusing a number: err = %v", err)
+	}
+}
+
+// TestPacketSuffix verifies that message numbers get the "P" suffix only
+// for a packet flow, and that a suffix given in the scenario is kept either
+// way.
+func TestPacketSuffix(t *testing.T) {
+	for _, packet := range []bool{true, false} {
+		fl := msgNoFlow()
+		fl.Packet = packet
+		specs, err := ResolveFlow(fl)
+		if err != nil {
+			t.Fatal(err)
+		}
+		want := "XND-108"
+		if packet {
+			want = "XND-108P"
+		}
+		if specs[1].MsgNo != want || specs[1].Packet != packet {
+			t.Errorf("packet=%v: number %q, spec.Packet=%v; want %q", packet, specs[1].MsgNo, specs[1].Packet, want)
+		}
+		if specs[4].MsgNo != "S22-101R" { // the scenario's own suffix is kept
+			t.Errorf("packet=%v: number %q, want S22-101R", packet, specs[4].MsgNo)
+		}
+		results := make([]Result, len(specs))
+		for i := range results {
+			results[i].Values = plainValues("Status.")
+		}
+		dir := t.TempDir()
+		if err := incident.Create(dir, func(i *incident.Incident) error { i.Config.TxMessageID = "YUY-100P"; return nil }); err != nil {
+			t.Fatal(err)
+		}
+		var first string
+		if err := incident.Write(dir, func(i *incident.Incident) error {
+			applied, err := Apply(i, specs, results)
+			if len(applied) > 0 {
+				first = applied[0].ID
+			}
+			return err
+		}); err != nil {
+			t.Fatal(err)
+		}
+		if wantFirst := "S21-101"; packet && first != wantFirst+"P" || !packet && first != wantFirst {
+			t.Errorf("packet=%v: the tool numbered the first message %q", packet, first)
+		}
 	}
 }

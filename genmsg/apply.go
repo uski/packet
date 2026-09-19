@@ -57,7 +57,7 @@ func Apply(inc *incident.Incident, specs []MessageSpec, results []Result) ([]App
 		if spec.MsgNo != "" || spec.FromPrefix != "" {
 			id := spec.MsgNo
 			if id == "" {
-				if id, err = nextStationMessageID(inc, spec.FromPrefix, nextSeq, reserved); err != nil {
+				if id, err = nextStationMessageID(inc, spec.FromPrefix, numberSuffix(spec.Packet), nextSeq, reserved); err != nil {
 					return nil, err
 				}
 			}
@@ -104,7 +104,7 @@ func setCommonField(msg *message.DraftMessage, common, value string) {
 // nextStationMessageID returns the next message number for the station with
 // the given prefix, e.g. "S24-101P": one past the highest number with that
 // prefix already in inc, or in this batch (tracked in next).
-func nextStationMessageID(inc *incident.Incident, prefix string, next map[string]int, reserved map[string]bool) (string, error) {
+func nextStationMessageID(inc *incident.Incident, prefix, suffix string, next map[string]int, reserved map[string]bool) (string, error) {
 	if _, ok := next[prefix]; !ok {
 		seq := 100
 		for _, le := range inc.Log {
@@ -123,7 +123,7 @@ func nextStationMessageID(inc *incident.Incident, prefix string, next map[string
 	for reserved[numberKey(prefix, next[prefix])] {
 		next[prefix]++
 	}
-	return messageid.Encode(prefix, next[prefix], "P")
+	return messageid.Encode(prefix, next[prefix], suffix)
 }
 
 // numberKey identifies a message number regardless of its suffix.
