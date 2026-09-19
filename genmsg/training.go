@@ -47,14 +47,6 @@ type TrainingParty struct {
 	Principal  string `json:"principal,omitempty"`
 }
 
-// partyName is how a flow party is named in records and reports.
-func partyName(p FlowParty) string {
-	if p.Prefix == "" {
-		return p.Role
-	}
-	return p.Role + " " + p.Prefix
-}
-
 // loadTrainingRecords reads the records in incident directory dir, keyed by
 // log entry ident.
 func loadTrainingRecords(dir string) (map[int]TrainingRecord, error) {

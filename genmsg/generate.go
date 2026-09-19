@@ -313,7 +313,7 @@ func (g *generation) stopped(idx, n int) {
 func (g *generation) messageActivity(idx, n int) Activity {
 	m := g.req.Messages[idx]
 	label := fmt.Sprintf("Message %d of %d: %s", n, len(g.req.Messages), strings.TrimPrefix(strings.TrimPrefix(m.MsgType.Name(), "a "), "an "))
-	if from := strings.TrimSpace(m.From + " " + m.FromPrefix); from != "" {
+	if from := PartyName(m.From, m.FromPrefix); from != "" {
 		label += " from " + from
 	}
 	return Activity{Key: fmt.Sprintf("message-%d", idx+1), Label: label}

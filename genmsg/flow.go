@@ -7,8 +7,6 @@ import (
 	"slices"
 	"strings"
 	"time"
-
-	"github.com/rothskeller/packet/v4/prowords"
 )
 
 // FlowParty is one participant in a multi-party message flow: a short
@@ -166,16 +164,6 @@ func flowDate(fl Flow, now time.Time) (string, error) {
 		}
 	}
 	return "", fmt.Errorf("invalid incident date %q (use MM/DD/YYYY)", fl.Date)
-}
-
-// partyLevel returns the proword level a party's messages should be
-// evaluated at: the reduced F3 list if the party is marked F3, else the
-// full list.
-func partyLevel(p FlowParty) string {
-	if p.F3 || p.Credential == "F3" {
-		return prowords.LevelF3
-	}
-	return prowords.LevelFull
 }
 
 // normalizeParties replaces fl's parties with a validated copy, with

@@ -106,3 +106,45 @@ func TestBuildPromptInjectsContextForNonPendingReplyTarget(t *testing.T) {
 		t.Errorf("expected the non-pending replied-to message's content to be injected as context\n--- prompt ---\n%s", prompt)
 	}
 }
+
+func TestPartyIdentity(t *testing.T) {
+	for _, tc := range []struct{ role, prefix, want string }{
+		{"Shelter", "S21", "Shelter S21"},
+		{"Shelter", "", "Shelter"},
+		{"", "S21", "S21"},
+		{" Shelter ", " S21 ", "Shelter S21"},
+	} {
+		if got := PartyName(tc.role, tc.prefix); got != tc.want {
+			t.Errorf("PartyName(%q, %q) = %q, want %q", tc.role, tc.prefix, got, tc.want)
+		}
+	}
+	// "f3" without a credential of its own is evaluated for F3, and only
+	// F3 uses the reduced proword list.
+	f3 := FlowParty{Role: "Shelter", F3: true}
+	if partyCredential(f3) != "F3" || partyLevel(f3) != prowords.LevelF3 {
+		t.Errorf("an f3 party is %q at level %q", partyCredential(f3), partyLevel(f3))
+	}
+	f2 := FlowParty{Role: "Shelter", Credential: "F2"}
+	if partyCredential(f2) != "F2" || partyLevel(f2) != prowords.LevelFull {
+		t.Errorf("an F2 party is %q at level %q", partyCredential(f2), partyLevel(f2))
+	}
+	for _, tc := range []struct {
+		credential, role string
+		want             bool
+	}{
+		{"N3", "Anything", true},
+		{"", "Net Control", true},
+		{"", "net control operator", true},
+		{"F3", "Shelter", false},
+		{"", "Shelter", false},
+	} {
+		if got := isNetControl(tc.credential, tc.role); got != tc.want {
+			t.Errorf("isNetControl(%q, %q) = %v", tc.credential, tc.role, got)
+		}
+	}
+	// A Net Control credential wins over a role that merely says so.
+	parties := []FlowParty{{Role: "Net Control"}, {Role: "Shelter", Credential: "N2"}}
+	if i, ok := netControlParty(parties); !ok || i != 1 {
+		t.Errorf("netControlParty = %d, %v; want the party with the credential", i, ok)
+	}
+}

@@ -187,7 +187,7 @@ func readIncidentMessages(inc *incident.Incident) ([]*reportMessage, []string, e
 		}
 		switch role := rm.fromRole; {
 		case rm.fromPrefix != "" && prefixRole[rm.fromPrefix] != "":
-			rm.senderName = prefixRole[rm.fromPrefix] + " " + rm.fromPrefix
+			rm.senderName = PartyName(prefixRole[rm.fromPrefix], rm.fromPrefix)
 		case rm.fromPrefix != "":
 			rm.senderName = rm.fromPrefix
 		case role != "":
@@ -220,7 +220,7 @@ func readIncidentMessages(inc *incident.Incident) ([]*reportMessage, []string, e
 				}
 			}
 		case addrPrefix != "" && prefixRole[addrPrefix] != "":
-			rm.recipientName = []string{prefixRole[addrPrefix] + " " + addrPrefix}
+			rm.recipientName = []string{PartyName(prefixRole[addrPrefix], addrPrefix)}
 		case rm.toRole != "" && roleName[strings.ToLower(rm.toRole)] != "":
 			rm.recipientName = []string{roleName[strings.ToLower(rm.toRole)]}
 		case rm.toRole != "":
@@ -249,11 +249,7 @@ func credentialReach(p *PartyReport) []CredentialCheck {
 	for _, c := range ReportCredentials {
 		check := CredentialCheck{Credential: c.Code, Label: c.Label}
 		check.Missing = trafficProblems(PartyCompliance{Need: credentialNeeds[c.Code], Sent: p.Sent, Received: p.Received})
-		level := prowords.LevelFull
-		if c.Code == "F3" {
-			level = prowords.LevelF3
-		}
-		profile, _ := prowords.Profile(level)
+		profile, _ := prowords.Profile(credentialLevel(c.Code))
 		var absent []string
 		for _, cat := range profile {
 			if p.Counts[cat] == 0 {

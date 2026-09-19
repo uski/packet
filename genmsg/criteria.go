@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"slices"
-	"strings"
 )
 
 // Traffic counts messages of the kinds the Credentialing Program Handbook
@@ -224,22 +223,6 @@ func CompleteFlow(fl Flow) (Flow, int, error) {
 		fl.Messages = append(fl.Messages, msg)
 	}
 	return fl, 0, errors.New("could not add enough messages to meet the credential criteria")
-}
-
-// netControlParty returns the index of the party with a Net Control
-// credential, or else the first whose role mentions Net Control.
-func netControlParty(parties []FlowParty) (int, bool) {
-	for i, p := range parties {
-		if strings.HasPrefix(p.Credential, "N") {
-			return i, true
-		}
-	}
-	for i, p := range parties {
-		if strings.Contains(strings.ToLower(p.Role), "net control") {
-			return i, true
-		}
-	}
-	return 0, false
 }
 
 // firstShortfall finds a party short of some traffic: first any shortfall

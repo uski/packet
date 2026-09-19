@@ -42,7 +42,7 @@ func IncidentDiagram(inc *incident.Incident, name string) (Diagram, error) {
 		}
 	}
 	ncName := ""
-	for _, n := range names {
+	for _, n := range names { // a credential says so before a name does
 		if strings.HasPrefix(credentials[n], "N") {
 			ncName = n
 			break
@@ -50,7 +50,7 @@ func IncidentDiagram(inc *incident.Incident, name string) (Diagram, error) {
 	}
 	if ncName == "" {
 		for _, n := range names {
-			if strings.Contains(strings.ToLower(n), "net control") {
+			if isNetControl("", n) {
 				ncName = n
 				break
 			}

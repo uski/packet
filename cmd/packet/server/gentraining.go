@@ -321,7 +321,7 @@ func buildGenTrainingResult(applied []genmsg.Applied, specs []genmsg.MessageSpec
 	result.Messages = make([]genTrainingMessage, len(applied))
 	for j, a := range applied {
 		gm := genTrainingMessage{Ident: a.Ident, ID: a.ID, Type: a.MsgType.Name()}
-		gm.From = strings.TrimSpace(specs[j].From + " " + specs[j].FromPrefix)
+		gm.From = genmsg.PartyName(specs[j].From, specs[j].FromPrefix)
 		gm.F3 = specs[j].Level == prowords.LevelF3
 		cats := slices.Collect(maps.Keys(a.Result.Counts))
 		slices.SortFunc(cats, func(x, y prowords.Category) int {
