@@ -65,7 +65,7 @@ type info struct {
 var catalog = map[Category]info{
 	ISpell: {
 		Proword: "I SPELL",
-		Prompt:  `Include a hard-to-spell two-word proper name with both words capitalized, such as a person's full name or a street name (e.g. "Diego Marchetti", "Kaczmarek Street"), so the sender must use the I SPELL proword.`,
+		Prompt:  `Include a hard-to-spell two-word proper name with both words capitalized, such as a person's full name or a street name -- invent one of your own, not the shape shown here (e.g. "Diego Marchetti", "Kaczmarek Street") -- so the sender must use the I SPELL proword.`,
 		re:      regexp.MustCompile(`\b[A-Z][a-z]{2,}\s+[A-Z][a-z]{2,}\b`),
 	},
 	Figures: {
@@ -76,7 +76,7 @@ var catalog = map[Category]info{
 	MixedGroup: {
 		// No re: classifyGroup settles this one.
 		Proword: "MIXED GROUP",
-		Prompt:  `Include at least one group that STARTS WITH A LETTER and also holds numbers or symbols (e.g. a truck model like "F150", a call sign with a slash like "W6XRL4/VA", or "abc-123"), so the sender must use the MIXED GROUP proword.`,
+		Prompt:  `Include at least one group that STARTS WITH A LETTER and also holds numbers or symbols (a model number, a call sign with a slash, a part number: make up your own, in the shape of "F150", "W6XRL4/VA" or "abc-123"), so the sender must use the MIXED GROUP proword.`,
 	},
 	MixedGroupFigures: {
 		// No re: classifyGroup settles this one.
@@ -103,18 +103,18 @@ var catalog = map[Category]info{
 	},
 	TelephoneFigures: {
 		Proword: "TELEPHONE FIGURES",
-		Prompt:  `Include a properly formatted US phone number with area code, e.g. "408-555-1212", so the sender must use the TELEPHONE FIGURES proword.`,
+		Prompt:  `Include a properly formatted US phone number with area code, in the 555 exchange reserved for fiction but with digits of your own, in the shape of "408-555-1212", so the sender must use the TELEPHONE FIGURES proword.`,
 		re:      regexp.MustCompile(`\b\d{3}[-.]?\d{3}[-.]?\d{4}\b|\(\d{3}\)\s?\d{3}-\d{4}`),
 	},
 	AmateurCall: {
 		Proword: "AMATEUR CALL",
-		Prompt:  `Include a fictitious amateur radio call sign that ends with a digit, so it can't be anyone's real call sign (e.g. "W6XRL4", "K6ABC2"), so the sender must use the AMATEUR CALL proword.`,
+		Prompt:  `Include a fictitious amateur radio call sign that ends with a digit, so it can't be anyone's real call sign: make up your own letters and digits, in the shape of "W6XRL4" or "K6ABC2", and use a different one in each message, so the sender must use the AMATEUR CALL proword.`,
 		// A real call sign, or a fictitious one with a trailing digit.
 		re: regexp.MustCompile(`\b[AKNW][A-Z]?\d[A-Z]{1,3}\d?\b`),
 	},
 	EmailAddress: {
 		Proword: "EMAIL ADDRESS",
-		Prompt:  `Include a plausible email address, so the sender must use the EMAIL ADDRESS proword. ALWAYS use "@xanadu-city.org" as the domain (e.g. "harry@xanadu-city.org") -- never a real-world domain like gmail.com or aol.com.`,
+		Prompt:  `Include a plausible email address, so the sender must use the EMAIL ADDRESS proword. ALWAYS use "@xanadu-city.org" as the domain, with a name of your own before the @ (in the shape of "harry@xanadu-city.org") -- never a real-world domain like gmail.com or aol.com.`,
 		re:      regexp.MustCompile(`\S+@\S+\.\S+`),
 	},
 	Punctuation: {

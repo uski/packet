@@ -76,6 +76,7 @@ func buildBriefPrompt(req Request) string {
 		"1. The incident: what happened, where, and when.\n" +
 		"2. Shared facts every message must agree on: names of people, places and addresses, quantities, times, amateur call signs, and the specific details that make requests realistic (e.g. a generator's make, model number, and power rating). Use only the xanadu-city.org domain for any email or web address, and only fictitious call signs ending with a digit, like W6XRL4, never a real call sign.\n" +
 		"   " + varietyPrompt + "\n" +
+		"   " + exampleRulePrompt + "\n" +
 		"   " + fictionalPlacesPrompt + "\n" +
 		"   " + contentRulesPrompt + "\n" +
 		"3. One line per message saying specifically what it reports, requests, or answers, so each reply answers what was actually asked (nothing for a message sent as is).\n" +
@@ -140,13 +141,19 @@ func inventedScenario() string {
 // request over and over, whatever the incident is.
 const varietyPrompt = `Vary what the messages are about. Emergency traffic covers far more than generators and cots: staffing and relief, transport, fuel, food and water, medical supplies, sanitation, power and batteries, shelter capacity, animal sheltering, interpreters, accessibility needs, security, road and bridge status, debris clearance, utility restoration, welfare inquiries, equipment repair, deliveries, volunteers, damage assessment, evacuation routes, traffic control, and radio equipment. Give each message its own subject, fitting the incident and the party sending it, rather than repeating one subject across the exercise.`
 
+// exampleRulePrompt keeps the examples in these instructions from becoming
+// the content of every message: a model given an illustration tends to use
+// it, so the same names, streets and equipment came back exercise after
+// exercise.
+const exampleRulePrompt = `Every example in these instructions shows the SHAPE of what is wanted, never the content to use. Do not copy one into a message: invent your own each time -- your own people, streets, buildings, equipment and model numbers, quantities, call signs and phone numbers -- and make them different from the ones in the exercise's other messages. Two things alone are fixed: the xanadu-city.org domain for email and web addresses, and the call sign format (a real-looking call sign with one extra digit).`
+
 // contentRulesPrompt gives rules for what exercise traffic may contain.
 const contentRulesPrompt = `Never mention an amateur radio frequency (no frequencies, repeaters, or channels in MHz or kHz). Every web address (URL) MUST start with "https://".`
 
 // realismPrompt asks for the specific details real requests and reports
 // carry. Such details (model numbers, ratings) also tend to call for mixed
 // group and figures prowords naturally.
-const realismPrompt = `Make every message realistic, with the specific details a real served agency would give so the recipient can act on it: when asking for or reporting equipment or supplies, identify them precisely -- e.g. a generator with its make, model number, or power rating ("Honda EU7000is, 7 kW"), cots or blankets with a quantity and type, a pump with its capacity, a vehicle with its type and unit number -- and give realistic-looking places (street addresses, cross streets, building and room names, following the place rules below), quantities with units, and names of responsible people. Keep these details plausible, and within the word budget.`
+const realismPrompt = `Make every message realistic, with the specific details a real served agency would give so the recipient can act on it: when asking for or reporting equipment or supplies, identify them precisely: a generator by its make, model number and power rating, cots or blankets by quantity and type, a pump by its capacity, a vehicle by its type and unit number, each made up by you -- and give realistic-looking places (street addresses, cross streets, building and room names, following the place rules below), quantities with units, and names of responsible people. Keep these details plausible, and within the word budget.`
 
 // sharedPrompt returns the part of the prompt that is the same for every
 // message of a batch -- the scenario, the rules, and how to meet each proword
@@ -165,7 +172,7 @@ func sharedPrompt(req Request, brief string) string {
 		fmt.Fprintf(&b, "The incident takes place on %s; any date a message mentions must be consistent with that. Date and time fields are filled in separately, so they aren't listed.\n\n", date)
 	}
 	b.WriteString("Messages may be different form types with different fields (a training session can mix, for example, an ICS-213, a plain text message, and a Road Closure form). Weave each message's listed requirements naturally into that message's own field values -- they must fit the scenario and read like real, professional emergency radio traffic, not like a checklist. Proword content in ANY field counts, so each requirement only needs to be met ONCE, in the single field that suits it best (a person's name in a name field, an email address or phone number in a contact field) -- never repeat it in another field, and never add a sentence to the free-text body just to carry it (e.g. not \"Contact Jane Doe at jane@xanadu-city.org for logistics.\" when there are name and contact fields to hold them). Requirements already satisfied by pre-filled fields have been left out. Fill each form the way a trained operator fills out the real form: put every piece of information in the field made for it -- for example each requested item in its own item row (Item 1's name and quantity, then Item 2's), a person in a name field, a phone number in a phone field -- and use a free-text field such as Comments or Special Instructions only for information no other field holds, never to restate other fields (e.g. not \"Need 50 blankets, generator\" in Comments when the form has item fields). A subject, title, or summary field is only a short headline of a few words: the message's details go in its message body or the form's other fields, never in the subject.\n")
-	b.WriteString(realismPrompt + "\n\n" + varietyPrompt + "\n\n" + fictionalPlacesPrompt + "\n\n" + contentRulesPrompt + "\n\n")
+	b.WriteString(realismPrompt + "\n\n" + varietyPrompt + "\n\n" + fictionalPlacesPrompt + "\n\n" + contentRulesPrompt + "\n\n" + exampleRulePrompt + "\n\n")
 	b.WriteString("How to meet each proword requirement a message lists:\n")
 	full, _ := prowords.Profile(prowords.LevelFull)
 	for _, cat := range full {

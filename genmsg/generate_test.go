@@ -306,12 +306,16 @@ func TestInventedScenariosVary(t *testing.T) {
 			t.Errorf("scenario without the fictitious city: %q", s)
 		}
 	}
-	// And the messages of one exercise are told to differ from each other.
+	// And the messages of one exercise are told to differ from each other,
+	// and not to reuse the examples the instructions illustrate with.
 	mt := formType(t, "ICS213")
 	req := Request{Messages: []MessageSpec{{MsgType: mt}, {MsgType: mt}}}
 	for name, prompt := range map[string]string{"message": sharedPrompt(req, ""), "brief": buildBriefPrompt(req)} {
 		if !strings.Contains(prompt, "Vary what the messages are about") {
 			t.Errorf("the %s prompt doesn't ask for variety", name)
+		}
+		if !strings.Contains(prompt, "shows the SHAPE of what is wanted, never the content to use") {
+			t.Errorf("the %s prompt doesn't say the examples are not the content", name)
 		}
 	}
 }
