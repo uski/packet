@@ -1,6 +1,8 @@
 package genmsg
 
 import (
+	"iter"
+
 	"github.com/rothskeller/packet/v4/message"
 	"github.com/rothskeller/packet/v4/message/field"
 )
@@ -157,26 +159,38 @@ func FindFieldByCommon(msg message.Message, common string) field.Field {
 // need to be redundantly woven into the free-text body too.
 func AllFieldValues(msg message.Message) map[string]string {
 	values := make(map[string]string)
-	for f := range msg.Fields() {
-		// Administrative fields (dates, times, operator and envelope
-		// data) aren't message content, and ICS position/location role
-		// names like "Shelter Manager" would falsely read as I SPELL
-		// names, so neither counts toward proword coverage.
-		if skipCommon[f.Common()] || shortNameField[f.Common()] {
-			continue
-		}
-		key := f.Tag()
-		if key == "" {
-			key = f.Common()
-		}
-		if key == "" {
+	for f := range contentFields(msg) {
+		// ICS position and location role names like "Shelter Manager"
+		// would falsely read as I SPELL names, so they don't count
+		// toward proword coverage either.
+		if shortNameField[f.Common()] {
 			continue
 		}
 		if v := f.Value(msg); v != "" {
-			values[key] = v
+			values[fieldKey(f)] = v
 		}
 	}
 	return values
+}
+
+// contentFields iterates the fields of msg that hold message content: all
+// of them but the administrative ones the incident fills in itself (message
+// numbers, dates, times, operator and envelope data, see skipCommon) and
+// any with no key to name them by. Callers add their own rule on top: what
+// counts toward proword coverage leaves out the party names as well
+// (AllFieldValues, ProwordFields), and what counts toward the word budget
+// leaves out dates and times (messageWordCount).
+func contentFields(msg message.Message) iter.Seq[field.Field] {
+	return func(yield func(field.Field) bool) {
+		for f := range msg.Fields() {
+			if fieldKey(f) == "" || skipCommon[f.Common()] {
+				continue
+			}
+			if !yield(f) {
+				return
+			}
+		}
+	}
 }
 
 // setFieldValues writes each non-empty entry of values onto msg, keyed the

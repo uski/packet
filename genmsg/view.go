@@ -22,10 +22,7 @@ type FieldProwords struct {
 func ProwordFields(msg message.Message) []FieldProwords {
 	var out []FieldProwords
 	contentless := IsContentlessType(msg.Type())
-	for f := range msg.Fields() {
-		if fieldKey(f) == "" || skipCommon[f.Common()] {
-			continue
-		}
+	for f := range contentFields(msg) {
 		v := f.Value(msg)
 		if v == "" {
 			continue

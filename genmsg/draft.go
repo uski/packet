@@ -289,11 +289,10 @@ func anyChecked(msg message.Message, specs []FieldSpec) bool {
 // incident fills in and date/time stamps.
 func messageWordCount(msg message.Message) int {
 	var n int
-	for f := range msg.Fields() {
-		if fieldKey(f) == "" || skipCommon[f.Common()] || !f.Settable() {
-			continue
-		}
-		if isDateOrTime(f) {
+	for f := range contentFields(msg) {
+		// Dates and times are the tool's to fill, and a field nobody
+		// can set can't be shortened.
+		if !f.Settable() || isDateOrTime(f) {
 			continue
 		}
 		n += len(strings.Fields(f.Value(msg)))
