@@ -520,3 +520,51 @@ func TestMessageTime(t *testing.T) {
 		t.Error("an invalid time should be rejected")
 	}
 }
+
+// TestICSPositionsComeFromTheForm verifies that a message's To ICS Position
+// is one of the positions its form names, matching the party's role when it
+// fits, and that a form naming none takes the role as it is.
+func TestICSPositionsComeFromTheForm(t *testing.T) {
+	inc := draftTestIncident(t)
+	formType(t, "ICS213")
+	position := func(tag, to string) string {
+		t.Helper()
+		mt, ok := FindMsgType(tag)
+		if !ok {
+			t.Skipf("%s not registered", tag)
+		}
+		draft, err := buildDraft(inc, MessageSpec{MsgType: mt, From: "Shelter Manager", To: to}, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return commonValue(draft, "toICSPosition")
+	}
+	for _, tc := range []struct{ tag, to, want string }{
+		// The ICS-213 names no positions, so the party's role stands.
+		{"ICS213", "Net Control", "Net Control"},
+		{"ICS213", "All Stations", "All Stations"},
+		// These forms do, so one of theirs is used: the role when it
+		// fits, and the form's own unit when it doesn't.
+		{"Shelter", "Net Control", "Care & Shelter Unit"},
+		{"Shelter", "Care & Shelter Unit", "Care & Shelter Unit"},
+		{"Shelter", "operations", "Operations"},
+		{"RoadCl", "Net Control", "Public Works Group"},
+		{"ResReq", "Logistics", "Logistics"},
+		// A shared structural word is not a match ("Unit" is not a
+		// position), so the form's own comes through.
+		{"RACES-MAR", "Care & Shelter Unit", "RACES Chief Radio Officer"},
+	} {
+		if got := position(tc.tag, tc.to); got != tc.want {
+			t.Errorf("%s to %q = %q, want %q", tc.tag, tc.to, got, tc.want)
+		}
+	}
+	// The sender's own position is the party's role: no form suggests one.
+	mt, _ := FindMsgType("Shelter")
+	draft, err := buildDraft(inc, MessageSpec{MsgType: mt, From: "Shelter Manager", To: "Net Control"}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := commonValue(draft, "fromICSPosition"); got != "Shelter Manager" {
+		t.Errorf("from = %q, want the party's role", got)
+	}
+}

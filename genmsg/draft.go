@@ -318,10 +318,70 @@ func applyPartyFields(draft *message.DraftMessage, m MessageSpec) {
 			f.SetValue(draft, f.FromHuman(draft, value))
 		}
 	}
-	set("fromICSPosition", m.From)
+	set("fromICSPosition", icsPosition(draft, "fromICSPosition", m.From))
 	set("fromLocation", m.FromLocation)
-	set("toICSPosition", m.To)
+	set("toICSPosition", icsPosition(draft, "toICSPosition", m.To))
 	set("toLocation", m.ToLocation)
+}
+
+// icsPosition returns the ICS position to put in a message's From or To
+// field for a party whose role is role. Most forms name the positions they
+// are meant to pass between -- a Shelter form goes to the Care & Shelter
+// Unit, a Road Closure form to the Public Works Group -- and a message must
+// use one of them, so the role is matched against them and the form's own
+// first choice (the unit the form is for) stands in when it matches none.
+// A form that names no positions, such as the ICS-213, takes the role as
+// it is.
+func icsPosition(draft *message.DraftMessage, common, role string) string {
+	f := FindFieldByCommon(draft, common)
+	if f == nil || role == "" {
+		return role
+	}
+	var choices []string
+	for _, c := range f.Choices(draft) {
+		if c.Human != "" {
+			choices = append(choices, c.Human)
+		}
+	}
+	if len(choices) == 0 {
+		return role
+	}
+	return bestChoice(role, choices)
+}
+
+// bestChoice returns the choice that fits role best: the same words if one
+// has them, else one that contains the role or is contained in it, else one
+// sharing a significant word with it, else the first, which is the most
+// specific position the form names.
+func bestChoice(role string, choices []string) string {
+	want := strings.ToLower(strings.TrimSpace(role))
+	for _, c := range choices {
+		if strings.EqualFold(strings.TrimSpace(c), want) {
+			return c
+		}
+	}
+	for _, c := range choices {
+		lc := strings.ToLower(c)
+		if strings.Contains(lc, want) || strings.Contains(want, lc) {
+			return c
+		}
+	}
+	for _, c := range choices {
+		for _, word := range strings.Fields(want) {
+			if len(word) > 3 && !positionStructureWords[word] && strings.Contains(strings.ToLower(c), word) {
+				return c
+			}
+		}
+	}
+	return choices[0]
+}
+
+// positionStructureWords are the words that say where a position sits in
+// the ICS structure rather than what it does, so two positions sharing one
+// are not the same position ("Care & Shelter Unit" is not "RACES Unit").
+var positionStructureWords = map[string]bool{
+	"unit": true, "group": true, "branch": true, "section": true,
+	"division": true, "team": true, "spec.": true, "&": true,
 }
 
 // handlingCommon are the common names of the fields holding a message's

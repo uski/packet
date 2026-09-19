@@ -74,7 +74,7 @@ Subject: ...
 <button type=button id=mpsave>Save scenario…</button>
 <button type=button id=mpuml title="Save as a sequence diagram for sequencediagram.org">Export UML…</button>
 <button type=button id=mpview>View diagram…</button>
-<input type=file id=mploadfile accept=.json,application/json hidden></div><p>Parties in this exchange:<div id=mpparties></div><template id=mppartytmpl><div class=mprow><label class=mpfield>Role<input class=mp-role placeholder="e.g. Net Control"></label>
+<input type=file id=mploadfile accept=.json,application/json hidden></div><p>Parties in this exchange:<div id=mpparties></div><template id=mppartytmpl><div class=mprow><label class=mpfield title="The party's ICS position, which goes in the From and To of its messages. A form that names the positions it is passed between uses the closest of those instead.">Role (ICS position)<input class=mp-role placeholder="e.g. Shelter Manager"></label>
 <label class=mpfield>Location<input class=mp-location placeholder="e.g. County EOC (optional)"></label>
 <label class=mpfield>Msg # prefix<input class=mp-prefix maxlength=3 placeholder="e.g. S24" autocapitalize=characters></label>
 <label class=mpfield title="Who hands this party's messages to its operator, and receives those delivered to it (for the diagram only)">Principal<input class=mp-principal placeholder="e.g. FieldMgr"></label>
