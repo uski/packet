@@ -66,7 +66,7 @@ type FlowMessage struct {
 	// who should send them in handling order (immediate first).
 	Group int `json:"group,omitempty"`
 	// Event, if not empty, makes this entry a scenario event instead of a
-	// message (see FlowEvents): something shown on the diagram but never
+	// message (see flowEvents): something shown on the diagram but never
 	// generated, such as opening the net. The other fields but Text are
 	// then ignored.
 	Event string `json:"event,omitempty"`
@@ -84,8 +84,8 @@ type FlowMessage struct {
 	Text string `json:"text,omitempty"`
 }
 
-// FlowEvents lists the kinds of flow events, with their default text.
-var FlowEvents = []struct{ Kind, Label, Text string }{
+// flowEvents lists the kinds of flow events, with their default text.
+var flowEvents = []struct{ Kind, Label, Text string }{
 	{"note", "Note", ""},
 	{"open-net", "Open net", "Open Net"},
 	{"check-ins", "Check-ins (voice)", "Check In"},
@@ -98,7 +98,7 @@ var FlowEvents = []struct{ Kind, Label, Text string }{
 
 // eventText returns the text of event fm, or "" if fm isn't a known event.
 func eventText(fm FlowMessage) (string, bool) {
-	for _, e := range FlowEvents {
+	for _, e := range flowEvents {
 		if e.Kind == fm.Event {
 			if t := strings.TrimSpace(fm.Text); t != "" {
 				return t, true
@@ -112,7 +112,7 @@ func eventText(fm FlowMessage) (string, bool) {
 // flowTime returns fm's time as HH:MM, or "" if it has none (or an invalid
 // one, which flowSenders rejects).
 func flowTime(fm FlowMessage) string {
-	t, _ := NormalizeTime(fm.Time)
+	t, _ := normalizeTime(fm.Time)
 	return t
 }
 
@@ -223,10 +223,10 @@ func flowSenders(fl Flow) ([][]int, error) {
 		if fm.ReplyTo > 0 && isEvent(fl.Messages[fm.ReplyTo-1]) {
 			return nil, fmt.Errorf("message %d: entry %d it replies to is an event, not a message", i+1, fm.ReplyTo)
 		}
-		if fm.Handling != "" && NormalizeHandling(fm.Handling) == "" {
+		if fm.Handling != "" && normalizeHandling(fm.Handling) == "" {
 			return nil, fmt.Errorf("message %d: invalid handling order %q (use R, P, or I)", i+1, fm.Handling)
 		}
-		if _, err := NormalizeTime(fm.Time); err != nil {
+		if _, err := normalizeTime(fm.Time); err != nil {
 			return nil, fmt.Errorf("message %d: %s", i+1, err)
 		}
 		if fm.Group < 0 {
@@ -348,7 +348,7 @@ func ResolveFlow(fl Flow) ([]MessageSpec, error) {
 				Purpose:      flowPurpose(fm),
 				Level:        partyLevel(fl.Parties[p]),
 				Date:         date,
-				Handling:     NormalizeHandling(fm.Handling),
+				Handling:     normalizeHandling(fm.Handling),
 				Time:         flowTime(fm),
 				Packet:       fl.Packet,
 				MsgNo:        msgNos[i][k],

@@ -12,7 +12,7 @@ func TestPlanEveryCategoryPlaced(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, count := range []int{1, 3, len(profile), len(profile) * 2} {
-		plans, unfit := Plan(profile, count)
+		plans, unfit := planCategories(profile, count)
 		if len(unfit) != 0 {
 			t.Errorf("count=%d: unexpected unfit categories: %v", count, unfit)
 		}
@@ -35,7 +35,7 @@ func TestPlanEveryCategoryPlaced(t *testing.T) {
 
 func TestPlanCommonCategoriesInEveryMessage(t *testing.T) {
 	profile, _ := prowords.Profile(prowords.LevelFull)
-	plans, _ := Plan(profile, 4)
+	plans, _ := planCategories(profile, 4)
 	for i, p := range plans {
 		has := map[prowords.Category]bool{}
 		for _, c := range p.Categories {
@@ -51,7 +51,7 @@ func TestPlanCommonCategoriesInEveryMessage(t *testing.T) {
 
 func TestPlanZeroCount(t *testing.T) {
 	profile, _ := prowords.Profile(prowords.LevelF3)
-	plans, unfit := Plan(profile, 0)
+	plans, unfit := planCategories(profile, 0)
 	if plans != nil {
 		t.Errorf("expected nil plans for count=0, got %v", plans)
 	}

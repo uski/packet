@@ -150,11 +150,11 @@ type Result struct {
 	Words         int // total words across the message's content fields
 }
 
-// DrillTrafficPhrase is the fixed marker every generated message must
+// drillTrafficPhrase is the fixed marker every generated message must
 // contain somewhere in its content, so it's unmistakably training/exercise
 // traffic rather than a real report. Apply guarantees its presence
 // deterministically (see ensureDrillTraffic), rather than only asking for
 // it in the prompt: a plain, fixed literal like this doesn't need an LLM's
 // creativity, and guessing wrong here would be a training-safety issue, not
 // just a cosmetic one.
-const DrillTrafficPhrase = "This is drill traffic"
+const drillTrafficPhrase = "This is drill traffic"

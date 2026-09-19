@@ -10,7 +10,7 @@ import (
 )
 
 func TestParseResponse(t *testing.T) {
-	specs := []FieldSpec{{Tag: "10."}, {Tag: "12."}}
+	specs := []fieldSpec{{Tag: "10."}, {Tag: "12."}}
 	// Claude answers with an array; any object past the one message asked
 	// for is ignored, as is a field the message doesn't have.
 	text := `[{"10.":"Road closure","12.":"Main St is closed near 5th.","bogus":"dropped"},{"body":"Body two."}]`
@@ -44,7 +44,7 @@ func TestParseResponseInvalidJSON(t *testing.T) {
 }
 
 func TestParseResponseRestrictedChoice(t *testing.T) {
-	specs := []FieldSpec{{Tag: "5.", Label: "Handling", Choices: []string{"ROUTINE", "PRIORITY", "IMMEDIATE"}}}
+	specs := []fieldSpec{{Tag: "5.", Label: "Handling", Choices: []string{"ROUTINE", "PRIORITY", "IMMEDIATE"}}}
 
 	// Exact match passes through unchanged.
 	out, invalid, err := parseResponse(`[{"5.":"PRIORITY"}]`, specs)
@@ -79,7 +79,7 @@ func TestParseResponseRestrictedChoice(t *testing.T) {
 }
 
 func TestParseResponseCheckbox(t *testing.T) {
-	specs := []FieldSpec{
+	specs := []fieldSpec{
 		{Tag: "a", Label: "A", Choices: []string{"checked"}},
 		{Tag: "b", Label: "B", Choices: []string{"checked"}},
 		{Tag: "c", Label: "C", Choices: []string{"checked"}},
@@ -227,7 +227,7 @@ func TestFieldLabels(t *testing.T) {
 	if got := fieldLabels(nil); got != nil {
 		t.Errorf("fieldLabels(nil) = %v, want nil", got)
 	}
-	specs := []FieldSpec{{Tag: "5.", Label: "Handling"}, {Tag: "10.", Label: "Subject"}}
+	specs := []fieldSpec{{Tag: "5.", Label: "Handling"}, {Tag: "10.", Label: "Subject"}}
 	got := fieldLabels(specs)
 	want := []string{"Handling", "Subject"}
 	if len(got) != len(want) || got[0] != want[0] || got[1] != want[1] {

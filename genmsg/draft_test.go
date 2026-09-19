@@ -39,8 +39,8 @@ func formType(t *testing.T, tag string) message.EditableMType {
 
 func sitRepType(t *testing.T) message.EditableMType { return formType(t, "SitRep") }
 
-func specsByTag(specs []FieldSpec) map[string]FieldSpec {
-	m := make(map[string]FieldSpec, len(specs))
+func specsByTag(specs []fieldSpec) map[string]fieldSpec {
+	m := make(map[string]fieldSpec, len(specs))
 	for _, s := range specs {
 		m[s.Tag] = s
 	}
@@ -54,7 +54,7 @@ func TestPromptFieldsResourceRequestOffersEveryItemRow(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	specs, _ := PromptFields(draft, nil)
+	specs, _ := promptFields(draft, nil)
 	byTag := specsByTag(specs)
 	if s, ok := byTag["23n."]; !ok || s.Optional {
 		t.Error("Item 1's name (23n.) is required and should be a MUST field")
@@ -82,8 +82,8 @@ func TestShelterRequiredCheckboxGroupIsSurfaced(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	specs, _ := PromptFields(draft, nil)
-	var group []FieldSpec
+	specs, _ := promptFields(draft, nil)
+	var group []fieldSpec
 	for _, s := range specs {
 		if s.Group == "24. Type" {
 			group = append(group, s)
@@ -100,7 +100,7 @@ func TestShelterRequiredCheckboxGroupIsSurfaced(t *testing.T) {
 	if labels := fieldLabels(problemSpecs(draft)); !slices.Contains(labels, "24. Type") {
 		t.Errorf("the unchecked required group should be reported once by its label, got %v", labels)
 	}
-	prompt := buildPrompt(Request{Messages: []MessageSpec{spec}}, "", [][]FieldSpec{specs}, make([]Result, 1), 0, MessagePlan{}, make([]map[prowords.Category]string, 1), make([]int, 1), false)
+	prompt := buildPrompt(Request{Messages: []MessageSpec{spec}}, "", [][]fieldSpec{specs}, make([]Result, 1), 0, messagePlan{}, make([]map[prowords.Category]string, 1), make([]int, 1), false)
 	if !strings.Contains(prompt, `"24. Type": check AT LEAST ONE of these checkboxes`) {
 		t.Errorf("prompt should ask for at least one checkbox of the group:\n%s", prompt)
 	}
@@ -122,7 +122,7 @@ func TestLongFormMustCheckOneCheckbox(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	specs, _ := PromptFields(draft, nil)
+	specs, _ := promptFields(draft, nil)
 	if n := countCheckboxes(specs); n < manyCheckboxes {
 		t.Fatalf("CPOD site form has %d checkboxes, want at least %d", n, manyCheckboxes)
 	}
@@ -146,7 +146,7 @@ func TestLongFormMustCheckOneCheckbox(t *testing.T) {
 	if !checked {
 		t.Error("checking a checkbox should be detected")
 	}
-	prompt := buildPrompt(Request{Messages: []MessageSpec{spec}}, "", [][]FieldSpec{specs}, make([]Result, 1), 0, MessagePlan{CheckOne: true, CheckOneUnmet: true}, make([]map[prowords.Category]string, 1), make([]int, 1), true)
+	prompt := buildPrompt(Request{Messages: []MessageSpec{spec}}, "", [][]fieldSpec{specs}, make([]Result, 1), 0, messagePlan{CheckOne: true, CheckOneUnmet: true}, make([]map[prowords.Category]string, 1), make([]int, 1), true)
 	if !strings.Contains(prompt, "NOT MET IN YOUR PREVIOUS VERSION: Check at least one checkbox") {
 		t.Errorf("revision prompt should flag the unchecked checkbox requirement:\n%s", prompt)
 	}
@@ -172,7 +172,7 @@ func TestBuildDraftClearsIncidentDefaultBody(t *testing.T) {
 	if got := FindField(draft, "12.").Value(draft); got != "" {
 		t.Errorf("message body = %q, want the incident's default body cleared", got)
 	}
-	specs, _ := PromptFields(draft, nil)
+	specs, _ := promptFields(draft, nil)
 	if s, ok := specsByTag(specs)["12."]; !ok || s.Optional {
 		t.Error("the required message body should be a MUST field for Claude, not hidden as already filled")
 	}
@@ -260,12 +260,12 @@ func TestSetFieldValuesKeepsLaterItemRows(t *testing.T) {
 
 func TestBuildPromptSeparatesOptionalFields(t *testing.T) {
 	req := Request{Messages: []MessageSpec{{MsgType: message.PlainMessage}}}
-	specs := [][]FieldSpec{{
+	specs := [][]fieldSpec{{
 		{Tag: "23n.", Label: "Item 1: Item Name", Required: true},
 		{Tag: "24n.", Label: "Item 2: Item Name", Optional: true},
 		{Tag: "60.", Label: "Comments", Multiline: true, Optional: true},
 	}}
-	prompt := buildPrompt(req, "", specs, make([]Result, 1), 0, MessagePlan{}, make([]map[prowords.Category]string, 1), make([]int, 1), false)
+	prompt := buildPrompt(req, "", specs, make([]Result, 1), 0, messagePlan{}, make([]map[prowords.Category]string, 1), make([]int, 1), false)
 	must := strings.Index(prompt, "Fields you MUST fill in")
 	other := strings.Index(prompt, "Other fields on this form")
 	if must < 0 || other < must {
@@ -312,7 +312,7 @@ func TestPromptFieldsSitRepCommentsAreOptional(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	specs, _ := PromptFields(draft, nil)
+	specs, _ := promptFields(draft, nil)
 	byTag := specsByTag(specs)
 	if s, ok := byTag["22."]; !ok || s.Optional {
 		t.Error("required Incident Name (22.) should be a MUST field")
@@ -328,7 +328,7 @@ func TestProblemSpecsReportsEmptyRequiredFields(t *testing.T) {
 	mt := sitRepType(t)
 	inc := draftTestIncident(t)
 	spec := MessageSpec{MsgType: mt}
-	find := func(specs []FieldSpec, tag string) *FieldSpec {
+	find := func(specs []fieldSpec, tag string) *fieldSpec {
 		for i := range specs {
 			if specs[i].Tag == tag {
 				return &specs[i]
@@ -393,7 +393,7 @@ func TestBuildDraftIncidentDate(t *testing.T) {
 			t.Errorf("a blank time field shouldn't be reported for revision, got %+v", p)
 		}
 	}
-	specs, _ := PromptFields(draft, nil)
+	specs, _ := promptFields(draft, nil)
 	for _, s := range specs {
 		if s.DateTime {
 			t.Errorf("date/time field %q shouldn't be offered to Claude", s.Tag)
@@ -470,8 +470,8 @@ func TestHandlingIsTheTools(t *testing.T) {
 			t.Errorf("%s has no handling field", tag)
 		}
 	}
-	if NormalizeHandling(" priority ") != "P" || NormalizeHandling("x") != "" {
-		t.Error("NormalizeHandling")
+	if normalizeHandling(" priority ") != "P" || normalizeHandling("x") != "" {
+		t.Error("normalizeHandling")
 	}
 }
 
@@ -494,13 +494,13 @@ func TestMessageTime(t *testing.T) {
 	}
 
 	for in, want := range map[string]string{"": "", "9:05": "09:05", "0905": "09:05", " 23:59 ": "23:59"} {
-		if got, err := NormalizeTime(in); err != nil || got != want {
-			t.Errorf("NormalizeTime(%q) = %q, %v; want %q", in, got, err, want)
+		if got, err := normalizeTime(in); err != nil || got != want {
+			t.Errorf("normalizeTime(%q) = %q, %v; want %q", in, got, err, want)
 		}
 	}
 	for _, in := range []string{"24:00", "12:60", "noon", "1:2"} {
-		if _, err := NormalizeTime(in); err == nil {
-			t.Errorf("NormalizeTime(%q) should fail", in)
+		if _, err := normalizeTime(in); err == nil {
+			t.Errorf("normalizeTime(%q) should fail", in)
 		}
 	}
 

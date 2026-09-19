@@ -116,14 +116,14 @@ func sharedPrompt(req Request, brief string) string {
 	for _, cat := range full {
 		fmt.Fprintf(&b, "  - %s: %s\n", prowords.ProwordName(cat), prowords.Prompt(cat))
 	}
-	fmt.Fprintf(&b, "\nEvery message must also include the exact phrase %q somewhere in its content, to clearly mark it as training/exercise traffic rather than a real report.\n\n", DrillTrafficPhrase)
+	fmt.Fprintf(&b, "\nEvery message must also include the exact phrase %q somewhere in its content, to clearly mark it as training/exercise traffic rather than a real report.\n\n", drillTrafficPhrase)
 	b.WriteString("Respond with ONLY a JSON array holding one object per requested message, in the order they are listed, each mapping THAT message's own field tags to their string values. Keep every message SHORT: real emergency radio traffic is deliberately terse, and each message's word budget covers ALL of its fields together, so a free-text field should be one or two short sentences at most -- include only what's needed to satisfy the listed requirements. Only use the field tags listed for each message: give every MUST field a non-empty value, fill an optional field only when the message's information belongs there, and never add other keys. For any field marked as a dropdown, its value must be one of the listed choices, verbatim -- do not invent your own wording for it. Everywhere else, use normal sentence capitalization: capitalize only the first word of a sentence or phrase, proper names, and acronyms, and never Title Case ordinary words (write \"Generator runtime is 8 hours\", not \"Generator Runtime is 8 hours\"), because capitalized ordinary words read as names that call for I SPELL. Every amateur radio call sign, anywhere in a message (including inside email and packet addresses), must be fictitious so it can't belong to a real station: write it in the format of a real call sign followed by one extra digit, like \"W6XRL4\" or \"K6ABC2\", never a real-format call sign like \"KJ6ABC\". Before answering, check your values against every requirement and the word budget.\n")
 	return b.String()
 }
 
 // messagePrompt returns the part of the prompt describing the pending
 // messages themselves (see buildPrompt), which follows sharedPrompt.
-func messagePrompt(req Request, specsPerMsg [][]FieldSpec, results []Result, idx int, plan MessagePlan, routedPerMsg []map[prowords.Category]string, baseWords []int, isRepair bool) string {
+func messagePrompt(req Request, specsPerMsg [][]fieldSpec, results []Result, idx int, plan messagePlan, routedPerMsg []map[prowords.Category]string, baseWords []int, isRepair bool) string {
 	var b strings.Builder
 	b.WriteString("\nGenerate exactly 1 message(s), described below in order.\n\n")
 	{
@@ -201,7 +201,7 @@ func messagePrompt(req Request, specsPerMsg [][]FieldSpec, results []Result, idx
 			}
 			b.WriteString("\n")
 		}
-		var optional []FieldSpec
+		var optional []fieldSpec
 		for _, s := range specsPerMsg[idx] {
 			if s.Optional {
 				optional = append(optional, s)
@@ -284,7 +284,7 @@ func messagePrompt(req Request, specsPerMsg [][]FieldSpec, results []Result, idx
 // whole prompt. Generate sends the two separately, so that the shared half
 // is cached across the batch's calls; this is for tests, which check the
 // prompt a message gets as a whole.
-func buildPrompt(req Request, brief string, specsPerMsg [][]FieldSpec, results []Result, idx int, plan MessagePlan, routedPerMsg []map[prowords.Category]string, baseWords []int, isRepair bool) string {
+func buildPrompt(req Request, brief string, specsPerMsg [][]fieldSpec, results []Result, idx int, plan messagePlan, routedPerMsg []map[prowords.Category]string, baseWords []int, isRepair bool) string {
 	return sharedPrompt(req, brief) + messagePrompt(req, specsPerMsg, results, idx, plan, routedPerMsg, baseWords, isRepair)
 }
 

@@ -65,13 +65,13 @@ func IsContentlessType(t message.MType) bool {
 	return ok && contentlessTypes[strings.ToLower(emt.CreateTag())]
 }
 
-// messageCounts counts the prowords in msg's content (see AllFieldValues);
+// messageCounts counts the prowords in msg's content (see allFieldValues);
 // a contentless message (see IsContentlessType) has none.
 func messageCounts(msg message.Message) map[prowords.Category]int {
 	if IsContentlessType(msg.Type()) {
 		return map[prowords.Category]int{}
 	}
-	return prowords.CountFields(AllFieldValues(msg))
+	return prowords.CountFields(allFieldValues(msg))
 }
 
 // typeAbbrev returns the short name of message type mt: its form tag, as

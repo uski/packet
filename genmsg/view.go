@@ -15,7 +15,7 @@ type FieldProwords struct {
 
 // ProwordFields returns the filled-in fields of msg in form order, each with
 // the proword usages in its value, found and counted the same way as a
-// generated message's proword table (see AllFieldValues). Administrative
+// generated message's proword table (see allFieldValues). Administrative
 // fields are left out, and ICS position and location names are shown
 // without matches, as is every field of a check-in or check-out message
 // (see IsContentlessType).

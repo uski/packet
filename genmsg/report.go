@@ -145,9 +145,9 @@ func readIncidentMessages(inc *incident.Incident) ([]*reportMessage, []string, e
 		if le.Status == incident.StatusReceived {
 			rm.id = le.FromMsgID
 		}
-		rm.handling = NormalizeHandling(commonValue(msg, "handling"))
+		rm.handling = normalizeHandling(commonValue(msg, "handling"))
 		if rm.handling == "" {
-			rm.handling = NormalizeHandling(commonValue(msg, "subjectHandling"))
+			rm.handling = normalizeHandling(commonValue(msg, "subjectHandling"))
 		}
 		rm.date = commonValue(msg, "messageDate")
 		rm.time = commonValue(msg, "messageTime")

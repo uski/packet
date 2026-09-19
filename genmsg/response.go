@@ -18,7 +18,7 @@ import (
 // default it already had stands) rather than writing free-form text into a
 // field meant to hold one of a fixed set of choices, and the field's label
 // is reported in the corresponding entry of invalid.
-func parseResponse(text string, specs []FieldSpec) (values map[string]string, invalid []string, err error) {
+func parseResponse(text string, specs []fieldSpec) (values map[string]string, invalid []string, err error) {
 	if strings.HasPrefix(text, "{") {
 		text = "[" + text + "]" // the message sent as a bare object
 	}
@@ -29,7 +29,7 @@ func parseResponse(text string, specs []FieldSpec) (values map[string]string, in
 	if len(raw) == 0 {
 		return nil, nil, nil // no message object; the caller says so
 	}
-	specByTag := make(map[string]FieldSpec, len(specs))
+	specByTag := make(map[string]fieldSpec, len(specs))
 	for _, s := range specs {
 		specByTag[s.Tag] = s
 	}
@@ -72,7 +72,7 @@ func parseResponse(text string, specs []FieldSpec) (values map[string]string, in
 }
 
 // isCheckbox reports whether s is a checkbox, whose only value is "checked".
-func isCheckbox(s FieldSpec) bool {
+func isCheckbox(s fieldSpec) bool {
 	return len(s.Choices) == 1 && s.Choices[0] == "checked"
 }
 
@@ -91,7 +91,7 @@ func matchChoice(value string, choices []string) (string, bool) {
 // fieldLabels returns the human-readable labels of specs, for reporting
 // which required fields a message is still missing; a checkbox group is
 // reported once, by its own label.
-func fieldLabels(specs []FieldSpec) []string {
+func fieldLabels(specs []fieldSpec) []string {
 	var labels []string
 	seen := map[string]bool{}
 	for _, s := range specs {

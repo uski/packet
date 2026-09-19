@@ -175,7 +175,7 @@ func FlowDiagram(fl Flow) (Diagram, error) {
 			}
 			sm := seqMessage{
 				from: parties[s].name, label: label, kind: typeAbbrev(mt), time: flowTime(fm),
-				handling: NormalizeHandling(fm.Handling),
+				handling: normalizeHandling(fm.Handling),
 				opToOp:   isOpToOpMessage(fm), reply: fm.ReplyTo > 0, principal: true,
 			}
 			for _, r := range flowRecipients(fl, fm, s) {

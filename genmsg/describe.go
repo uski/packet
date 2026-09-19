@@ -7,10 +7,10 @@ import (
 	"github.com/rothskeller/packet/v4/message/field"
 )
 
-// FieldSpec describes one editable field of a message type, for building an
+// fieldSpec describes one editable field of a message type, for building an
 // LLM prompt and for later looking up the field to set its value.
-type FieldSpec struct {
-	Tag       string   // the field's PackItForms tag, or its Common name if it has no tag (see Describe)
+type fieldSpec struct {
+	Tag       string   // the field's PackItForms tag, or its Common name if it has no tag (see describeFields)
 	Common    string   // the well-known common-field name, if any
 	Label     string   // the human-readable field label
 	Help      string   // help text describing the field's purpose
@@ -23,15 +23,15 @@ type FieldSpec struct {
 	DateTime  bool     // a date or time field, which the tool fills in itself
 }
 
-// Describe returns the settable, addressable fields of msg (which should be
+// describeFields returns the settable, addressable fields of msg (which should be
 // a freshly created draft with the incident's defaults already applied --
 // see incident.Incident.ApplyDefaults), in field order, for use in building
 // an LLM prompt. Not every message type is PackItForms-based (e.g. a plain
 // text message has no PIFO tags at all), so a field's Common name is used
 // as its Tag/key when it has no PIFO tag of its own; see FindField for the
 // matching lookup used when applying values back.
-func Describe(msg message.Message) []FieldSpec {
-	var specs []FieldSpec
+func describeFields(msg message.Message) []fieldSpec {
+	var specs []fieldSpec
 	for f := range msg.Fields() {
 		if !f.Settable() {
 			continue
@@ -68,8 +68,8 @@ func fieldKey(f field.Field) string {
 	return f.Common()
 }
 
-func newFieldSpec(msg message.Message, f field.Field, key string) FieldSpec {
-	spec := FieldSpec{
+func newFieldSpec(msg message.Message, f field.Field, key string) fieldSpec {
+	spec := fieldSpec{
 		Tag:       key,
 		Common:    f.Common(),
 		Label:     f.Label(),
@@ -113,7 +113,7 @@ var skipCommon = map[string]bool{
 	"headerReceived":       true,
 }
 
-// FindField returns the field of msg whose key (as computed by Describe:
+// FindField returns the field of msg whose key (as computed by describeFields:
 // its PIFO tag, or its Common name if it has none) equals key, or nil if
 // there is no such field. This is how generated LLM field values (keyed the
 // same way) get matched back to a field; for looking a field up purely by
@@ -147,16 +147,16 @@ func FindFieldByCommon(msg message.Message, common string) field.Field {
 	return nil
 }
 
-// AllFieldValues returns the value of every field of msg that counts
-// toward proword coverage, by the key Describe uses (its PackItForms tag,
-// or its Common name if it has none). Unlike Describe, which lists what
+// allFieldValues returns the value of every field of msg that counts
+// toward proword coverage, by the key describeFields uses (its PackItForms tag,
+// or its Common name if it has none). Unlike describeFields, which lists what
 // Claude might fill in, this measures what the finished message holds, so
 // a requirement a pre-filled field already satisfies needn't be woven into
 // the body as well. Two kinds of field are left out: the administrative
 // ones the incident fills in itself (see contentFields), and the ICS
 // position and location names, which a candidate reads aloud but which
 // would falsely read as I SPELL names here.
-func AllFieldValues(msg message.Message) map[string]string {
+func allFieldValues(msg message.Message) map[string]string {
 	values := make(map[string]string)
 	for f := range contentFields(msg) {
 		// ICS position and location role names like "Shelter Manager"
@@ -177,7 +177,7 @@ func AllFieldValues(msg message.Message) map[string]string {
 // numbers, dates, times, operator and envelope data, see skipCommon) and
 // any with no key to name them by. Callers add their own rule on top: what
 // counts toward proword coverage leaves out the party names as well
-// (AllFieldValues, ProwordFields), and what counts toward the word budget
+// (allFieldValues, ProwordFields), and what counts toward the word budget
 // leaves out dates and times (messageWordCount).
 func contentFields(msg message.Message) iter.Seq[field.Field] {
 	return func(yield func(field.Field) bool) {
@@ -193,10 +193,10 @@ func contentFields(msg message.Message) iter.Seq[field.Field] {
 }
 
 // setFieldValues writes each non-empty entry of values onto msg, keyed the
-// same way as Describe (PIFO tag, or Common name if a field has none);
+// same way as describeFields (PIFO tag, or Common name if a field has none);
 // entries with no matching field, or an empty value, are ignored. This is
 // shared by Generate (to keep its working draft in sync with what's been
-// generated so far, for AllFieldValues-based coverage checks) and Apply (to
+// generated so far, for allFieldValues-based coverage checks) and Apply (to
 // build the final message).
 func setFieldValues(msg *message.DraftMessage, values map[string]string) {
 	// In form order, and twice: setting a field clears any field it makes
@@ -226,7 +226,7 @@ var alwaysInclude = map[string]bool{
 	"subjectSummary": true,
 }
 
-// Generatable filters specs down to the small set the LLM should actually
+// generatableFields filters specs down to the small set the LLM should actually
 // be asked to produce a value for: fields already handled by the
 // incident's default-filling machinery are excluded outright, and of what
 // remains, only fields that are actually required (or the message body, or
@@ -235,8 +235,8 @@ var alwaysInclude = map[string]bool{
 // reply/take-action toggles, references, and the like) purely because they
 // exist -- exactly the fields most forms mark optional because they're
 // "rarely provided" in practice.
-func Generatable(specs []FieldSpec) []FieldSpec {
-	var out []FieldSpec
+func generatableFields(specs []fieldSpec) []fieldSpec {
+	var out []fieldSpec
 	for _, s := range specs {
 		if skipCommon[s.Common] {
 			continue

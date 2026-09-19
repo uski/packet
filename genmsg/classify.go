@@ -8,19 +8,19 @@ import (
 	"github.com/rothskeller/packet/v4/prowords"
 )
 
-// ClassifyField reports which proword categories a field is naturally
+// classifyField reports which proword categories a field is naturally
 // suited to satisfy on its own, based on its Common name and its
 // Label/Help text -- e.g. a "Contact Info (phone number, email, etc.)"
 // field can hold an EMAIL ADDRESS or TELEPHONE FIGURES value directly, and
 // a "From Name"/"To Name" field can hold a person's name (an I SPELL
-// trigger). This lets SelectFields route a message's assigned categories
+// trigger). This lets selectFields route a message's assigned categories
 // into fields whose whole purpose is to hold exactly that kind of content,
 // instead of only being able to weave them into the free-text body --
 // keeping the body, and so the whole message, shorter and more realistic.
 // Many such fields (contact info, names) are marked "optional and rarely
-// provided" by the forms that have them, so Generatable alone would never
+// provided" by the forms that have them, so generatableFields alone would never
 // select them.
-func ClassifyField(spec FieldSpec) []prowords.Category {
+func classifyField(spec fieldSpec) []prowords.Category {
 	text := strings.ToLower(spec.Label + " " + spec.Help)
 	if spec.Common == "fromName" || spec.Common == "toName" || strings.Contains(text, "name of the person") {
 		return []prowords.Category{prowords.ISpell}
@@ -47,17 +47,17 @@ func ClassifyField(spec FieldSpec) []prowords.Category {
 	return cats
 }
 
-// SelectFields extends Generatable's base selection (the fields the LLM
+// selectFields extends generatableFields's base selection (the fields the LLM
 // must fill regardless of proword assignment) with whatever additional
-// fields, per ClassifyField, give categories in the message's plan a
+// fields, per classifyField, give categories in the message's plan a
 // dedicated home -- so a category with such a field never needs to be
 // crammed into the free-text body as well. routed maps each category that
 // got a dedicated field to that field's Tag, for buildPrompt to point
 // Claude at it explicitly instead of (or as well as, for a field that also
 // happens to be otherwise required) issuing a generic "weave this into your
 // writing" instruction.
-func SelectFields(all []FieldSpec, categories []prowords.Category) (selected []FieldSpec, routed map[prowords.Category]string) {
-	selected = Generatable(all)
+func selectFields(all []fieldSpec, categories []prowords.Category) (selected []fieldSpec, routed map[prowords.Category]string) {
+	selected = generatableFields(all)
 	included := make(map[string]bool, len(selected))
 	for _, s := range selected {
 		included[s.Tag] = true
@@ -67,7 +67,7 @@ func SelectFields(all []FieldSpec, categories []prowords.Category) (selected []F
 	for _, cat := range categories {
 		best, bestScore := -1, -1
 		for i, s := range all {
-			if skipCommon[s.Common] || !slices.Contains(ClassifyField(s), cat) {
+			if skipCommon[s.Common] || !slices.Contains(classifyField(s), cat) {
 				continue
 			}
 			// Spread categories across separate fields before
@@ -101,15 +101,15 @@ func SelectFields(all []FieldSpec, categories []prowords.Category) (selected []F
 	return selected, routed
 }
 
-// PromptFields returns, in form order, the fields of msg (a draft with the
-// tool's own values already applied) to show Claude: those SelectFields
+// promptFields returns, in form order, the fields of msg (a draft with the
+// tool's own values already applied) to show Claude: those selectFields
 // says it must fill, and every other field it may fill, marked Optional.
 // Seeing the whole form lets Claude put each piece of information in the
 // field made for it. Fields the tool already filled (party positions and
 // locations, dates, times) are left out so Claude can't overwrite them.
-func PromptFields(msg message.Message, categories []prowords.Category) (specs []FieldSpec, routed map[prowords.Category]string) {
-	all := Describe(msg)
-	must, routed := SelectFields(all, categories)
+func promptFields(msg message.Message, categories []prowords.Category) (specs []fieldSpec, routed map[prowords.Category]string) {
+	all := describeFields(msg)
+	must, routed := selectFields(all, categories)
 	mustTag := make(map[string]bool, len(must))
 	for _, s := range must {
 		mustTag[s.Tag] = true

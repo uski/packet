@@ -74,9 +74,9 @@ func Generate(ctx context.Context, client *ClaudeClient, req Request) ([]Result,
 	}
 
 	progress(fmt.Sprintf("Preparing %d message(s)...", count))
-	specsPerMsg := make([][]FieldSpec, count)
+	specsPerMsg := make([][]fieldSpec, count)
 	// routedPerMsg records, for each message, which field (if any) is the
-	// dedicated home for an assigned category (see SelectFields), so
+	// dedicated home for an assigned category (see selectFields), so
 	// buildPrompt can send content there instead of into the body.
 	routedPerMsg := make([]map[prowords.Category]string, count)
 	assigned := make([][]prowords.Category, count)
@@ -95,9 +95,9 @@ func Generate(ctx context.Context, client *ClaudeClient, req Request) ([]Result,
 		// is still reported against it.
 		assigned[i] = plans[i].Categories
 		plans[i].Categories = missingCategories(plans[i].Categories, messageCounts(draft))
-		specs, routed := PromptFields(draft, plans[i].Categories)
+		specs, routed := promptFields(draft, plans[i].Categories)
 		if m.Handling != "" {
-			specs = slices.DeleteFunc(specs, func(s FieldSpec) bool { return handlingCommon[s.Common] })
+			specs = slices.DeleteFunc(specs, func(s fieldSpec) bool { return handlingCommon[s.Common] })
 		}
 		plans[i].CheckOne = countCheckboxes(specs) >= manyCheckboxes
 		if len(specs) == 0 {
@@ -176,7 +176,7 @@ const maxParallel = 4
 // generateAll drafts every message, up to maxParallel at a time. A reply
 // waits until the message it answers is done, so its prompt can include
 // that message's content. The first error cancels the rest.
-func (g *generation) generateAll(plans []MessagePlan, cancel context.CancelFunc) error {
+func (g *generation) generateAll(plans []messagePlan, cancel context.CancelFunc) error {
 	order := generationOrder(g.req.Messages)
 	pos := make([]int, len(order))
 	for n, idx := range order {
@@ -280,7 +280,7 @@ type generation struct {
 	client    *ClaudeClient
 	req       Request
 	shared    string // sharedPrompt, the cached prefix of every message's prompt
-	specs     [][]FieldSpec
+	specs     [][]fieldSpec
 	routed    []map[prowords.Category]string
 	baseWords []int
 	results   []Result
@@ -325,7 +325,7 @@ func (g *generation) messageActivity(idx int) Activity {
 // the response is unusable (cut off or unparseable), too long, or missing
 // required fields or assigned proword categories. It fails only if no
 // usable response arrives at all.
-func (g *generation) generateMessage(idx int, plan MessagePlan) error {
+func (g *generation) generateMessage(idx int, plan messagePlan) error {
 	count := len(g.req.Messages)
 	res := &g.results[idx]
 	wanted, checkOne := plan.Categories, plan.CheckOne
@@ -392,7 +392,7 @@ func (g *generation) generateMessage(idx int, plan MessagePlan) error {
 		}
 		// The revision sees every requirement, with the unmet ones
 		// flagged, so fixing one doesn't lose another.
-		plan = MessagePlan{Categories: wanted, Unmet: res.Missing, MissingFields: ev.problems, CheckOne: checkOne, CheckOneUnmet: ev.needCheck, LongFields: ev.long}
+		plan = messagePlan{Categories: wanted, Unmet: res.Missing, MissingFields: ev.problems, CheckOne: checkOne, CheckOneUnmet: ev.needCheck, LongFields: ev.long}
 		if ev.over {
 			plan.Words = res.Words
 		}
@@ -408,10 +408,10 @@ func (g *generation) generateMessage(idx int, plan MessagePlan) error {
 
 // evaluation is how one version of a message measures up (see evaluate).
 type evaluation struct {
-	problems  []FieldSpec // fields failing validation
+	problems  []fieldSpec // fields failing validation
 	over      bool        // over the word budget
 	needCheck bool        // a long form with no checkbox checked
-	long      []FieldSpec // subject-like fields that are too long
+	long      []fieldSpec // subject-like fields that are too long
 	score     int         // 0 when nothing needs revising; lower is better
 }
 
@@ -436,7 +436,7 @@ func (g *generation) evaluate(idx int, values map[string]string, invalid []strin
 	ev.problems = problemSpecs(draft)
 	res.MissingFields = fieldLabels(ev.problems)
 	for _, p := range ev.problems {
-		if i := slices.IndexFunc(g.specs[idx], func(s FieldSpec) bool { return s.Tag == p.Tag }); i >= 0 {
+		if i := slices.IndexFunc(g.specs[idx], func(s fieldSpec) bool { return s.Tag == p.Tag }); i >= 0 {
 			// e.g. Item 2's quantity, required once Item 2 is named
 			g.specs[idx][i].Optional, g.specs[idx][i].Group = false, p.Group
 		} else {
@@ -458,7 +458,7 @@ func (g *generation) evaluate(idx int, values map[string]string, invalid []strin
 
 // revisionReason describes, for the progress display, why a message is
 // being sent back to Claude.
-func revisionReason(res *Result, problems []FieldSpec, over, needCheck, longSummary bool) string {
+func revisionReason(res *Result, problems []fieldSpec, over, needCheck, longSummary bool) string {
 	var parts []string
 	if longSummary {
 		parts = append(parts, "shortening the subject")

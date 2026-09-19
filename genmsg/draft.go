@@ -28,7 +28,7 @@ const (
 
 // buildDraft creates a draft of m's message type holding everything the
 // tool fills in itself -- the incident's defaults, m's party fields, and
-// required dates and times -- with values (keyed as by Describe) layered on.
+// required dates and times -- with values (keyed as by describeFields) layered on.
 func buildDraft(inc *incident.Incident, m MessageSpec, values map[string]string) (*message.DraftMessage, error) {
 	draft, ok := m.MsgType.NewDraft().(*message.DraftMessage)
 	if !ok {
@@ -90,9 +90,9 @@ func setIncidentDate(msg *message.DraftMessage, date, tm string) {
 	}
 }
 
-// NormalizeTime returns t (e.g. "9:05", "0905", or "09:05") as HH:MM, or an
+// normalizeTime returns t (e.g. "9:05", "0905", or "09:05") as HH:MM, or an
 // error if it isn't a time of day. An empty t stays empty.
-func NormalizeTime(t string) (string, error) {
+func normalizeTime(t string) (string, error) {
 	t = strings.TrimSpace(t)
 	if t == "" {
 		return "", nil
@@ -148,8 +148,8 @@ func isDateOrTime(f field.Field) bool {
 // required field (including conditionally required, checkbox, and choice
 // fields) left empty, or a malformed value. Administrative fields the
 // incident fills in on its own are excluded.
-func problemSpecs(msg message.Message) []FieldSpec {
-	var specs []FieldSpec
+func problemSpecs(msg message.Message) []fieldSpec {
+	var specs []fieldSpec
 	for f := range msg.Fields() {
 		key := fieldKey(f)
 		if key == "" || skipCommon[f.Common()] || !f.Settable() || !f.Editable(msg, true) || isDateOrTime(f) {
@@ -164,7 +164,7 @@ func problemSpecs(msg message.Message) []FieldSpec {
 	}
 	for _, g := range failingCheckboxGroups(msg) {
 		for _, key := range g.keys {
-			if slices.ContainsFunc(specs, func(s FieldSpec) bool { return s.Tag == key }) {
+			if slices.ContainsFunc(specs, func(s fieldSpec) bool { return s.Tag == key }) {
 				continue
 			}
 			if f := FindField(msg, key); f != nil {
@@ -205,8 +205,8 @@ const maxSummaryWords = 8
 
 // longSummaries returns the subject-like fields of msg (see alwaysInclude)
 // longer than maxSummaryWords, with Problem giving their word count.
-func longSummaries(msg message.Message) []FieldSpec {
-	var long []FieldSpec
+func longSummaries(msg message.Message) []fieldSpec {
+	var long []fieldSpec
 	for f := range msg.Fields() {
 		if !alwaysInclude[f.Common()] {
 			continue
@@ -261,7 +261,7 @@ func failingCheckboxGroups(msg message.Message) []checkboxGroup {
 	return groups
 }
 
-func countCheckboxes(specs []FieldSpec) int {
+func countCheckboxes(specs []fieldSpec) int {
 	var n int
 	for _, s := range specs {
 		if isCheckbox(s) {
@@ -272,7 +272,7 @@ func countCheckboxes(specs []FieldSpec) int {
 }
 
 // anyChecked reports whether any checkbox among specs is checked in msg.
-func anyChecked(msg message.Message, specs []FieldSpec) bool {
+func anyChecked(msg message.Message, specs []fieldSpec) bool {
 	for _, s := range specs {
 		if !isCheckbox(s) {
 			continue
@@ -302,7 +302,7 @@ func messageWordCount(msg message.Message) int {
 
 // applyPartyFields sets draft's From/To ICS Position and Location fields
 // directly from m, for whichever of those the message type has and m
-// provides -- used both on the probe draft in Generate (so Describe sees
+// provides -- used both on the probe draft in Generate (so describeFields sees
 // them as already-filled and excludes them from Claude's fill list) and on
 // the real draft in Apply (so the final message actually has them). Fields
 // the message type doesn't have (e.g. a plain text message has no
@@ -331,9 +331,9 @@ var handlingCommon = map[string]bool{"handling": true, "subjectHandling": true}
 // handlingNames maps handling order codes to their names.
 var handlingNames = map[string]string{"R": "ROUTINE", "P": "PRIORITY", "I": "IMMEDIATE"}
 
-// NormalizeHandling returns h as a handling order code ("R", "P", "I"), or
+// normalizeHandling returns h as a handling order code ("R", "P", "I"), or
 // "" if it is empty or isn't one.
-func NormalizeHandling(h string) string {
+func normalizeHandling(h string) string {
 	h = strings.ToUpper(strings.TrimSpace(h))
 	for code, name := range handlingNames {
 		if h == code || h == name {
@@ -345,7 +345,7 @@ func NormalizeHandling(h string) string {
 
 // applyHandling sets draft's handling order to m.Handling, if given.
 func applyHandling(draft *message.DraftMessage, m MessageSpec) {
-	code := NormalizeHandling(m.Handling)
+	code := normalizeHandling(m.Handling)
 	if code == "" {
 		return
 	}

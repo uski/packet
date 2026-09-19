@@ -29,7 +29,7 @@ type Applied struct {
 // any) are set directly via applyPartyFields, the same way Generate applied
 // them to decide what to ask Claude for. Values is then layered on top
 // exactly as "packet new" plus "packet set" would for a hand-created
-// message, and DrillTrafficPhrase's presence is guaranteed (see
+// message, and drillTrafficPhrase's presence is guaranteed (see
 // ensureDrillTraffic) before creating it. It returns one Applied per
 // result, in the same order, for the caller to report to the evaluator
 // (e.g. a table of message ID, type, and proword counts, and a warning for
@@ -104,7 +104,7 @@ func setCommonField(msg *message.DraftMessage, common, value string) {
 	}
 }
 
-// ensureDrillTraffic guarantees DrillTrafficPhrase appears somewhere in
+// ensureDrillTraffic guarantees drillTrafficPhrase appears somewhere in
 // msg's editable field values. The prompt already asks Claude for this, but
 // it's a fixed, non-creative requirement where "always" needs to actually
 // mean always, so this enforces it deterministically: if no field already
@@ -112,7 +112,7 @@ func setCommonField(msg *message.DraftMessage, common, value string) {
 // (multiline) field, or failing that its subject-like field, whichever is
 // found first.
 func ensureDrillTraffic(msg *message.DraftMessage) {
-	needle := strings.ToLower(DrillTrafficPhrase)
+	needle := strings.ToLower(drillTrafficPhrase)
 	var multiline, fallback field.Field
 	for f := range msg.Fields() {
 		if !f.Editable(msg, false) || !f.Settable() {
@@ -138,9 +138,9 @@ func ensureDrillTraffic(msg *message.DraftMessage) {
 	cur := target.Value(msg)
 	var next string
 	if cur == "" {
-		next = DrillTrafficPhrase + "."
+		next = drillTrafficPhrase + "."
 	} else {
-		next = strings.TrimRight(cur, " ") + "  " + DrillTrafficPhrase + "."
+		next = strings.TrimRight(cur, " ") + "  " + drillTrafficPhrase + "."
 	}
 	target.SetValue(msg, target.FromHuman(msg, next))
 }

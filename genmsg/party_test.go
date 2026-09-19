@@ -39,11 +39,11 @@ func TestApplyPartyFieldsSetsAndExcludesFromLLMFill(t *testing.T) {
 		t.Errorf("toICSPosition = %q, want %q", got, "All Stations")
 	}
 
-	// Since these fields now already have values, Generatable must
+	// Since these fields now already have values, generatableFields must
 	// exclude them from what Claude is asked to fill -- otherwise the
 	// LLM's own guess could clobber the deterministic party fields we
 	// (or Apply) will set.
-	specs := Generatable(Describe(draft))
+	specs := generatableFields(describeFields(draft))
 	for _, s := range specs {
 		if s.Common == "fromICSPosition" || s.Common == "fromLocation" || s.Common == "toICSPosition" {
 			t.Errorf("field %q should have been excluded once pre-filled by applyPartyFields", s.Common)
@@ -58,15 +58,15 @@ func TestBuildPromptIncludesFlowContext(t *testing.T) {
 			{MsgType: message.PlainMessage, From: "Shelter Manager", To: "Net Control", Purpose: "report shelter status", ReplyTo: 1},
 		},
 	}
-	specs := []FieldSpec{{Tag: "defaultBody", Multiline: true}}
-	specsPerMsg := [][]FieldSpec{specs, specs}
+	specs := []fieldSpec{{Tag: "defaultBody", Multiline: true}}
+	specsPerMsg := [][]fieldSpec{specs, specs}
 	results := make([]Result, 2)
 	routedPerMsg := make([]map[prowords.Category]string, 2)
 
 	// Each message is asked for on its own, and carries its own flow
 	// context; the reply also names the message it answers.
-	first := buildPrompt(req, "", specsPerMsg, results, 0, MessagePlan{}, routedPerMsg, make([]int, 2), false)
-	second := buildPrompt(req, "", specsPerMsg, results, 1, MessagePlan{}, routedPerMsg, make([]int, 2), false)
+	first := buildPrompt(req, "", specsPerMsg, results, 0, messagePlan{}, routedPerMsg, make([]int, 2), false)
+	second := buildPrompt(req, "", specsPerMsg, results, 1, messagePlan{}, routedPerMsg, make([]int, 2), false)
 	for prompt, wants := range map[string][]string{
 		first:  {"Message 1", "Net Control (County EOC)", "All Stations", "request shelter status"},
 		second: {"Message 2", "Shelter Manager", "report shelter status", "direct reply to Message 1"},
@@ -86,8 +86,8 @@ func TestBuildPromptInjectsContextForNonPendingReplyTarget(t *testing.T) {
 			{MsgType: message.PlainMessage, From: "Shelter Manager", To: "Net Control", ReplyTo: 1},
 		},
 	}
-	specs := []FieldSpec{{Tag: "defaultBody", Multiline: true}}
-	specsPerMsg := [][]FieldSpec{specs, specs}
+	specs := []fieldSpec{{Tag: "defaultBody", Multiline: true}}
+	specsPerMsg := [][]fieldSpec{specs, specs}
 	// Message 1 is already written; its content must still be surfaced as
 	// context for the message that replies to it.
 	results := []Result{
@@ -96,7 +96,7 @@ func TestBuildPromptInjectsContextForNonPendingReplyTarget(t *testing.T) {
 	}
 	routedPerMsg := make([]map[prowords.Category]string, 2)
 
-	prompt := buildPrompt(req, "", specsPerMsg, results, 1, MessagePlan{}, routedPerMsg, make([]int, 2), true)
+	prompt := buildPrompt(req, "", specsPerMsg, results, 1, messagePlan{}, routedPerMsg, make([]int, 2), true)
 
 	if !strings.Contains(prompt, "How many beds are available") {
 		t.Errorf("expected the non-pending replied-to message's content to be injected as context\n--- prompt ---\n%s", prompt)
