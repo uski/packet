@@ -531,12 +531,6 @@ func (g *generation) generateMessage(idx, n int, plan MessagePlan) error {
 	return nil
 }
 
-// draftMu serializes building and checking drafts: the message package's
-// field definitions, shared by every draft of a type, keep state from each
-// validation, so two drafts can't be checked at once. Only the Claude calls
-// run in parallel.
-var draftMu sync.Mutex
-
 // evaluation is how one version of a message measures up (see evaluate).
 type evaluation struct {
 	problems  []FieldSpec // fields failing validation
@@ -634,104 +628,6 @@ func generationOrder(msgs []MessageSpec) []int {
 		visit(i)
 	}
 	return order
-}
-
-// planByParty groups req.Messages by sender and effective proword level (a
-// message's own Level if set, else req.Level) and runs Plan independently
-// within each group, so that messages from parties evaluated at different
-// credential levels each only draw proword requirements from their own
-// level's profile -- an F3 party's messages never get saddled with a
-// full-list-only category, and a full-list party's messages aren't limited
-// to the reduced list just because they share a batch with an F3 party.
-//
-// Grouping by sender matters because each candidate is evaluated on what
-// that candidate transmits: the Credentialing Program Handbook requires
-// each credential's whole proword list, so a party's own messages have to
-// cover it rather than the batch covering it between them. The returned
-// slice is in req.Messages order.
-func planByParty(req Request) ([]MessagePlan, error) {
-	type party struct{ level, from, prefix string }
-	count := len(req.Messages)
-	groups := map[party][]int{}
-	for i, m := range req.Messages {
-		if isContentless(m) {
-			continue // no content to hold proword requirements
-		}
-		lvl := m.Level
-		if lvl == "" {
-			lvl = req.Level
-		}
-		p := party{lvl, m.From, m.FromPrefix}
-		groups[p] = append(groups[p], i)
-	}
-	plans := make([]MessagePlan, count)
-	for p, idxs := range groups {
-		profile, err := prowords.Profile(p.level)
-		if err != nil {
-			return nil, err
-		}
-		groupPlans, _ := Plan(profile, len(idxs))
-		for j, idx := range idxs {
-			plans[idx] = groupPlans[j]
-		}
-	}
-	return plans, nil
-}
-
-// applyPartyFields sets draft's From/To ICS Position and Location fields
-// directly from m, for whichever of those the message type has and m
-// provides -- used both on the probe draft in Generate (so Describe sees
-// them as already-filled and excludes them from Claude's fill list) and on
-// the real draft in Apply (so the final message actually has them). Fields
-// the message type doesn't have (e.g. a plain text message has no
-// first-class ICS Position field) are silently skipped; the same
-// information is still given to Claude as prompt context in buildPrompt so
-// it can work it into whatever fields do exist.
-func applyPartyFields(draft *message.DraftMessage, m MessageSpec) {
-	set := func(common, value string) {
-		if value == "" {
-			return
-		}
-		if f := FindFieldByCommon(draft, common); f != nil {
-			f.SetValue(draft, f.FromHuman(draft, value))
-		}
-	}
-	set("fromICSPosition", m.From)
-	set("fromLocation", m.FromLocation)
-	set("toICSPosition", m.To)
-	set("toLocation", m.ToLocation)
-}
-
-// handlingCommon are the common names of the fields holding a message's
-// handling order.
-var handlingCommon = map[string]bool{"handling": true, "subjectHandling": true}
-
-// handlingNames maps handling order codes to their names.
-var handlingNames = map[string]string{"R": "ROUTINE", "P": "PRIORITY", "I": "IMMEDIATE"}
-
-// NormalizeHandling returns h as a handling order code ("R", "P", "I"), or
-// "" if it is empty or isn't one.
-func NormalizeHandling(h string) string {
-	h = strings.ToUpper(strings.TrimSpace(h))
-	for code, name := range handlingNames {
-		if h == code || h == name {
-			return code
-		}
-	}
-	return ""
-}
-
-// applyHandling sets draft's handling order to m.Handling, if given.
-func applyHandling(draft *message.DraftMessage, m MessageSpec) {
-	code := NormalizeHandling(m.Handling)
-	if code == "" {
-		return
-	}
-	for f := range draft.Fields() {
-		if handlingCommon[f.Common()] && f.Settable() {
-			f.SetValue(draft, f.FromHuman(draft, handlingNames[code]))
-		}
-	}
 }
 
 // completeWithHeartbeat calls client.Complete, calling tick with the time

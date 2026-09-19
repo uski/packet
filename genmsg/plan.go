@@ -52,3 +52,45 @@ func Plan(profile []prowords.Category, count int) (plans []MessagePlan, unfit []
 	}
 	return plans, nil
 }
+
+// planByParty groups req.Messages by sender and effective proword level (a
+// message's own Level if set, else req.Level) and runs Plan independently
+// within each group, so that messages from parties evaluated at different
+// credential levels each only draw proword requirements from their own
+// level's profile -- an F3 party's messages never get saddled with a
+// full-list-only category, and a full-list party's messages aren't limited
+// to the reduced list just because they share a batch with an F3 party.
+//
+// Grouping by sender matters because each candidate is evaluated on what
+// that candidate transmits: the Credentialing Program Handbook requires
+// each credential's whole proword list, so a party's own messages have to
+// cover it rather than the batch covering it between them. The returned
+// slice is in req.Messages order.
+func planByParty(req Request) ([]MessagePlan, error) {
+	type party struct{ level, from, prefix string }
+	count := len(req.Messages)
+	groups := map[party][]int{}
+	for i, m := range req.Messages {
+		if isContentless(m) {
+			continue // no content to hold proword requirements
+		}
+		lvl := m.Level
+		if lvl == "" {
+			lvl = req.Level
+		}
+		p := party{lvl, m.From, m.FromPrefix}
+		groups[p] = append(groups[p], i)
+	}
+	plans := make([]MessagePlan, count)
+	for p, idxs := range groups {
+		profile, err := prowords.Profile(p.level)
+		if err != nil {
+			return nil, err
+		}
+		groupPlans, _ := Plan(profile, len(idxs))
+		for j, idx := range idxs {
+			plans[idx] = groupPlans[j]
+		}
+	}
+	return plans, nil
+}

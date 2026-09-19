@@ -6,6 +6,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/rothskeller/packet/v4/incident"
@@ -299,3 +300,65 @@ func messageWordCount(msg message.Message) int {
 	}
 	return n
 }
+
+// applyPartyFields sets draft's From/To ICS Position and Location fields
+// directly from m, for whichever of those the message type has and m
+// provides -- used both on the probe draft in Generate (so Describe sees
+// them as already-filled and excludes them from Claude's fill list) and on
+// the real draft in Apply (so the final message actually has them). Fields
+// the message type doesn't have (e.g. a plain text message has no
+// first-class ICS Position field) are silently skipped; the same
+// information is still given to Claude as prompt context in buildPrompt so
+// it can work it into whatever fields do exist.
+func applyPartyFields(draft *message.DraftMessage, m MessageSpec) {
+	set := func(common, value string) {
+		if value == "" {
+			return
+		}
+		if f := FindFieldByCommon(draft, common); f != nil {
+			f.SetValue(draft, f.FromHuman(draft, value))
+		}
+	}
+	set("fromICSPosition", m.From)
+	set("fromLocation", m.FromLocation)
+	set("toICSPosition", m.To)
+	set("toLocation", m.ToLocation)
+}
+
+// handlingCommon are the common names of the fields holding a message's
+// handling order.
+var handlingCommon = map[string]bool{"handling": true, "subjectHandling": true}
+
+// handlingNames maps handling order codes to their names.
+var handlingNames = map[string]string{"R": "ROUTINE", "P": "PRIORITY", "I": "IMMEDIATE"}
+
+// NormalizeHandling returns h as a handling order code ("R", "P", "I"), or
+// "" if it is empty or isn't one.
+func NormalizeHandling(h string) string {
+	h = strings.ToUpper(strings.TrimSpace(h))
+	for code, name := range handlingNames {
+		if h == code || h == name {
+			return code
+		}
+	}
+	return ""
+}
+
+// applyHandling sets draft's handling order to m.Handling, if given.
+func applyHandling(draft *message.DraftMessage, m MessageSpec) {
+	code := NormalizeHandling(m.Handling)
+	if code == "" {
+		return
+	}
+	for f := range draft.Fields() {
+		if handlingCommon[f.Common()] && f.Settable() {
+			f.SetValue(draft, f.FromHuman(draft, handlingNames[code]))
+		}
+	}
+}
+
+// draftMu serializes building and checking drafts: the message package's
+// field definitions, shared by every draft of a type, keep state from each
+// validation, so two drafts can't be checked at once. Only the Claude calls
+// run in parallel.
+var draftMu sync.Mutex
