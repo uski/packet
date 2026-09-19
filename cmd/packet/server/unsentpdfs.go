@@ -73,8 +73,9 @@ func (s *Server) serveGetUnsentMessages(w http.ResponseWriter, r *http.Request) 
 }
 
 // serveGetUnsentPDFs handles GET /unsent-pdfs requests, which have a dir=
-// parameter, a format= parameter, and optional repeated id= parameters
-// naming the messages to include (by default, all of them). They render a fresh PDF of each unsent
+// parameter, a format= parameter, optional repeated id= parameters naming
+// the messages to include (by default, all of them), and hideOrigin= and
+// hideDest= parameters ("1" to leave that message number off the PDFs). They render a fresh PDF of each unsent
 // message (drafts and queued messages, not receipts) in the incident, and
 // respond with them either as a ZIP file of separate PDFs named after their
 // subject lines (format=zip, the default), or concatenated into a single
@@ -110,9 +111,10 @@ func (s *Server) serveGetUnsentPDFs(w http.ResponseWriter, r *http.Request) {
 			only[n] = true
 		}
 	}
+	hide := hiddenNumbers{origin: r.FormValue("hideOrigin") == "1", destination: r.FormValue("hideDest") == "1"}
 	var pdfs []renderedPDF
 	err = incident.Read(r.FormValue("dir"), func(i *incident.Incident) (err error) {
-		pdfs, err = renderUnsentPDFs(i, tmp, only)
+		pdfs, err = renderUnsentPDFs(i, tmp, only, hide)
 		return err
 	})
 	if err != nil {
@@ -151,10 +153,36 @@ type renderedPDF struct {
 	data []byte
 }
 
+// hiddenNumbers says which message numbers to leave off the PDFs.
+type hiddenNumbers struct{ origin, destination bool }
+
+// hideNumbers blanks the message numbers hide names, on the copy of the
+// message about to be rendered (never on the incident's own file). The
+// origin number is both at the top of a form and in the page footers, and
+// is part of a plain text message's subject line, so all three go.
+func hideNumbers(msg message.Message, hide hiddenNumbers) {
+	for f := range msg.Fields() {
+		if !f.Settable() || f.Value(msg) == "" {
+			continue
+		}
+		switch f.Common() {
+		case "originMessageID", "subjectMessageID":
+			if hide.origin {
+				f.SetValue(msg, "")
+			}
+		case "destinationMessageID":
+			if hide.destination {
+				f.SetValue(msg, "")
+			}
+		}
+	}
+}
+
 // renderUnsentPDFs renders the PDF of each unsent message in i, in log
 // order, using directory tmp for scratch files. If only is not nil, just
-// the messages whose log entry idents it holds are rendered.
-func renderUnsentPDFs(i *incident.Incident, tmp string, only map[int]bool) (pdfs []renderedPDF, err error) {
+// the messages whose log entry idents it holds are rendered; hide says
+// which message numbers to leave off them.
+func renderUnsentPDFs(i *incident.Incident, tmp string, only map[int]bool, hide hiddenNumbers) (pdfs []renderedPDF, err error) {
 	used := map[string]bool{}
 	for _, le := range unsentEntries(i) {
 		if only != nil && !only[le.Ident] {
@@ -164,6 +192,8 @@ func renderUnsentPDFs(i *incident.Incident, tmp string, only map[int]bool) (pdfs
 		if err != nil || msg == nil {
 			return nil, fmt.Errorf("reading message %s: %v", le.LocalMsgID, err)
 		}
+		name := pdfName(le, used)
+		hideNumbers(msg, hide)
 		fname := filepath.Join(tmp, fmt.Sprintf("%d.pdf", le.Ident))
 		if err = msg.Type().RenderPDF(msg, fname, ""); errors.IsType[message.Warning](err) {
 			slog.Warn("RenderPDF", "id", le.LocalMsgID, "warn", err)
@@ -174,7 +204,7 @@ func renderUnsentPDFs(i *incident.Incident, tmp string, only map[int]bool) (pdfs
 		if err != nil {
 			return nil, err
 		}
-		pdfs = append(pdfs, renderedPDF{name: pdfName(le, used), data: data})
+		pdfs = append(pdfs, renderedPDF{name: name, data: data})
 	}
 	return pdfs, nil
 }

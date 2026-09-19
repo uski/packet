@@ -55,7 +55,11 @@
       document.getElementById('upform').addEventListener('submit', async evt => {
         evt.preventDefault()
         const format = document.querySelector('input[name=upformat]:checked').value
-        const params = new URLSearchParams({ dir: document.body.dataset.dir, format })
+        const params = new URLSearchParams({
+          dir: document.body.dataset.dir, format,
+          hideOrigin: document.getElementById('uphideorig').checked ? '1' : '0',
+          hideDest: document.getElementById('uphidedest').checked ? '1' : '0',
+        })
         upBoxes().filter(b => b.checked).forEach(b => params.append('id', b.value))
         const sub = document.getElementById('upsub')
         sub.disabled = true
@@ -172,6 +176,16 @@
       white-space: nowrap;
     }
 
+    #uphiderow {
+      display: flex;
+      gap: 1.5rem;
+      margin-top: 0.25rem;
+    }
+
+    #uphiderow label {
+      display: inline-block;
+    }
+
     #upcount {
       margin-top: 0.35rem;
       color: #666;
@@ -209,6 +223,11 @@
       <div id=uplist></div>
       <p id=upcount></p>
       <label><input type=checkbox id=upall checked> Select all</label>
+      <div>Hide message number:</div>
+      <div id=uphiderow>
+        <label><input type=checkbox id=uphideorig checked> Origin</label>
+        <label><input type=checkbox id=uphidedest checked> Destination</label>
+      </div>
       <div>Download as:</div>
       <label><input type=radio name=upformat value=pdf checked> One PDF with all the messages, one after another</label>
       <label><input type=radio name=upformat value=zip> A ZIP file with a separate PDF for each message</label>

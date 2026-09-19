@@ -14,6 +14,7 @@ import (
 	"testing"
 
 	"github.com/rothskeller/packet/v4/form/formdefs"
+	"github.com/rothskeller/packet/v4/genmsg"
 	"github.com/rothskeller/packet/v4/incident"
 	"github.com/rothskeller/packet/v4/message"
 	"github.com/rothskeller/pdf/v2"
@@ -194,5 +195,42 @@ func TestServeGetUnsentMessagesAndSelection(t *testing.T) {
 	}
 	if len(zr.File) != 1 || !strings.Contains(zr.File[0].Name, "Second") {
 		t.Errorf("downloaded %d file(s): %+v", len(zr.File), zr.File)
+	}
+}
+
+func TestHideMessageNumbers(t *testing.T) {
+	formdefs.UseInternalForms = true
+	if err := formdefs.RegisterForms(); err != nil {
+		t.Fatal(err)
+	}
+	mt := message.FindCreateTag("ICS213")
+	if mt == nil {
+		t.Skip("ICS213 not registered (build without -tags sccopifo?)")
+	}
+	numbers := func(hide hiddenNumbers) (origin, subject, dest string) {
+		draft := mt.(message.EditableMType).NewDraft().(*message.DraftMessage)
+		for f := range draft.Fields() {
+			switch f.Common() {
+			case "originMessageID", "subjectMessageID":
+				f.SetValue(draft, "S21-101P")
+			case "destinationMessageID":
+				f.SetValue(draft, "EOC-042P")
+			}
+		}
+		hideNumbers(draft, hide)
+		return genmsg.FindFieldByCommon(draft, "originMessageID").Value(draft),
+			genmsg.FindFieldByCommon(draft, "subjectMessageID").Value(draft),
+			genmsg.FindFieldByCommon(draft, "destinationMessageID").Value(draft)
+	}
+	if o, s, d := numbers(hiddenNumbers{}); o != "S21-101P" || s != "S21-101P" || d != "EOC-042P" {
+		t.Errorf("hiding nothing: origin %q, subject %q, destination %q", o, s, d)
+	}
+	// The origin number is also in the subject line and the page footers,
+	// which both come from these fields.
+	if o, s, d := numbers(hiddenNumbers{origin: true}); o != "" || s != "" || d != "EOC-042P" {
+		t.Errorf("hiding the origin: origin %q, subject %q, destination %q", o, s, d)
+	}
+	if o, s, d := numbers(hiddenNumbers{destination: true}); o != "S21-101P" || s != "S21-101P" || d != "" {
+		t.Errorf("hiding the destination: origin %q, subject %q, destination %q", o, s, d)
 	}
 }
