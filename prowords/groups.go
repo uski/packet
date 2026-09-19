@@ -12,11 +12,19 @@ import (
 // one of the MIXED GROUP kinds.
 var groupRE = regexp.MustCompile(`\S+`)
 
-// Characters that bracket or end a group in running text without being part
-// of it (e.g. the comma in "5kW, 12V").
+// Sentence punctuation that ends a group in running text without being part
+// of it: the Procedures voice it with its own name ("Sacramento, CA" is
+// spoken "Sacramento COMMA <pause> INITIALS charlie alpha"). Everything
+// else -- brackets, braces, parentheses, quotes -- belongs to the group and
+// makes it a mixed group, as "[220V]" and "$32" do.
+const groupTrailTrim = ".,;:!?"
+
+// Brackets and quotes around a group. They belong to the group (see
+// groupTrailTrim), but are ignored when looking for a time or date, which
+// is spoken as it is written whether or not it is bracketed.
 const (
-	groupLeadTrim  = "([{\"'‘“"
-	groupTrailTrim = ".,;:!?)]}\"'’”"
+	bracketLeadTrim  = "([{\"'‘“"
+	bracketTrailTrim = ")]}\"'’”"
 )
 
 // classifyGroup classifies group g the way the Message Handling Procedures
@@ -59,17 +67,31 @@ func classifyGroup(g string) (cat Category, start, end int, ok bool) {
 
 func isAlnum(r rune) bool { return unicode.IsLetter(r) || unicode.IsDigit(r) }
 
-// groupBody returns the part of group g without the brackets and sentence
-// punctuation around it.
-func groupBody(g string) (start, end int) {
-	start, end = 0, len(g)
+// timeOrDateBody returns the part of group g to test for a time or date:
+// its body without the brackets or quotes around it.
+func timeOrDateBody(g string) (start, end int) {
+	start, end = groupBody(g)
 	for start < end {
 		r, n := utf8.DecodeRuneInString(g[start:end])
-		if !strings.ContainsRune(groupLeadTrim, r) {
+		if !strings.ContainsRune(bracketLeadTrim, r) {
 			break
 		}
 		start += n
 	}
+	for end > start {
+		r, n := utf8.DecodeLastRuneInString(g[start:end])
+		if !strings.ContainsRune(bracketTrailTrim, r) {
+			break
+		}
+		end -= n
+	}
+	return start, end
+}
+
+// groupBody returns the part of group g without the sentence punctuation
+// after it.
+func groupBody(g string) (start, end int) {
+	start, end = 0, len(g)
 	for end > start {
 		r, n := utf8.DecodeLastRuneInString(g[start:end])
 		if !strings.ContainsRune(groupTrailTrim, r) {

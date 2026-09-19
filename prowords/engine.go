@@ -84,7 +84,7 @@ func Find(text string) []Match {
 			continue
 		}
 		g := text[loc[0]:loc[1]]
-		if s, e := groupBody(g); timeOrDateRE.MatchString(g[s:e]) {
+		if s, e := timeOrDateBody(g); timeOrDateRE.MatchString(g[s:e]) {
 			plain = append(plain, Match{Start: loc[0] + s, End: loc[0] + e})
 			continue
 		}

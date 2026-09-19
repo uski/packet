@@ -209,3 +209,36 @@ func TestCasedURLPath(t *testing.T) {
 		}
 	}
 }
+
+// TestBracketsBelongToTheirGroup verifies that brackets, braces, and
+// parentheses are part of the group they enclose, as the Procedures'
+// examples treat other symbols ("$32 each" is MIXED GROUP SYMBOL), while
+// sentence punctuation after a group is not, and a bracketed time is still
+// just a time.
+func TestBracketsBelongToTheirGroup(t *testing.T) {
+	for text, want := range map[string]Category{
+		"[220V]":   MixedGroupSymbols,
+		"(220V)":   MixedGroupSymbols,
+		"220V":     MixedGroupFigures,
+		"[shelter": MixedGroupSymbols,
+		"$32":      MixedGroupSymbols,
+	} {
+		got := Find(text)
+		if len(got) != 1 || got[0].Category != want || text[got[0].Start:got[0].End] != text {
+			t.Errorf("Find(%q) = %+v, want the whole group as %s", text, got, ProwordName(want))
+		}
+	}
+	// Sentence punctuation still isn't part of the group before it.
+	if got := Count("Sacramento, CA"); got[MixedGroup] != 0 || got[Initials] != 1 || got[Punctuation] != 1 {
+		t.Errorf(`Count("Sacramento, CA") = %v, want INITIAL(S) and punctuation only`, got)
+	}
+	for _, text := range []string{"(16:41)", "[16:41]"} {
+		if got := Count(text); len(got) != 0 {
+			t.Errorf("Count(%q) = %v, want no proword for a time", text, got)
+		}
+	}
+	// The period after a time is still spoken as punctuation.
+	if got := Count("16:41."); len(got) != 1 || got[Punctuation] != 1 {
+		t.Errorf(`Count("16:41.") = %v, want punctuation only`, got)
+	}
+}
