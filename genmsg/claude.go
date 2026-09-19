@@ -243,16 +243,3 @@ func (c *ClaudeClient) send(ctx context.Context, system, shared, prompt string, 
 		"cacheRead", cr.Usage.CacheReadInputTokens, "output", cr.Usage.OutputTokens)
 	return cr, nil
 }
-
-// extractJSON strips leading/trailing markdown code fences (```json ... ```
-// or ``` ... ```) that models sometimes add despite instructions not to.
-func extractJSON(s string) string {
-	// Take the outermost JSON array or object, dropping any fences or
-	// commentary around it.
-	start := strings.IndexAny(s, "[{")
-	end := strings.LastIndexAny(s, "]}")
-	if start < 0 || end < start {
-		return strings.TrimSpace(s)
-	}
-	return s[start : end+1]
-}
