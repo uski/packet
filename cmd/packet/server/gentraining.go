@@ -5,7 +5,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log/slog"
 	"maps"
 	"net/http"
 	"slices"
@@ -192,26 +191,15 @@ func (s *Server) servePostGenTraining(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// genTrainingFlowRequest is the JSON body of POST /gentrain-flow: a
-// genmsg.Flow (parties and messages referencing them) plus the incident
-// directory and the same level/scenario options the simple endpoint takes.
-type genTrainingFlowRequest struct {
-	Dir      string `json:"dir"`
-	Level    string `json:"level"`
-	Scenario string `json:"scenario"`
-	genmsg.Flow
-}
-
 // servePostGenTrainingFlow handles POST /gentrain-flow requests: a JSON
-// body (see genTrainingFlowRequest) describing a multi-party message flow,
+// body (see scenarioFlow) describing a multi-party message flow,
 // for the "Generate Multi-Party Training Messages" dialog. Like
 // POST /gentrain-messages, it validates the request, starts generation in a
 // background goroutine, and returns 204; progress and the result are
 // retrieved the same way, via GET /gentrain-progress.
 func (s *Server) servePostGenTrainingFlow(w http.ResponseWriter, r *http.Request) {
-	var req genTrainingFlowRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "invalid JSON body: "+err.Error(), http.StatusBadRequest)
+	var req scenarioFlow
+	if !decodeJSON(w, r, &req) {
 		return
 	}
 	specs, err := genmsg.ResolveFlow(req.Flow)
@@ -236,8 +224,7 @@ func (s *Server) servePostGenTrainingFlow(w http.ResponseWriter, r *http.Request
 // traffic compares with its credential's minimums (see genmsg.CheckFlow).
 func (s *Server) servePostGenTrainingFlowCheck(w http.ResponseWriter, r *http.Request) {
 	var fl genmsg.Flow
-	if err := json.NewDecoder(r.Body).Decode(&fl); err != nil {
-		http.Error(w, "invalid JSON body: "+err.Error(), http.StatusBadRequest)
+	if !decodeJSON(w, r, &fl) {
 		return
 	}
 	report, err := genmsg.CheckFlow(fl)
@@ -254,8 +241,7 @@ func (s *Server) servePostGenTrainingFlowCheck(w http.ResponseWriter, r *http.Re
 // genmsg.CompleteFlow), how many were added, and the resulting compliance.
 func (s *Server) servePostGenTrainingFlowComplete(w http.ResponseWriter, r *http.Request) {
 	var fl genmsg.Flow
-	if err := json.NewDecoder(r.Body).Decode(&fl); err != nil {
-		http.Error(w, "invalid JSON body: "+err.Error(), http.StatusBadRequest)
+	if !decodeJSON(w, r, &fl) {
 		return
 	}
 	out, added, err := genmsg.CompleteFlow(fl)
@@ -269,13 +255,6 @@ func (s *Server) servePostGenTrainingFlowComplete(w http.ResponseWriter, r *http
 		return
 	}
 	writeJSON(w, map[string]any{"flow": out, "added": added, "parties": report})
-}
-
-func writeJSON(w http.ResponseWriter, v any) {
-	w.Header().Set("Content-Type", "application/json; charset=utf-8")
-	if err := json.NewEncoder(w).Encode(v); err != nil {
-		slog.Error("encode JSON response", "err", err)
-	}
 }
 
 // runGenTraining does the actual generation work for job, in its own

@@ -12,21 +12,13 @@ import (
 	"github.com/rothskeller/packet/v4/incident"
 )
 
-// scenarioFlow is a flow with its scenario text, as the multi-party dialog
-// sends it.
-type scenarioFlow struct {
-	genmsg.Flow
-	Scenario string `json:"scenario"`
-}
-
 // servePostGenTrainingFlowUML handles POST /gentrain-flow-uml requests, whose
 // JSON body is a scenarioFlow. It responds with the flow as a sequence
 // diagram, to be saved as a file: in the syntax of sequencediagram.org, or
 // with format=plantuml, of PlantUML.
 func (s *Server) servePostGenTrainingFlowUML(w http.ResponseWriter, r *http.Request) {
 	var sf scenarioFlow
-	if err := json.NewDecoder(r.Body).Decode(&sf); err != nil {
-		http.Error(w, "invalid JSON body: "+err.Error(), http.StatusBadRequest)
+	if !decodeJSON(w, r, &sf) {
 		return
 	}
 	d, err := genmsg.FlowDiagram(sf.Flow)
