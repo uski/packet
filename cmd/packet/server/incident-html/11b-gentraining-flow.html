@@ -21,6 +21,9 @@
     function mpEntryRows() {
       return [...document.querySelectorAll('#mpmessages .mprow')]
     }
+    function mpPartyRows() {
+      return [...document.querySelectorAll('#mpparties .mprow')]
+    }
     function mpMessageRows() {
       return [...document.querySelectorAll('#mpmessages .mprow.mpmsg')]
     }
@@ -38,7 +41,7 @@
     }
 
     function mpPartyOptions() {
-      return [...document.querySelectorAll('#mpparties .mprow')].map((row, i) => {
+      return mpPartyRows().map((row, i) => {
         const role = row.querySelector('.mp-role').value.trim() || `Party ${i + 1}`
         const loc = row.querySelector('.mp-location').value.trim()
         const cred = row.querySelector('.mp-cred').value
@@ -46,7 +49,7 @@
         let label = loc ? `${role} (${loc})` : role
         if (prefix) label += ` ${prefix}`
         if (cred) label += ` [${cred}]`
-        return { value: String(i), label }
+        return { value: row.dataset.pid, label }
       })
     }
 
@@ -89,16 +92,18 @@
     function mpAddPartyRow(role, location) {
       const tmpl = document.getElementById('mppartytmpl')
       const row = document.importNode(tmpl.content, true).firstElementChild
+      row.dataset.pid = String(++mpRowID)
       row.querySelector('.mp-role').value = role || ''
       row.querySelector('.mp-location').value = location || ''
       row.querySelector('.mpremove').addEventListener('click', () => {
-        if (document.querySelectorAll('#mpparties .mprow').length > 1) {
+        if (mpPartyRows().length > 1) {
           row.remove()
           mpSyncOptions()
         }
       })
       document.getElementById('mpparties').appendChild(row)
       mpSyncOptions()
+      return row
     }
 
     // mpEntryControls wires up a message or event row's move and remove
@@ -172,7 +177,9 @@
     // mpBuildFlow reads the current parties/messages rows into the JSON
     // shape genmsg.Flow expects.
     function mpBuildFlow() {
-      const parties = [...document.querySelectorAll('#mpparties .mprow')].map(row => ({
+      const partyRows = mpPartyRows()
+      const partyIndex = pid => partyRows.findIndex(r => r.dataset.pid === pid)
+      const parties = partyRows.map(row => ({
         role: row.querySelector('.mp-role').value.trim(),
         location: row.querySelector('.mp-location').value.trim(),
         credential: row.querySelector('.mp-cred').value,
@@ -189,7 +196,7 @@
         const toVal = row.querySelector('.mp-to').value
         const msg = {
           msgType: row.querySelector('.mp-type').value,
-          from: parseInt(row.querySelector('.mp-from').value, 10),
+          from: mpFromValue(row, partyIndex),
           purpose: row.querySelector('.mp-purpose').value.trim(),
           replyTo: position(row.querySelector('.mp-replyto').value),
           opToOp: row.querySelector('.mp-optoop').checked,
@@ -205,7 +212,7 @@
           msg.to = -1
           msg.toLabel = row.querySelector('.mp-to-custom').value.trim() || 'Other'
         } else {
-          msg.to = parseInt(toVal, 10)
+          msg.to = partyIndex(toVal)
         }
         return msg
       })
@@ -215,6 +222,13 @@
         date: document.getElementById('mpdate').value,
         parties, messages,
       }
+    }
+
+    // mpFromValue reads a message row's sender: a party's row id, or -1 for
+    // "each station".
+    function mpFromValue(row, partyIndex) {
+      const value = row.querySelector('.mp-from').value
+      return value === '-1' ? -1 : partyIndex(value)
     }
 
     // mpTimeValue returns time (HH:MM, or as a hand-written file may have
@@ -309,19 +323,22 @@
       document.getElementById('mpparties').innerHTML = ''
       document.getElementById('mpmessages').innerHTML = ''
       document.getElementById('mpcheck').innerHTML = ''
-      parties.forEach(p => {
-        mpAddPartyRow(p.role || '', p.location || '')
-        const row = document.querySelector('#mpparties .mprow:last-child')
+      const partyRows = parties.map(p => {
+        const row = mpAddPartyRow(p.role || '', p.location || '')
         row.querySelector('.mp-cred').value = p.credential || (p.f3 ? 'F3' : '')
         row.querySelector('.mp-prefix').value = p.prefix || ''
         row.querySelector('.mp-principal').value = p.principal || ''
+        return row
       })
+      const pid = i => partyRows[i] ? partyRows[i].dataset.pid : (partyRows[0] || {}).dataset?.pid
+      const lost = []
       const rows = messages.map(m => m.event ? mpAddEventRow(m.event, m.text) : mpAddMessageRow())
       // Type and From first: the To and Replying-to choices depend on them.
       rows.forEach((row, i) => {
         if (messages[i].event) return
         row.querySelector('.mp-type').value = messages[i].msgType
-        row.querySelector('.mp-from').value = String(messages[i].from ?? 0)
+        const from = messages[i].from ?? 0
+        row.querySelector('.mp-from').value = from === -1 ? '-1' : pid(from)
       })
       mpSyncOptions()
       rows.forEach((row, i) => {
@@ -335,7 +352,7 @@
             row.querySelector('.mp-to-custom').value = m.toLabel
           }
         } else {
-          row.querySelector('.mp-to').value = String(m.to)
+          row.querySelector('.mp-to').value = pid(m.to)
         }
         row.querySelector('.mp-purpose').value = m.purpose || ''
         row.querySelector('.mp-optoop').checked = !!m.opToOp
@@ -343,8 +360,18 @@
         row.querySelector('.mp-group').value = m.group || ''
         row.querySelector('.mp-time').value = mpTimeValue(m.time)
         row.querySelector('.mp-msgno').value = m.msgNo || ''
-        row.querySelector('.mp-replyto').value = m.replyTo > 0 && rows[m.replyTo - 1] ? rows[m.replyTo - 1].dataset.rid : '0'
+        const reply = row.querySelector('.mp-replyto')
+        reply.value = m.replyTo > 0 && rows[m.replyTo - 1] ? rows[m.replyTo - 1].dataset.rid : '0'
+        if (m.replyTo > 0 && reply.value === '') {
+          // The target is an event, or a message from each station, which
+          // has no single message to reply to.
+          reply.value = '0'
+          lost.push(`#${i + 1} replied to #${m.replyTo}`)
+        }
       })
+      if (lost.length) {
+        err.textContent = `${source}: these replies could not be kept, because their target can't be replied to: ${lost.join(', ')}.`
+      }
       document.getElementById('mpname').value = data.name || ''
       document.getElementById('mppacket').checked = !!data.packet
       if (data.scenario !== undefined) document.getElementById('mpscenario').value = data.scenario
