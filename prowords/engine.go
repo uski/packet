@@ -80,10 +80,14 @@ type Match struct {
 func Find(text string) []Match {
 	var matches []Match
 	var plain []Match // text calling for no proword, such as times and dates
+	// overlaps says whether s..e runs into text an earlier pass claimed,
+	// or into a time or date that calls for no proword at all.
 	overlaps := func(s, e int) bool {
-		for _, m := range slices.Concat(matches, plain) {
-			if s < m.End && e > m.Start {
-				return true
+		for _, ms := range [...][]Match{matches, plain} {
+			for _, m := range ms {
+				if s < m.End && e > m.Start {
+					return true
+				}
 			}
 		}
 		return false
